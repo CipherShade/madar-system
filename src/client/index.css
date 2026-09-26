@@ -777,6 +777,29 @@ select {
   color: var(--success);
 }
 
+.banner--warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.banner--info {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+/* Renewal / grace / frozen notice. Sits above page content on every screen. */
+.lifecycle-banner {
+  margin-bottom: 16px;
+}
+
+.lifecycle-banner .banner {
+  margin-bottom: 10px;
+}
+
+.lifecycle-banner__cta {
+  align-self: flex-start;
+}
+
 .empty {
   border: 1.5px dashed var(--border-strong);
   border-radius: var(--radius);

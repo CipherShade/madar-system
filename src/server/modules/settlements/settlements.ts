@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PaymentMethod, Role, SessionStatus, SettlementStatus, ShiftStatus } from '../../../shared/constants/index.js';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
+import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
 import { recordAuditEntry } from '../reports/audit.js';
 import { isValidUUID } from '../../lib/http.js';
 
@@ -33,7 +34,7 @@ function validation(message: string, messageEn: string, code = 'VALIDATION_ERROR
 
 const settlementRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: { id: string }; Body: SettlementBody }>('/sessions/:id/settle', {
-    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), app.rateLimit.financial],
+    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), app.rateLimit.financial, requireTenantWritable],
     schema: {
       body: {
         type: 'object',

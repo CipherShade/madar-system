@@ -22,9 +22,9 @@ export type PlanLimits = {
   /**
    * Visits allowed per billing month; null = unlimited.
    *
-   * For a PAID plan this stays advisory — it drives the warning meter only and
-   * never blocks a check-in. The single exception is the unpaid tier, whose cap
-   * is a hard payment gate (see UNPAID_VISIT_LIMIT / resolveUnpaidVisitGate).
+   * Always advisory: this drives the warning meter and never blocks a check-in.
+   * Whether a center may write at all is decided by the tenant lifecycle, not
+   * by a plan number (see server/lib/tenantLifecycle.ts).
    */
   visitLimit: number | null;
 };
@@ -52,27 +52,20 @@ const CONTROL_LIMITS: PlanLimits = { maxDesks: 8, maxBranches: 1, maxUsers: 10, 
 const MULTI_BRANCH_LIMITS: PlanLimits = { maxDesks: 8, maxBranches: 3, maxUsers: 20, visitLimit: 30_000 };
 
 /**
- * Hard cap on student check-ins for a center whose payment is NOT verified.
- *
- * This is the free-riding barrier: a plan `visitLimit` is only a warning meter,
- * so without this an unpaid center could run unlimited check-ins on its single
- * desk. Sized to let a genuine small center trial the product, not to run it.
- * It is a payment gate, not a pricing tier — verifying the subscription lifts
- * it immediately.
- */
-export const UNPAID_VISIT_LIMIT = 100;
-
-/**
  * Caps a tenant sits under while its payment is still unverified.
  *
  * `maxDesks` blocks opening a shift and `maxUsers` blocks adding a receptionist,
- * so those are hard caps. This tier must stay strictly below every purchasable
- * plan on both, or an unpaid center would hold a paid plan's limits.
- * `maxBranches` has no Branch model to measure against yet, so it is not a real
- * barrier. `visitLimit` is the only hard visit stop in the system and applies
- * solely to unpaid tenants.
+ * so these are hard caps, and they stay below every purchasable plan so an
+ * unapproved center can never hold a paid plan's limits. `maxBranches` has no
+ * Branch model to measure against yet.
+ *
+ * These are a second line of defence only. The primary gate is the tenant
+ * lifecycle: an unapproved or frozen center has every business write refused
+ * before a handler runs, so in practice it never gets far enough to hit a
+ * limit. `visitLimit` stays null because usage is advisory — the lifecycle
+ * guard is what stops an unpaid center recording anything at all.
  */
-export const PENDING_PAYMENT_LIMITS: PlanLimits = { maxDesks: 1, maxBranches: 1, maxUsers: 2, visitLimit: UNPAID_VISIT_LIMIT };
+export const PENDING_PAYMENT_LIMITS: PlanLimits = { maxDesks: 1, maxBranches: 1, maxUsers: 2, visitLimit: null };
 
 const TRIAL_CONFIG: PlanConfig = {
   id: TenantPlan.FREE_TRIAL,
@@ -191,7 +184,7 @@ export function isPublicPlan(plan: string | null | undefined): boolean {
   return PUBLIC_PLAN_IDS.includes(plan as TenantPlan);
 }
 
-// ── Visit-usage warning thresholds (warning-only for paid plans) ──
+// ── Visit-usage warning thresholds (advisory only; never block a write) ──
 export const VISIT_USAGE_WARNING_PERCENT = 80;
 export const VISIT_USAGE_STRONG_PERCENT = 90;
 export const VISIT_USAGE_LIMIT_PERCENT = 100;
@@ -213,9 +206,8 @@ export type VisitUsage = {
 /**
  * Shared by the API and the client so the warning thresholds can never drift.
  *
- * This reports only — it never blocks. For a paid plan exceeding the limit
- * raises a warning and check-in continues. Unpaid centers are stopped earlier
- * and separately, by resolveUnpaidVisitGate, which enforces UNPAID_VISIT_LIMIT.
+ * This reports only — it never blocks. Whether a center may write at all is
+ * decided by the tenant lifecycle, not by this meter.
  */
 export function computeVisitUsage(used: number, limit: number | null | undefined): VisitUsage {
   const safeUsed = Math.max(0, Math.floor(Number.isFinite(used) ? used : 0));

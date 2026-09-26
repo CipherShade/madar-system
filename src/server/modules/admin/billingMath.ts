@@ -174,56 +174,6 @@ export function verifiedEntitlements(
   };
 }
 
-// ─── Unpaid check-in gate ─────────────────────────────────────────────────────
-
-export type UnpaidVisitGate =
-  | { allowed: true }
-  | {
-      allowed: false;
-      code: 'UNPAID_VISIT_LIMIT';
-      message: string;
-      messageEn: string;
-      limit: number;
-      used: number;
-      remaining: 0;
-    };
-
-/**
- * The only hard stop on student check-ins in the whole system.
- *
- * A paid plan's `visitLimit` is a warning meter and never blocks — Control is
- * explicitly allowed to keep working past 10,000 visits. This gate is separate
- * and narrower: it refuses a check-in ONLY while the center has no verified
- * subscription, which is what stops an unpaid center from running the product
- * indefinitely on its single desk. Verifying the subscription lifts it at once.
- *
- * `visitLimit` comes from the tenant row, so a center that is not on the unpaid
- * tier is never affected even if the subscription is momentarily missing.
- */
-export function resolveUnpaidVisitGate(input: {
-  hasVerifiedSubscription: boolean;
-  usedVisits: number;
-  visitLimit: number | null | undefined;
-}): UnpaidVisitGate {
-  if (input.hasVerifiedSubscription) return { allowed: true };
-
-  const limit = input.visitLimit;
-  if (limit === null || limit === undefined || limit <= 0) return { allowed: true };
-
-  const used = Math.max(0, Math.floor(Number.isFinite(input.usedVisits) ? input.usedVisits : 0));
-  if (used < limit) return { allowed: true };
-
-  return {
-    allowed: false,
-    code: 'UNPAID_VISIT_LIMIT',
-    message: `تم استنفاد حد المتابعات المسموح به لل مركز غير المدفوع (${used}/${limit}). أكّد الاشتراك لمتابعة تسجيل حضور الطلاب.`,
-    messageEn: `This center used all of its unpaid visit allowance (${used}/${limit}). Verify the subscription to keep checking students in.`,
-    limit,
-    used,
-    remaining: 0,
-  };
-}
-
 // ─── Usage aggregation ───────────────────────────────────────────────────────
 
 export const USAGE_METRICS = ['USERS', 'RECEPTIONISTS', 'STUDENTS', 'VISITS', 'BRANCHES'] as const;

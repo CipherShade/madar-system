@@ -84,11 +84,14 @@ export function EmptyState({ text, icon: Icon = Signal }: { text: string; icon?:
   return <div className="empty"><Icon className="mx-auto mb-3 h-6 w-6 opacity-50" aria-hidden="true" />{text}</div>;
 }
 
-export function Banner({ text, tone }: { text: string; tone: 'error' | 'success' }) {
+export type BannerTone = 'error' | 'success' | 'warning' | 'info';
+
+export function Banner({ text, tone }: { text: string; tone: BannerTone }) {
   if (!text) return null;
+  const isProblem = tone === 'error' || tone === 'warning';
   return (
-    <div className={`banner banner--${tone}`} role={tone === 'error' ? 'alert' : 'status'}>
-      {tone === 'error' ? <AlertCircle className="h-4 w-4 flex-none" /> : <CheckCircle2 className="h-4 w-4 flex-none" />}
+    <div className={`banner banner--${tone}`} role={isProblem ? 'alert' : 'status'}>
+      {tone === 'success' ? <CheckCircle2 className="h-4 w-4 flex-none" /> : <AlertCircle className="h-4 w-4 flex-none" />}
       <span>{text}</span>
     </div>
   );

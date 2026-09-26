@@ -10,7 +10,7 @@ import { Role } from '../src/shared/constants/index.js';
 import { buildApp } from '../src/server/app.js';
 import { attachSocketServer } from '../src/server/lib/socket.js';
 import { signCookieValue } from '../src/server/lib/security.js';
-import { signToken, ADMIN_USER_ID, RECEPTIONIST_USER_ID } from './helpers.js';
+import { signToken, ADMIN_USER_ID, RECEPTIONIST_USER_ID, TEST_TENANT_ID } from './helpers.js';
 import { config } from '../src/server/config/index.js';
 
 type ServerContext = { app: FastifyInstance; io: Server; port: number };
@@ -101,11 +101,26 @@ test('authenticated admin can join the lobby over handshake auth', async () => {
     await once(s, 'connect');
     s.emit('join:lobby');
     const [joined] = await once(s, 'lobby:joined');
-    assert.equal(joined.room, 'center:lobby');
+    // A tenant user lands in their own center's room, not the shared one.
+    assert.equal(joined.room, `tenant:${TEST_TENANT_ID}:lobby`);
 
     s.emit('leave:lobby');
     const [left] = await once(s, 'lobby:left');
-    assert.equal(left.room, 'center:lobby');
+    assert.equal(left.room, `tenant:${TEST_TENANT_ID}:lobby`);
+  } finally {
+    await stopLobbyServer(ctx);
+  }
+});
+
+test('a user with no tenant falls back to the shared lobby room', async () => {
+  const ctx = await startLobbyServer();
+  try {
+    const token = signToken(ctx.app, { sub: ADMIN_USER_ID, username: 'admin', role: Role.ADMIN, tenantId: null });
+    const s = makeClient(ctx.port, { token });
+    await once(s, 'connect');
+    s.emit('join:lobby');
+    const [joined] = await once(s, 'lobby:joined');
+    assert.equal(joined.room, 'center:lobby');
   } finally {
     await stopLobbyServer(ctx);
   }
@@ -120,7 +135,7 @@ test('authenticated receptionist can join the lobby via the signed access_token 
     await once(s, 'connect');
     s.emit('join:lobby');
     const [joined] = await once(s, 'lobby:joined');
-    assert.equal(joined.room, 'center:lobby');
+    assert.equal(joined.room, `tenant:${TEST_TENANT_ID}:lobby`);
   } finally {
     await stopLobbyServer(ctx);
   }

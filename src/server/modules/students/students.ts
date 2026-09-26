@@ -3,8 +3,9 @@ import { Prisma } from '@prisma/client';
 import { Role, SchoolType } from '../../../shared/constants/index.js';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
+import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
 import { normalizeArabicText } from '../../../shared/utils/arabicNormalization.js';
-import { isValidUUID, parsePagination } from '../../lib/http.js';
+import { isValidUUID, parsePagination, uuidParamsSchema } from '../../lib/http.js';
 
 const egyptianPhone = /^(010|011|012|015)[0-9]{8}$/;
 export type StudentBody = { fullName: string; studentPhone?: string | null; guardianPhone: string; academicStage: string; schoolType?: SchoolType; notes?: string | null };
@@ -62,7 +63,7 @@ const studentRoutes: FastifyPluginAsync = async (app) => {
     const [students, total] = await Promise.all([prisma.student.findMany({ where, orderBy: { fullName: 'asc' }, skip, take: limit }), prisma.student.count({ where })]);
     return reply.send({ success: true, data: { students: students.map(serializeStudent), pagination: { page, limit, total, pages: Math.ceil(total / limit) } } });
   });
-  app.post<{ Body: StudentBody }>('/students', { preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST)], schema: { body: bodySchema } }, async (request, reply) => {
+  app.post<{ Body: StudentBody }>('/students', { preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), requireTenantWritable], schema: { body: bodySchema } }, async (request, reply) => {
     const body = request.body; const phoneError = validateStudentPhones(body); if (phoneError) return reply.code(400).send(phoneError); const fullName = body.fullName.trim();
     for (let attempt = 0; ; attempt += 1) {
       try {
@@ -89,7 +90,7 @@ const studentRoutes: FastifyPluginAsync = async (app) => {
       }
     }
   });
-  app.patch<{ Params: { id: string }; Body: Partial<StudentBody> }>('/students/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST)], schema: { body: { ...bodySchema, required: [] } } }, async (request, reply) => {
+  app.patch<{ Params: { id: string }; Body: Partial<StudentBody> }>('/students/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), requireTenantWritable], schema: { params: uuidParamsSchema, body: { ...bodySchema, required: [] } } }, async (request, reply) => {
     if (!isValidUUID(request.params.id)) return reply.code(400).send(invalid('معرّف الطالب غير صالح.', 'The student id is invalid.'));
     const body = request.body; if (body.guardianPhone && !egyptianPhone.test(body.guardianPhone)) return reply.code(400).send(invalid('رقم ولي الأمر غير صحيح.', 'Guardian phone is invalid.')); if (body.studentPhone && !egyptianPhone.test(body.studentPhone)) return reply.code(400).send(invalid('رقم الطالب غير صحيح.', 'Student phone is invalid.'));
     try { const student = await prisma.student.update({ where: { id: request.params.id }, data: { ...(body.fullName === undefined ? {} : { fullName: body.fullName.trim(), searchName: normalizeArabicText(body.fullName) }), ...(body.studentPhone === undefined ? {} : { studentPhone: body.studentPhone || null }), ...(body.guardianPhone === undefined ? {} : { guardianPhone: body.guardianPhone }), ...(body.academicStage === undefined ? {} : { academicStage: body.academicStage.trim() }), ...(body.schoolType === undefined ? {} : { schoolType: body.schoolType }), ...(body.notes === undefined ? {} : { notes: body.notes?.trim() || null }) } }); return reply.send({ success: true, data: { student } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') return reply.code(404).send(invalid('الطالب غير موجود.', 'Student not found.')); throw error; }
@@ -146,6 +147,6 @@ const studentRoutes: FastifyPluginAsync = async (app) => {
       },
     });
   });
-  app.delete<{ Params: { id: string } }>('/students/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN)] }, async (request, reply) => { if (!isValidUUID(request.params.id)) return reply.code(400).send(invalid('معرّف الطالب غير صالح.', 'The student id is invalid.')); try { await prisma.student.delete({ where: { id: request.params.id } }); return reply.send({ success: true, data: null }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') return reply.code(404).send(invalid('الطالب غير موجود.', 'Student not found.')); if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') return reply.code(409).send(invalid('لا يمكن حذف طالب له سجل حضور.', 'A student with attendance records cannot be deleted.', 'STUDENT_IN_USE')); throw error; } });
+  app.delete<{ Params: { id: string } }>('/students/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable], schema: { params: uuidParamsSchema } }, async (request, reply) => { if (!isValidUUID(request.params.id)) return reply.code(400).send(invalid('معرّف الطالب غير صالح.', 'The student id is invalid.')); try { await prisma.student.delete({ where: { id: request.params.id } }); return reply.send({ success: true, data: null }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') return reply.code(404).send(invalid('الطالب غير موجود.', 'Student not found.')); if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') return reply.code(409).send(invalid('لا يمكن حذف طالب له سجل حضور.', 'A student with attendance records cannot be deleted.', 'STUDENT_IN_USE')); throw error; } });
 };
 export default studentRoutes;

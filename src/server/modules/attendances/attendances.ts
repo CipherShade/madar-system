@@ -1,13 +1,12 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { Prisma, PrismaClient } from '@prisma/client';
-import { AttendanceStatus, PaymentMethod, Role, SessionStatus, ShiftStatus, SubscriptionStatus } from '../../../shared/constants/index.js';
+import { Prisma } from '@prisma/client';
+import { AttendanceStatus, PaymentMethod, Role, SessionStatus, ShiftStatus } from '../../../shared/constants/index.js';
 import { prisma } from '../../lib/prisma.js';
 import { buildLobbyAttendancePayload } from '../../lib/socket.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
+import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
 import { recordAuditEntry } from '../reports/audit.js';
 import { isValidMoneyAmount, isValidUUID, parsePagination } from '../../lib/http.js';
-import { resolveUnpaidVisitGate } from '../admin/billingMath.js';
-import { buildVisitCountWhere } from '../subscriptions/subscriptions.js';
 
 export function calculateChangeOwed(amountReceived: number, fee: number): number {
   const change = amountReceived - fee;
@@ -86,45 +85,6 @@ async function getActiveShift(receptionistId: string) {
   });
 }
 
-/**
- * Refuses a check-in only when the center has no verified subscription and has
- * burned its unpaid visit allowance.
- *
- * Runs two extra queries, but only for centers that are actually unpaid: a
- * verified subscription short-circuits on the first query, so paying centers
- * pay no cost on the hot check-in path.
- *
- * Fails open when the tenant row is unreadable — a broken cap must never lock a
- * center out of recording its students.
- */
-async function findUnpaidVisitGateError(
-  tenantId: string | null | undefined,
-  client: PrismaClient | Prisma.TransactionClient = prisma,
-) {
-  if (!tenantId) return null;
-
-  const [tenant, activeSubscription] = await Promise.all([
-    client.tenant.findUnique({ where: { id: tenantId }, select: { visitLimit: true, createdAt: true } }),
-    client.subscription.findFirst({
-      where: { tenantId, status: SubscriptionStatus.ACTIVE, periodEnd: { gt: new Date() } },
-      orderBy: { periodEnd: 'desc' },
-    }),
-  ]);
-
-  if (!tenant || activeSubscription) return null;
-
-  const usedVisits = await client.attendance.count({ where: buildVisitCountWhere(tenant.createdAt, tenantId) });
-  const gate = resolveUnpaidVisitGate({ hasVerifiedSubscription: false, usedVisits, visitLimit: tenant.visitLimit });
-  if (gate.allowed) return null;
-
-  return {
-    code: gate.code,
-    message: gate.message,
-    messageEn: gate.messageEn,
-    details: { limit: gate.limit, used: gate.used, remaining: gate.remaining },
-  };
-}
-
 const attendanceRoutes: FastifyPluginAsync = async (app) => {
   app.get('/sessions/active', { preHandler: authenticate }, async (request, reply) => {
     const deskFilter = (request.query as { deskFilter?: string; roomId?: string; teacherId?: string }).deskFilter;
@@ -185,7 +145,7 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post<{ Body: AttendanceBody }>('/checkin', {
-    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), app.rateLimit.checkIn],
+    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), app.rateLimit.checkIn, requireTenantWritable],
     schema: { body: attendanceSchema },
   }, async (request, reply) => {
     const { sessionId, studentId, paymentMethod, paymentReference, amountPaid } = request.body;
@@ -228,10 +188,6 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
     const cashAmount = amountPaid ?? fee;
     const duplicate = await prisma.attendance.findFirst({ where: { sessionId, studentId, status: { not: AttendanceStatus.VOID } } });
 
-    const unpaidGateError = await findUnpaidVisitGateError(request.user.tenantId);
-    if (unpaidGateError) {
-      return reply.code(403).send({ success: false, error: unpaidGateError });
-    }
 
     if (duplicate) {
       return reply.code(409).send({
@@ -251,11 +207,6 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
         if (!currentShift || currentShift.status !== ShiftStatus.OPEN) throw new Error('SHIFT_CLOSED_DURING_CHECKIN');
         const currentAttendanceCount = await transaction.attendance.count({ where: { sessionId, status: { not: AttendanceStatus.VOID } } });
         if (currentAttendanceCount >= session.room.capacity) throw new Error('SESSION_CAPACITY_REACHED');
-        // Re-checked inside the transaction so concurrent check-ins cannot race
-        // past the unpaid cap (the Serializable isolation would abort, not
-        // oversell, if two doors commit together).
-        const gateError = await findUnpaidVisitGateError(request.user.tenantId, transaction);
-        if (gateError) throw new Error('UNPAID_VISIT_LIMIT');
         const attendance = await transaction.attendance.create({
           data: {
             sessionId,
@@ -314,19 +265,6 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
       }
       if (error instanceof Error && error.message === 'SESSION_CAPACITY_REACHED') {
         return reply.code(400).send(validation('وصلت الحصة إلى الحد الأقصى للسعة.', 'Session capacity has been reached.', 'SESSION_CAPACITY_REACHED'));
-      }
-      if (error instanceof Error && error.message === 'UNPAID_VISIT_LIMIT') {
-        // Recompute outside the rolled-back transaction for a precise message.
-        const gateError = await findUnpaidVisitGateError(request.user.tenantId);
-        return reply.code(403).send({
-          success: false,
-          error: gateError ?? {
-            code: 'UNPAID_VISIT_LIMIT',
-            message: 'تم استنفاد حد المتابعات المسموح به للمركز غير المدفوع. أكّد الاشتراك لمتابعة تسجيل حضور الطلاب.',
-            messageEn: 'This center used all of its unpaid visit allowance. Verify the subscription to keep checking students in.',
-            details: { limit: null, used: null, remaining: 0 },
-          },
-        });
       }
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         return reply.code(409).send({
@@ -392,7 +330,7 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post<{ Params: { id: string } }>('/attendances/:id/void', {
-    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), app.rateLimit.financial],
+    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), app.rateLimit.financial, requireTenantWritable],
     schema: {
       params: {
         type: 'object',

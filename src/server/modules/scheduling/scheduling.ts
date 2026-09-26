@@ -3,7 +3,8 @@ import { Prisma } from '@prisma/client';
 import { Role, SessionStatus } from '../../../shared/constants/index.js';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
-import { isValidMoneyAmount, isValidUUID } from '../../lib/http.js';
+import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
+import { isValidMoneyAmount, isValidUUID, uuidParamsSchema } from '../../lib/http.js';
 
 type SessionBody = {
   teacherId: string;
@@ -101,7 +102,7 @@ const schedulingRoutes: FastifyPluginAsync = async (app) => {
     const sessions = await prisma.session.findMany({ where, include: { teacher: { select: { id: true, fullName: true, subject: true } }, room: { select: { id: true, name: true, capacity: true } } }, orderBy: { startTime: 'asc' } });
     return reply.send({ success: true, data: { sessions: sessions.map((session) => ({ ...session, sessionPrice: session.sessionPrice.toString(), centerFeePerStudent: session.centerFeePerStudent.toString() })) } });
   });
-  app.post<{ Body: SessionBody }>('/sessions', { preHandler: [authenticate, requireRoles(Role.ADMIN)], schema: { body: sessionSchema } }, async (request, reply) => {
+  app.post<{ Body: SessionBody }>('/sessions', { preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable], schema: { body: sessionSchema } }, async (request, reply) => {
     const statusCheck = validateSessionStatusChange(SessionStatus.SCHEDULED, request.body.status);
     if (!statusCheck.ok) return reply.code(statusCheck.httpStatus).send(validation(statusCheck.message, statusCheck.messageEn, statusCheck.code));
     const result = await prisma.$transaction(async (tx) => {
@@ -129,7 +130,7 @@ const schedulingRoutes: FastifyPluginAsync = async (app) => {
     if (result.kind === 'conflict') return scheduleConflict(reply, result.conflict);
     return reply.code(201).send({ success: true, data: { session: result.session } });
   });
-  app.patch<{ Params: SessionParams; Body: Partial<SessionBody> }>('/sessions/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN)], schema: { body: { ...sessionSchema, required: [] } } }, async (request, reply) => {
+  app.patch<{ Params: SessionParams; Body: Partial<SessionBody> }>('/sessions/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable], schema: { params: uuidParamsSchema, body: { ...sessionSchema, required: [] } } }, async (request, reply) => {
     if (!isValidUUID(request.params.id)) return reply.code(400).send(validation('معرّف الحصة غير صالح.', 'The session id is invalid.'));
     const preStatusCheck = validateSessionStatusChange(SessionStatus.SCHEDULED, request.body.status);
     if (!preStatusCheck.ok) return reply.code(preStatusCheck.httpStatus).send(validation(preStatusCheck.message, preStatusCheck.messageEn, preStatusCheck.code));
@@ -151,7 +152,7 @@ const schedulingRoutes: FastifyPluginAsync = async (app) => {
     if (result.kind === 'conflict') return scheduleConflict(reply, result.conflict);
     return reply.send({ success: true, data: { session: result.session } });
   });
-  app.delete<{ Params: SessionParams }>('/sessions/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN)] }, async (request, reply) => { if (!isValidUUID(request.params.id)) return reply.code(400).send(validation('معرّف الحصة غير صالح.', 'The session id is invalid.')); const session = await prisma.session.findUnique({ where: { id: request.params.id }, select: { status: true } }); if (!session) return reply.code(404).send(validation('الحصة غير موجودة.', 'Session not found.')); if (session.status === SessionStatus.COMPLETED) return reply.code(409).send(validation('لا يمكن حذف حصة منتهية.', 'Completed sessions cannot be deleted.', 'SESSION_LOCKED')); await prisma.session.update({ where: { id: request.params.id }, data: { status: SessionStatus.CANCELLED } }); return reply.send({ success: true, data: null }); });
+  app.delete<{ Params: SessionParams }>('/sessions/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable], schema: { params: uuidParamsSchema } }, async (request, reply) => { if (!isValidUUID(request.params.id)) return reply.code(400).send(validation('معرّف الحصة غير صالح.', 'The session id is invalid.')); const session = await prisma.session.findUnique({ where: { id: request.params.id }, select: { status: true } }); if (!session) return reply.code(404).send(validation('الحصة غير موجودة.', 'Session not found.')); if (session.status === SessionStatus.COMPLETED) return reply.code(409).send(validation('لا يمكن حذف حصة منتهية.', 'Completed sessions cannot be deleted.', 'SESSION_LOCKED')); await prisma.session.update({ where: { id: request.params.id }, data: { status: SessionStatus.CANCELLED } }); return reply.send({ success: true, data: null }); });
 };
 
 export default schedulingRoutes;

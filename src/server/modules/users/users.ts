@@ -5,6 +5,7 @@ import { Role } from '../../../shared/constants/index.js';
 import { getPlanConfig } from '../../../shared/constants/plans.js';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
+import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
 import { recordAuditEntry } from '../reports/audit.js';
 import { isValidUUID } from '../../lib/http.js';
 
@@ -100,7 +101,7 @@ const userRoutes: FastifyPluginAsync = async (app) => {
     return reply.send({ success: true, data: { users: users.map(serializeUser) } });
   });
 
-  app.post<{ Body: CreateUserBody }>('/', { preHandler: [authenticate, requireRoles(Role.ADMIN)], schema: { body: createSchema } }, async (request, reply) => {
+  app.post<{ Body: CreateUserBody }>('/', { preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable], schema: { body: createSchema } }, async (request, reply) => {
     const username = request.body.username.trim();
     if (!USERNAME_RE.test(username)) {
       return reply.code(400).send(invalid('اسم المستخدم يجب أن يكون من 3 إلى 50 حرفاً (أحرف/أرقام/_.-).', 'Username must be 3-50 characters (letters, digits, _ . -).'));
@@ -148,7 +149,7 @@ const userRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(201).send({ success: true, data: { user: serializeUser(user) } });
   });
 
-  app.patch<{ Params: { id: string }; Body: UpdateUserBody }>('/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN)], schema: { body: updateSchema } }, async (request, reply) => {
+  app.patch<{ Params: { id: string }; Body: UpdateUserBody }>('/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable], schema: { body: updateSchema } }, async (request, reply) => {
     if (!isValidUUID(request.params.id)) return reply.code(400).send(invalid('معرّف المستخدم غير صالح.', 'The user id is invalid.'));
     if (request.params.id === request.user.sub && request.body.isActive === false) {
       return reply.code(400).send(invalid('لا يمكنك تعطيل حسابك الخاص.', 'You cannot deactivate your own account.', 'SELF_DEACTIVATE'));
@@ -186,7 +187,7 @@ const userRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
-  app.delete<{ Params: { id: string } }>('/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN)] }, async (request, reply) => {
+  app.delete<{ Params: { id: string } }>('/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable] }, async (request, reply) => {
     if (!isValidUUID(request.params.id)) return reply.code(400).send(invalid('معرّف المستخدم غير صالح.', 'The user id is invalid.'));
     if (request.params.id === request.user.sub) {
       return reply.code(400).send(invalid('لا يمكنك حذف حسابك الخاص.', 'You cannot delete your own account.', 'SELF_DELETE'));

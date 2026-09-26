@@ -1,6 +1,11 @@
 import { buildApp } from '../src/server/app.js';
 import type { FastifyInstance } from 'fastify';
 import { Role } from '../src/shared/constants/index.js';
+import {
+  addEgyptDays,
+  setLifecycleResolverForTests,
+  type TenantLifecycle,
+} from '../src/server/lib/tenantLifecycle.js';
 
 // ─── Shared helpers for the Prompt 5 test suite ────────────────────────────
 // These tests run WITHOUT a live PostgreSQL. They exercise:
@@ -35,6 +40,12 @@ export const OTHER_RECEPTIONIST_ID = validUUID('cccccccc-0000-0000-0000-00000000
 export type TestAuth = { token: string };
 
 export async function createTestApp(options?: { silent?: boolean }): Promise<FastifyInstance> {
+  // These tests never touch a real database, so the tenant lifecycle the write
+  // guard would otherwise read is stubbed to a fully paid, ACTIVE center. That
+  // keeps the suite focused on the auth / RBAC / schema guard layer, and keeps
+  // the lifecycle decision itself covered by the pure unit tests plus the
+  // dedicated lifecycle HTTP tests, which install their own resolver.
+  setLifecycleResolverForTests(async () => activeLifecycle());
   const app = buildApp();
   await app.ready();
   if (options?.silent !== false) {
@@ -43,12 +54,37 @@ export async function createTestApp(options?: { silent?: boolean }): Promise<Fas
   return app;
 }
 
+/** A center that has paid and is inside its period: writes are allowed. */
+export function activeLifecycle(): TenantLifecycle {
+  const now = new Date();
+  return {
+    state: 'ACTIVE',
+    canWrite: true,
+    readOnly: false,
+    activePeriodStart: now.toISOString(),
+    activePeriodEnd: addEgyptDays(now, 30).toISOString(),
+    daysUntilExpiry: 30,
+    freezesAt: addEgyptDays(now, 38).toISOString(),
+    reminder: null,
+  };
+}
+
+/**
+ * Every tenant user token carries a `tenantId`, exactly as the real login route
+ * mints them (see auth.ts). The lifecycle guard fails closed when the claim is
+ * missing, so a token without one would be rejected before the route handler
+ * and would make the guard-layer tests pass for the wrong reason.
+ */
+export const TEST_TENANT_ID = validUUID('eeeeeeee-0000-0000-0000-000000000005');
+export const OTHER_TENANT_ID = validUUID('ffffffff-0000-0000-0000-000000000006');
+
 export function signToken(
   app: FastifyInstance,
-  opts: { sub: string; username: string; role: Role; expiresIn?: string },
+  opts: { sub: string; username: string; role: Role; expiresIn?: string; tenantId?: string | null },
 ): string {
+  const tenantId = opts.tenantId === undefined ? TEST_TENANT_ID : opts.tenantId;
   return app.jwt.sign(
-    { sub: opts.sub, username: opts.username, role: opts.role },
+    { sub: opts.sub, username: opts.username, role: opts.role, tenantId },
     { expiresIn: opts.expiresIn ?? '1h' },
   );
 }
@@ -62,7 +98,9 @@ export function receptionistAuth(app: FastifyInstance): TestAuth {
 }
 
 export function superAdminAuth(app: FastifyInstance): TestAuth {
-  return { token: signToken(app, { sub: validUUID('dddddddd-0000-0000-0000-000000000004'), username: 'superadmin', role: Role.SUPER_ADMIN }) };
+  // A super admin is not tied to a single center, so their token carries no
+  // tenantId — which is why superadmin routes must never use the tenant guard.
+  return { token: signToken(app, { sub: validUUID('dddddddd-0000-0000-0000-000000000004'), username: 'superadmin', role: Role.SUPER_ADMIN, tenantId: null }) };
 }
 
 export function tokens(app: FastifyInstance) {

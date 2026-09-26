@@ -4,6 +4,7 @@ import { PaymentMethod, Role, ShiftStatus } from '../../../shared/constants/inde
 import { getPlanConfig } from '../../../shared/constants/plans.js';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
+import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
 import { recordAuditEntry } from '../reports/audit.js';
 import { isValidMoneyAmount, parsePagination } from '../../lib/http.js';
 
@@ -158,7 +159,7 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post<{ Body: OpenShiftBody }>('/open', {
-    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST)],
+    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), requireTenantWritable],
     schema: {
       body: {
         type: 'object',
@@ -235,7 +236,7 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post<{ Body: CloseShiftBody }>('/close', {
-    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST)],
+    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), requireTenantWritable],
     schema: {
       body: {
         type: 'object',
@@ -332,7 +333,7 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post<{ Body: ExpenseBody }>('/expenses', {
-    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), app.rateLimit.financial],
+    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), app.rateLimit.financial, requireTenantWritable],
     schema: {
       body: {
         type: 'object',

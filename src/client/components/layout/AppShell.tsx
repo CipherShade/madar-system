@@ -5,6 +5,7 @@ import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { ToastHost, notify } from '../ui/kit';
 import { navigationGroups } from '../../features/navigation/navigationItems';
+import { LifecycleBanner } from '../../features/billing/LifecycleBanner';
 
 // ── Lazy-loaded page chunks (code splitting) ─────────────────────────────────
 // Each page is split into its own async chunk, reducing initial JS payload.
@@ -76,6 +77,7 @@ export function AppShell() {
       <div className="app-body">
         <Sidebar activeId={currentId} onSelect={navigate} role={role} />
         <main className="app-main" id="main">
+          <LifecycleBanner onGoToBilling={() => navigate('billing')} />
           <Suspense fallback={<PageFallback />}>
             {content}
           </Suspense>

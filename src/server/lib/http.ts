@@ -10,6 +10,26 @@ export function isValidUUID(value: string): boolean {
   return UUID_RE.test(value);
 }
 
+/**
+ * JSON Schema for the params object of a `/:id` route.
+ *
+ * Declaring the id in the schema rather than only re-checking it inside the
+ * handler matters for ordering: Fastify validates before `preHandler` runs, so a
+ * malformed id is rejected without reaching the tenant lifecycle guard or
+ * touching the database at all. Keep the in-handler `isValidUUID` check too —
+ * it is defence in depth, and it is what produces the 400 for a body-less route
+ * if the schema is ever dropped.
+ *
+ * Note this is the *params object* schema, so routes use it as
+ * `schema: { params: uuidParamsSchema }`.
+ */
+export const uuidParamsSchema = {
+  type: 'object',
+  properties: { id: { type: 'string', format: 'uuid' } },
+  required: ['id'],
+} as const;
+
+
 export function isValidMoneyAmount(value: number): boolean {
   return Number.isFinite(value) && value >= 0 && MONEY_RE.test(String(value));
 }

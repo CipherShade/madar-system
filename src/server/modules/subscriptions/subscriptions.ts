@@ -9,6 +9,7 @@ import {
 import { prisma } from '../../lib/prisma.js';
 import { isValidUUID } from '../../lib/http.js';
 import { applyBillingBalances, verifiedEntitlements } from '../admin/billingMath.js';
+import { addEgyptDays, resolveTenantLifecycle, startOfEgyptDay } from '../../lib/tenantLifecycle.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
 import { recordAuditEntry } from '../reports/audit.js';
 
@@ -106,6 +107,7 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
     const usedVisits = await prisma.attendance.count({
       where: buildVisitCountWhere(periodStart, tenantId),
     });
+    const lifecycle = resolveTenantLifecycle(subscriptions, now);
 
     return reply.send({
       success: true,
@@ -113,6 +115,9 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
         tenant,
         trialDaysRemaining,
         isTrialActive: tenant.trialEndsAt ? tenant.trialEndsAt > now : false,
+        // Drives the in-app renewal / grace / frozen banner, and mirrors exactly
+        // what the write guard enforces.
+        lifecycle,
         usage: {
           periodStart,
           visits: computeVisitUsage(usedVisits, tenant.visitLimit),
@@ -158,8 +163,10 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
 
     const planConfig = getPlanConfig(selectedPlan);
     const baseAmount = planConfig.priceEgp ?? 0;
-    const periodStart = new Date();
-    const periodEnd = new Date(Date.now() + SUBSCRIPTION_PERIOD_DAYS * 24 * 60 * 60 * 1000);
+    // Quoted on the same day boundaries `verify` will actually grant, so the
+    // dates shown on the invoice are the dates the owner gets.
+    const periodStart = startOfEgyptDay(new Date());
+    const periodEnd = addEgyptDays(periodStart, SUBSCRIPTION_PERIOD_DAYS);
 
     const result = await prisma.$transaction(async (tx) => {
       // The invoice is priced against the tenant's wallets so the customer
@@ -276,8 +283,12 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const now = new Date();
-    const periodStart = now;
-    const periodEnd = new Date(now.getTime() + SUBSCRIPTION_PERIOD_DAYS * 24 * 60 * 60 * 1000);
+    // Snap the paid period to the business-day boundaries: it starts at 12:00 AM
+    // GMT+3 today and ends at 12:00 AM GMT+3 30 days later, so the period, the
+    // renewal reminder and the freeze instant are all counted on the same clock
+    // and a period can never expire part-way through a business day.
+    const periodStart = startOfEgyptDay(now);
+    const periodEnd = addEgyptDays(periodStart, SUBSCRIPTION_PERIOD_DAYS);
 
     const result = await prisma.$transaction(async (tx) => {
       // Entitlements are recomputed from the tenant's live wallet balances, so
