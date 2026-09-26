@@ -8,7 +8,7 @@ import {
 } from '../../../shared/constants/plans.js';
 import { prisma } from '../../lib/prisma.js';
 import { isValidUUID } from '../../lib/http.js';
-import { applyBillingBalances } from '../admin/billingMath.js';
+import { applyBillingBalances, verifiedEntitlements } from '../admin/billingMath.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
 import { recordAuditEntry } from '../reports/audit.js';
 
@@ -162,16 +162,16 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
     const periodEnd = new Date(Date.now() + SUBSCRIPTION_PERIOD_DAYS * 24 * 60 * 60 * 1000);
 
     const result = await prisma.$transaction(async (tx) => {
-      // Owner-granted discount/credit wallets are spent on this invoice. The
-      // math itself lives in the domain layer (admin/billingMath.ts).
-      const tenantForWallet = await tx.tenant.findUniqueOrThrow({
+      // The invoice is priced against the tenant's wallets so the customer
+      // knows exactly what to pay, but the wallets are NOT spent and the plan
+      // is NOT granted here. Both happen in `verify`, which is the only place
+      // a PENDING payment can become an entitlement.
+      const tenantForWallet = await prisma.tenant.findUniqueOrThrow({
         where: { id: tenantId },
         select: { discountBalance: true, creditBalance: true },
       });
       const billing = applyBillingBalances(baseAmount, tenantForWallet.discountBalance, tenantForWallet.creditBalance);
 
-      // Upgrade payments are created PENDING and activated by a SUPER_ADMIN
-      // once the INSTAPAY transfer is verified against the reference.
       const subscription = await tx.subscription.create({
         data: {
           tenantId,
@@ -183,19 +183,6 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
           paymentReference: request.body.paymentReference.trim(),
           periodStart,
           periodEnd,
-        },
-      });
-
-      const updatedTenant = await tx.tenant.update({
-        where: { id: tenantId },
-        data: {
-          plan: selectedPlan as TenantPlan,
-          maxDesks: planConfig.limits.maxDesks,
-          maxBranches: planConfig.limits.maxBranches,
-          maxUsers: planConfig.limits.maxUsers,
-          visitLimit: planConfig.limits.visitLimit,
-          discountBalance: new Prisma.Decimal(billing.remainingDiscount),
-          creditBalance: new Prisma.Decimal(billing.remainingCredit),
         },
       });
 
@@ -215,7 +202,7 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
         },
       }, tx);
 
-      return { subscription, tenant: updatedTenant, billing };
+      return { subscription, tenant: await tx.tenant.findUniqueOrThrow({ where: { id: tenantId } }), billing };
     });
 
     return reply.send({
@@ -231,11 +218,12 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
-  // ── Super Admin: pending-payment verification queue ──────────────────────
-
-  // Every INSTAPAY subscription is recorded as PENDING until a SUPER_ADMIN
-  // verifies the transfer against the payer's reference. Centers keep working
-  // (non-blocking) but see a warning banner until the payment is confirmed.
+  // ── Super Admin: pending-payment verification queue ─────────────────────────
+  //
+  // Every INSTAPAY subscription is recorded as PENDING and grants no paid
+  // entitlements. Verification is the ONLY transition that hands the purchased
+  // plan to a tenant and spends its discount/credit wallets, so rejecting a
+  // payment can never leave a center holding an unpaid plan.
   app.get('/pending', {
     preHandler: [authenticate, requireRoles(Role.SUPER_ADMIN)],
   }, async (_request, reply) => {
@@ -292,13 +280,30 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
     const periodEnd = new Date(now.getTime() + SUBSCRIPTION_PERIOD_DAYS * 24 * 60 * 60 * 1000);
 
     const result = await prisma.$transaction(async (tx) => {
+      // Entitlements are recomputed from the tenant's live wallet balances, so
+      // a discount granted while the payment sat in the queue is applied here.
+      const tenant = await tx.tenant.findUniqueOrThrow({
+        where: { id: subscription.tenantId },
+        select: { discountBalance: true, creditBalance: true },
+      });
+      const granted = verifiedEntitlements(subscription.plan, tenant.discountBalance, tenant.creditBalance);
+
       const updated = await tx.subscription.update({
         where: { id: subscription.id },
         data: { status: SubscriptionStatus.ACTIVE, periodStart, periodEnd },
       });
       await tx.tenant.update({
         where: { id: subscription.tenantId },
-        data: { isActive: true },
+        data: {
+          plan: granted.plan as TenantPlan,
+          isActive: granted.isActive,
+          maxDesks: granted.limits.maxDesks,
+          maxBranches: granted.limits.maxBranches,
+          maxUsers: granted.limits.maxUsers,
+          visitLimit: granted.limits.visitLimit,
+          discountBalance: new Prisma.Decimal(granted.discountBalance),
+          creditBalance: new Prisma.Decimal(granted.creditBalance),
+        },
       });
       await recordAuditEntry({
         actorId: request.user.sub,
@@ -307,7 +312,17 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
         entityType: 'SUBSCRIPTION',
         entityId: subscription.id,
         amount: Number(subscription.amount),
-        metadata: { plan: subscription.plan, paymentMethod: subscription.paymentMethod, paymentReference: subscription.paymentReference },
+        metadata: {
+          plan: subscription.plan,
+          paymentMethod: subscription.paymentMethod,
+          paymentReference: subscription.paymentReference,
+          // The invoice quoted at upgrade time vs. what the wallets actually
+          // allowed at verification time — a gap means a wallet changed.
+          invoicedAmount: subscription.amount.toString(),
+          amountDue: granted.billing?.amountDue ?? null,
+          discountApplied: granted.billing?.discountApplied ?? 0,
+          creditApplied: granted.billing?.creditApplied ?? 0,
+        },
       }, tx);
       return updated;
     });
@@ -344,6 +359,10 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
+    // Nothing to unwind: the pending payment never granted a plan and never
+    // spent a wallet, so the tenant simply keeps the entitlements it already
+    // had (the trial tier at signup, or the current paid plan after a rejected
+    // upgrade).
     const result = await prisma.$transaction(async (tx) => {
       const updated = await tx.subscription.update({
         where: { id: subscription.id },

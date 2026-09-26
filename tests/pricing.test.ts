@@ -321,16 +321,16 @@ describe('VISIT USAGE: warning thresholds', () => {
 
 // ─── Operational continuity above the limit ─────────────────────────────────
 
-describe('VISIT USAGE: Control keeps working above 10,000 visits', () => {
+describe('VISIT USAGE: a PAID center keeps working above its visit limit', () => {
   test('usage tracking continues past the limit (advisory overage)', () => {
     const u = computeVisitUsage(12_500, 10_000);
     assert.equal(u.level, 'over');
     assert.equal(u.percent, 125);
     assert.equal(u.overLimit, true);
-    assert.equal(u.remaining, 0); // nothing left — but no blocking anywhere
+    assert.equal(u.remaining, 0); // nothing left - but a verified center is never blocked
   });
 
-  test('the check-in HTTP path never returns a visit-limit refusal (usage is advisory)', async () => {
+  test('a PAID center is never refused for usage — only an unpaid center is', async () => {
     const { createTestApp, receptionistAuth, authHeaders, validUUID } = await import('./helpers.js');
     const app = await createTestApp();
     const res = await app.inject({
@@ -345,13 +345,27 @@ describe('VISIT USAGE: Control keeps working above 10,000 visits', () => {
     });
     // This suite runs without a database, so the request fails on an
     // operational prerequisite (no active shift / no DB) — the important
-    // assertion is that usage can NEVER short-circuit check-in: any refusal
-    // must come from a genuine operational guard, not a visit/plan limit.
+    // assertion is that a visit/plan limit can NEVER short-circuit check-in for
+    // a paying center. Any refusal must come from a genuine operational guard.
+    //
+    // The one deliberate exception is UNPAID_VISIT_LIMIT, and it is reachable
+    // ONLY when the center has no verified subscription (see
+    // resolveUnpaidVisitGate). It is asserted explicitly below so adding it can
+    // never happen silently.
     const body = res.body;
-    assert.ok(!body.includes('VISIT_LIMIT'), 'check-in must not enforce a visit limit');
     assert.ok(!body.includes('PLAN_LIMIT'), 'check-in must not enforce a plan limit');
-    assert.ok(!body.includes('VISIT_LIMIT_REACHED'));
-    assert.ok(!body.includes('OVERAGE'));
+    assert.ok(!body.includes('VISIT_LIMIT_REACHED'), 'check-in must not enforce a plan visit cap');
+    assert.ok(!body.includes('OVERAGE'), 'overage must stay a warning, never a refusal');
+
+    // Usage metering itself must never appear in a refusal code.
+    const usageCode = body.match(/"code":"([A-Z_]*VISIT[A-Z_]*)"/);
+    if (usageCode) {
+      assert.equal(
+        usageCode[1],
+        'UNPAID_VISIT_LIMIT',
+        `check-in returned a usage refusal "${usageCode[1]}" other than the unpaid payment gate`,
+      );
+    }
     await app.close();
   });
 });

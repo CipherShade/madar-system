@@ -3,7 +3,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { FastifyPluginAsync } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { PaymentMethod, Role, SubscriptionStatus, TenantPlan } from '../../../shared/constants/index.js';
-import { PURCHASABLE_PLAN_IDS, getPlanConfig } from '../../../shared/constants/plans.js';
+import { PURCHASABLE_PLAN_IDS, PENDING_PAYMENT_LIMITS, getPlanConfig } from '../../../shared/constants/plans.js';
 import { prisma } from '../../lib/prisma.js';
 import { config } from '../../config/index.js';
 import { recordAuditEntry } from '../reports/audit.js';
@@ -153,26 +153,30 @@ const authRoutes: FastifyPluginAsync = async (app) => {
     });
 
     const result = await prisma.$transaction(async (tx) => {
+      // The paid plan is recorded on the PENDING subscription, not on the
+      // tenant. The tenant itself starts on the capped trial tier and stays
+      // inactive until a SUPER_ADMIN verifies the transfer, so a self-declared
+      // payment reference can never hand out a paid plan's limits.
       const tenant = await tx.tenant.create({
         data: {
           name: request.body.centerName,
           slug,
           ownerName: request.body.ownerName,
           ownerPhone: request.body.ownerPhone,
-          plan: plan as TenantPlan,
-          isActive: true,
-          maxDesks: planConfig.limits.maxDesks,
-          maxBranches: planConfig.limits.maxBranches,
-          maxUsers: planConfig.limits.maxUsers,
-          visitLimit: planConfig.limits.visitLimit,
+          plan: TenantPlan.FREE_TRIAL,
+          isActive: false,
+          maxDesks: PENDING_PAYMENT_LIMITS.maxDesks,
+          maxBranches: PENDING_PAYMENT_LIMITS.maxBranches,
+          maxUsers: PENDING_PAYMENT_LIMITS.maxUsers,
+          visitLimit: PENDING_PAYMENT_LIMITS.visitLimit,
         },
       });
 
-      // The subscription is created PENDING: the owner verifies the INSTAPAY
-      // payment (payer instapay account stored as the proof) before activation.
+      // The subscription is the only record of what was paid for; the period
+      // starts when the payment is verified, not when the form is submitted.
       const periodStart = new Date();
       const periodEnd = new Date(Date.now() + SUBSCRIPTION_PERIOD_DAYS * 24 * 60 * 60 * 1000);
-      await tx.subscription.create({
+      const subscription = await tx.subscription.create({
         data: {
           tenantId: tenant.id,
           plan: plan as TenantPlan,
@@ -218,7 +222,7 @@ const authRoutes: FastifyPluginAsync = async (app) => {
         action: 'TENANT_REGISTERED',
         entityType: 'TENANT',
         entityId: tenant.id,
-        metadata: { centerName: tenant.name, plan: tenant.plan },
+        metadata: { centerName: tenant.name, plan: subscription.plan },
       }, tx);
 
       return { user, tenant };

@@ -8,7 +8,8 @@
  */
 
 import { Prisma } from '@prisma/client';
-import { computeVisitUsage } from '../../../shared/constants/plans.js';
+import { TenantPlan } from '../../../shared/constants/index.js';
+import { computeVisitUsage, PENDING_PAYMENT_LIMITS, getPlanConfig } from '../../../shared/constants/plans.js';
 import type { PlanLimits, VisitUsage, VisitUsageLevel } from '../../../shared/constants/plans.js';
 
 export type MoneyInput = Prisma.Decimal | number | string | null | undefined;
@@ -108,6 +109,119 @@ export function computeWalletMutation(type: WalletAction, amount: MoneyInput): W
   if (type === 'DISCOUNT') return { type, discountDelta: value, creditDelta: 0 };
   if (type === 'CREDIT') return { type, discountDelta: 0, creditDelta: value };
   return { type, discountDelta: 0, creditDelta: value };
+}
+
+// ─── Subscription entitlements ───────────────────────────────────────────────
+
+/**
+ * What a tenant may actually use, derived from the state of its payment.
+ *
+ * A PENDING payment must never hand out a paid plan's limits. The tenant keeps
+ * a capped, inactive trial tier so the center can still try the product, but
+ * nothing that was paid for is granted until a SUPER_ADMIN verifies the
+ * transfer (AGENTS.md: financial isolation + no entitlement before payment).
+ */
+export type TenantEntitlements = {
+  plan: string;
+  isActive: boolean;
+  limits: PlanLimits;
+  discountBalance: number;
+  creditBalance: number;
+  /** Wallet spend for this invoice; null when no invoice is being settled. */
+  billing: BalanceApplication | null;
+};
+
+/**
+ * Entitlements for a tenant whose payment is still unverified. Owner-granted
+ * discount/credit wallets are deliberately left untouched, so rejecting the
+ * payment has nothing to unwind — the tenant simply never received the plan.
+ */
+export function pendingEntitlements(
+  discountBalance: MoneyInput,
+  creditBalance: MoneyInput,
+): TenantEntitlements {
+  return {
+    plan: TenantPlan.FREE_TRIAL,
+    isActive: false,
+    limits: PENDING_PAYMENT_LIMITS,
+    discountBalance: roundMoney(Math.max(0, toMoneyNumber(discountBalance))),
+    creditBalance: roundMoney(Math.max(0, toMoneyNumber(creditBalance))),
+    billing: null,
+  };
+}
+
+/**
+ * Entitlements granted once the payment is verified: the purchased plan and
+ * its real limits, an active tenant, and the owner wallets spent against this
+ * invoice. The wallet math is recomputed here from the tenant's live balances
+ * so a discount granted while the payment was pending is honoured.
+ */
+export function verifiedEntitlements(
+  purchasedPlan: string,
+  discountBalance: MoneyInput,
+  creditBalance: MoneyInput,
+): TenantEntitlements {
+  const planConfig = getPlanConfig(purchasedPlan);
+  const baseAmount = planConfig.priceEgp ?? 0;
+  const billing = applyBillingBalances(baseAmount, discountBalance, creditBalance);
+  return {
+    plan: planConfig.id,
+    isActive: true,
+    limits: planConfig.limits,
+    discountBalance: billing.remainingDiscount,
+    creditBalance: billing.remainingCredit,
+    billing,
+  };
+}
+
+// ─── Unpaid check-in gate ─────────────────────────────────────────────────────
+
+export type UnpaidVisitGate =
+  | { allowed: true }
+  | {
+      allowed: false;
+      code: 'UNPAID_VISIT_LIMIT';
+      message: string;
+      messageEn: string;
+      limit: number;
+      used: number;
+      remaining: 0;
+    };
+
+/**
+ * The only hard stop on student check-ins in the whole system.
+ *
+ * A paid plan's `visitLimit` is a warning meter and never blocks — Control is
+ * explicitly allowed to keep working past 10,000 visits. This gate is separate
+ * and narrower: it refuses a check-in ONLY while the center has no verified
+ * subscription, which is what stops an unpaid center from running the product
+ * indefinitely on its single desk. Verifying the subscription lifts it at once.
+ *
+ * `visitLimit` comes from the tenant row, so a center that is not on the unpaid
+ * tier is never affected even if the subscription is momentarily missing.
+ */
+export function resolveUnpaidVisitGate(input: {
+  hasVerifiedSubscription: boolean;
+  usedVisits: number;
+  visitLimit: number | null | undefined;
+}): UnpaidVisitGate {
+  if (input.hasVerifiedSubscription) return { allowed: true };
+
+  const limit = input.visitLimit;
+  if (limit === null || limit === undefined || limit <= 0) return { allowed: true };
+
+  const used = Math.max(0, Math.floor(Number.isFinite(input.usedVisits) ? input.usedVisits : 0));
+  if (used < limit) return { allowed: true };
+
+  return {
+    allowed: false,
+    code: 'UNPAID_VISIT_LIMIT',
+    message: `تم استنفاد حد المتابعات المسموح به لل مركز غير المدفوع (${used}/${limit}). أكّد الاشتراك لمتابعة تسجيل حضور الطلاب.`,
+    messageEn: `This center used all of its unpaid visit allowance (${used}/${limit}). Verify the subscription to keep checking students in.`,
+    limit,
+    used,
+    remaining: 0,
+  };
 }
 
 // ─── Usage aggregation ───────────────────────────────────────────────────────

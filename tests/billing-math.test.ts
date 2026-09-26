@@ -1,6 +1,7 @@
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { Prisma } from '@prisma/client';
+import { PENDING_PAYMENT_LIMITS, PURCHASABLE_PLAN_IDS, UNPAID_VISIT_LIMIT, computeVisitUsage, getPlanConfig } from '../src/shared/constants/plans.js';
 import {
   USAGE_METRICS,
   applyBillingBalances,
@@ -11,9 +12,12 @@ import {
   computeTenantUsage,
   computeWalletMutation,
   monthKey,
+  pendingEntitlements,
   roundMoney,
   sumRevenueByPeriod,
+  resolveUnpaidVisitGate,
   toMoneyNumber,
+  verifiedEntitlements,
 } from '../src/server/modules/admin/billingMath.js';
 
 const NOW = new Date('2026-09-25T12:00:00.000Z');
@@ -290,5 +294,164 @@ describe('BILLING MATH — revenue', () => {
     assert.equal(report.mrr, 1698);
     assert.equal(report.historyTotal, report.history.reduce((sum, point) => sum + point.amount, 0));
     assert.equal(monthKey(NOW), '2026-09');
+  });
+});
+describe('SUBSCRIPTION ENTITLEMENTS - no paid plan before payment is verified', () => {
+  test('a pending payment grants the trial tier, never the purchased plan', () => {
+    const granted = pendingEntitlements(0, 0);
+
+    assert.equal(granted.plan, 'FREE_TRIAL');
+    assert.equal(granted.isActive, false);
+    assert.equal(granted.billing, null);
+
+    // The paid plans are the ones an attacker would be after: a pending
+    // CONTROL payment must not hand out CONTROL's desks, users or visits.
+    assert.equal(granted.limits.maxDesks, 1);
+    assert.equal(granted.limits.maxUsers, 2);
+    assert.ok(granted.limits.maxDesks < 8, 'pending tenant must not reach CONTROL desk limits');
+    assert.ok(granted.limits.maxUsers < 10, 'pending tenant must not reach CONTROL user limits');
+  });
+
+  test('a pending payment leaves owner wallets untouched, so a reject has nothing to unwind', () => {
+    const granted = pendingEntitlements(250, 100);
+
+    assert.equal(granted.discountBalance, 250);
+    assert.equal(granted.creditBalance, 100);
+  });
+
+  test('pending entitlements never exceed the trial tier whatever the plan', () => {
+    for (const plan of ['ESSENTIAL', 'CONTROL', 'MULTI_BRANCH']) {
+      const granted = pendingEntitlements(0, 0);
+      assert.equal(granted.plan, 'FREE_TRIAL', `${plan} must not leak into a pending tenant`);
+      assert.equal(granted.isActive, false);
+    }
+  });
+
+  test('verifying grants the purchased plan, its limits, and activates the tenant', () => {
+    const granted = verifiedEntitlements('CONTROL', 0, 0);
+
+    assert.equal(granted.plan, 'CONTROL');
+    assert.equal(granted.isActive, true);
+    assert.equal(granted.limits.maxDesks, 8);
+    assert.equal(granted.limits.maxUsers, 10);
+    assert.equal(granted.limits.visitLimit, 10_000);
+  });
+
+  test('verifying spends the wallets exactly once, and only for the granted plan', () => {
+    const granted = verifiedEntitlements('CONTROL', 200, 0);
+
+    assert.equal(granted.billing?.baseAmount, 1199);
+    assert.equal(granted.billing?.discountApplied, 200);
+    assert.equal(granted.billing?.amountDue, 999);
+    assert.equal(granted.discountBalance, 0);
+    assert.equal(granted.creditBalance, 0);
+  });
+
+  test('a discount granted while the payment was pending is honoured at verification', () => {
+    // Priced at upgrade time against a zero wallet, then granted one later.
+    const atUpgrade = applyBillingBalances(1199, 0, 0);
+    assert.equal(atUpgrade.amountDue, 1199);
+
+    const atVerify = verifiedEntitlements('CONTROL', 500, 0);
+    assert.equal(atVerify.billing?.amountDue, 699);
+    assert.equal(atVerify.discountBalance, 0);
+  });
+
+  test('a wallet that fully covers the invoice still grants the plan and is not double-spent', () => {
+    const granted = verifiedEntitlements('ESSENTIAL', 0, 1000);
+
+    assert.equal(granted.plan, 'ESSENTIAL');
+    assert.equal(granted.isActive, true);
+    assert.equal(granted.billing?.fullyCovered, true);
+    assert.equal(granted.billing?.amountDue, 0);
+    assert.equal(granted.creditBalance, 501);
+  });
+
+  test('the pending tier stays strictly below every purchasable paid plan', () => {
+    // Guards against a future tweak to PENDING_PAYMENT_LIMITS silently
+    // re-opening the "unpaid tenant holds a paid plan" hole.
+    const pending = pendingEntitlements(0, 0);
+
+    for (const plan of PURCHASABLE_PLAN_IDS) {
+      const paid = getPlanConfig(plan);
+      assert.ok(pending.limits.maxDesks < paid.limits.maxDesks, `${plan}: pending desks must be lower`);
+      assert.ok(pending.limits.maxUsers < paid.limits.maxUsers, `${plan}: pending users must be lower`);
+      assert.ok(pending.limits.maxBranches <= paid.limits.maxBranches, `${plan}: pending branches must not exceed`);
+    }
+  });
+
+  test('the enforced caps are the only real barrier — visits cannot be gated', () => {
+    // maxDesks blocks opening a shift and maxUsers blocks adding a receptionist.
+    const pending = pendingEntitlements(0, 0);
+    assert.equal(pending.limits.maxDesks, 1);
+    assert.equal(pending.limits.maxUsers, 2);
+
+    // A visit cap is a warning meter, not a stop: exceeding it raises a warning
+    // and check-in continues. The unpaid gate below is the separate hard stop.
+    assert.equal(computeVisitUsage(10_001, 10_000).level, 'over'); // warning only
+  });
+});
+
+describe('UNPAID VISIT GATE - the only hard stop on check-in', () => {
+  test('a verified subscription is never blocked, no matter how many visits', () => {
+    // This is the guard that protects the paying contract: Control is explicitly
+    // allowed to keep working past 10,000 visits.
+    const gate = resolveUnpaidVisitGate({ hasVerifiedSubscription: true, usedVisits: 999_999, visitLimit: 100 });
+    assert.equal(gate.allowed, true);
+  });
+
+  test('an unpaid center is allowed up to its cap and refused at it', () => {
+    assert.equal(resolveUnpaidVisitGate({ hasVerifiedSubscription: false, usedVisits: 99, visitLimit: 100 }).allowed, true);
+    assert.equal(resolveUnpaidVisitGate({ hasVerifiedSubscription: false, usedVisits: 100, visitLimit: 100 }).allowed, false);
+  });
+
+  test('the refusal carries the numbers the reception desk needs', () => {
+    const gate = resolveUnpaidVisitGate({ hasVerifiedSubscription: false, usedVisits: 140, visitLimit: 100 });
+    assert.equal(gate.allowed, false);
+    if (gate.allowed) return;
+    assert.equal(gate.code, 'UNPAID_VISIT_LIMIT');
+    assert.equal(gate.limit, 100);
+    assert.equal(gate.used, 140);
+    assert.equal(gate.remaining, 0);
+    assert.match(gate.message, /140\/100/);
+    assert.match(gate.messageEn, /140\/100/);
+  });
+
+  test('a null limit means the center is not on the unpaid tier — never blocked', () => {
+    assert.equal(resolveUnpaidVisitGate({ hasVerifiedSubscription: false, usedVisits: 5_000_000, visitLimit: null }).allowed, true);
+    assert.equal(resolveUnpaidVisitGate({ hasVerifiedSubscription: false, usedVisits: 5, visitLimit: 0 }).allowed, true);
+  });
+
+  test('a broken or negative count fails open rather than locking the center out', () => {
+    assert.equal(resolveUnpaidVisitGate({ hasVerifiedSubscription: false, usedVisits: Number.NaN, visitLimit: 100 }).allowed, true);
+    assert.equal(resolveUnpaidVisitGate({ hasVerifiedSubscription: false, usedVisits: -50, visitLimit: 100 }).allowed, true);
+  });
+
+  test('the gate keys off the subscription, not the plan name', () => {
+    // While a subscription is verified, no plan limit can ever hard-block —
+    // Control keeps working past 10,000, which is the existing paid contract.
+    for (const plan of PURCHASABLE_PLAN_IDS) {
+      const paid = getPlanConfig(plan);
+      assert.equal(resolveUnpaidVisitGate({ hasVerifiedSubscription: true, usedVisits: 999_999, visitLimit: paid.limits.visitLimit }).allowed, true, `${plan} must not hard-block while verified`);
+    }
+
+    // A LAPSED subscriber is metered at whatever limit sits on its tenant row.
+    // That is intentional: a center whose period ended must not keep running
+    // on a paid plan's allowance for free.
+    assert.equal(resolveUnpaidVisitGate({ hasVerifiedSubscription: false, usedVisits: 10_001, visitLimit: 10_000 }).allowed, false);
+  });
+
+  test('the pending tier is the tier an unpaid center lands on', () => {
+    assert.equal(pendingEntitlements(0, 0).limits.visitLimit, UNPAID_VISIT_LIMIT);
+    assert.equal(PENDING_PAYMENT_LIMITS.visitLimit, UNPAID_VISIT_LIMIT);
+  });
+
+  test('verifying the subscription lifts the cap immediately', () => {
+    const before = resolveUnpaidVisitGate({ hasVerifiedSubscription: false, usedVisits: UNPAID_VISIT_LIMIT, visitLimit: UNPAID_VISIT_LIMIT });
+    assert.equal(before.allowed, false);
+
+    // Same visit count, subscription verified: the gate opens with no reset.
+    const after = resolveUnpaidVisitGate({ hasVerifiedSubscription: true, usedVisits: UNPAID_VISIT_LIMIT, visitLimit: UNPAID_VISIT_LIMIT });
+    assert.equal(after.allowed, true);
   });
 });
