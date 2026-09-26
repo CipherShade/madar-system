@@ -104,7 +104,6 @@
     "title": "One plan runs the whole center",
     "sub": "Pay for one plan and see everything it does together. The founding price is below the standard price.",
     "foundingNote": "Current founding price {{price}} EGP/month {{period}}",
-    "mainLabel": "The core plan",
     "perMonth": "EGP / month",
     "listPriceLabel": "Standard price",
     "foundingPriceLabel": "Founding price",

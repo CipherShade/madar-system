@@ -1156,19 +1156,6 @@
   z-index: 1;
 }
 
-.madar-landing .lp-plan-flag {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  margin-bottom: 16px;
-  padding: 5px 13px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-  font-size: 0.85rem;
-  font-weight: 800;
-}
 
 .madar-landing .lp-plan-main h3 {
   font-size: clamp(1.6rem, 1.2rem + 1.2vw, 2.1rem);

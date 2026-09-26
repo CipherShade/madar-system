@@ -268,11 +268,6 @@ function PrimaryPlan({
   return (
     <article className="lp-plan-main">
       <div>
-        <span className="lp-plan-flag">
-          <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-          {t('pricing.mainLabel')}
-        </span>
-
         <div className="lp-plan-heading">
           <h3>{locale === 'ar' ? offer.nameAr : offer.nameEn}</h3>
           {badge && <span className="lp-plan-badge">{badge}</span>}

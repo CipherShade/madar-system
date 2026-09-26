@@ -160,7 +160,7 @@ export function BillingPage() {
             <b style={{ fontSize: 15 }}>دفعتك قيد التأكيد</b>
             <p style={{ fontSize: 13, color: '#78350f', margin: '2px 0 0' }}>
               مبلغ {money(Number(pendingSubscription.amount))} عبر إنستاباي (المرجع: <code dir="ltr">{pendingSubscription.paymentReference}</code>).
-              سيُفعَّل اشتراكك فور تأكيد استلام الدفعة — النظام يعمل بكامل طاقته حتى ذلك الحين.
+              سيُفعَّل اشتراكك وتُفتح حدود الباقة فور تأكيد استلام الدفعة — وقبل ذلك يعمل المركز على حدود التجربة المجانية فقط.
             </p>
           </div>
           <span style={{ fontSize: 12, background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', borderRadius: 99, padding: '4px 12px', fontWeight: 700 }}>
