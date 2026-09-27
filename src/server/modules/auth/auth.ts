@@ -6,6 +6,8 @@ import { prisma } from '../../lib/prisma.js';
 import { config } from '../../config/index.js';
 import { recordAuditEntry } from '../reports/audit.js';
 
+import { getPlanConfig } from '../../../shared/constants/plans.js';
+
 export type AuthTokenPayload = {
   sub: string;
   username: string;
@@ -28,7 +30,7 @@ type RegisterCenterBody = {
   ownerPhone: string;
   username: string;
   password: string;
-  plan?: 'GROWTH' | 'BUSINESS';
+  plan?: 'BASIC' | 'GROWTH' | 'PRO' | 'MULTI_BRANCH' | 'BUSINESS';
 };
 
 const publicUserSelect = {
@@ -112,7 +114,7 @@ const authRoutes: FastifyPluginAsync = async (app) => {
           ownerPhone: { type: 'string', pattern: '^(010|011|012|015)[0-9]{8}$' },
           username: { type: 'string', minLength: 3, maxLength: 50, pattern: '^[a-zA-Z0-9_-]+$' },
           password: { type: 'string', minLength: 8, maxLength: 200 },
-          plan: { type: 'string', enum: ['GROWTH', 'BUSINESS'] },
+          plan: { type: 'string', enum: ['BASIC', 'GROWTH', 'PRO', 'MULTI_BRANCH', 'BUSINESS'] },
         },
         additionalProperties: false,
       },
@@ -126,7 +128,8 @@ const authRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    const plan = request.body.plan || 'GROWTH';
+    const requestedPlan = request.body.plan || 'BASIC';
+    const planConfig = getPlanConfig(requestedPlan);
     const trialDays = 14;
     const trialEndsAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000);
     const slugSuffix = Math.random().toString(36).substring(2, 7);
@@ -146,11 +149,11 @@ const authRoutes: FastifyPluginAsync = async (app) => {
           slug,
           ownerName: request.body.ownerName,
           ownerPhone: request.body.ownerPhone,
-          plan: plan === 'BUSINESS' ? 'BUSINESS' : 'GROWTH',
+          plan: planConfig.id as any,
           trialEndsAt,
           isActive: true,
-          maxDesks: plan === 'BUSINESS' ? 10 : 1,
-          maxBranches: plan === 'BUSINESS' ? 5 : 1,
+          maxDesks: planConfig.maxReceptionists ?? 999,
+          maxBranches: planConfig.maxBranches ?? 99,
         },
       });
 
@@ -169,10 +172,22 @@ const authRoutes: FastifyPluginAsync = async (app) => {
         select: publicUserSelect,
       });
 
-      // Initialize default room for quick start
+      // Initialize default branch
+      const branch = await tx.branch.create({
+        data: {
+          tenantId: tenant.id,
+          name: 'الفرع الرئيسي',
+          address: 'المقر الرئيسي',
+          phoneNumber: request.body.ownerPhone,
+          isActive: true,
+        },
+      });
+
+      // Initialize default room for quick start linked to the branch
       await tx.room.create({
         data: {
           tenantId: tenant.id,
+          branchId: branch.id,
           name: 'قاعة ١ (الرئيسية)',
           capacity: 60,
           floor: 'الطابق الأول',

@@ -14,7 +14,7 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
 
   const [step, setStep] = useState<1 | 2>(1);
   const [centerName, setCenterName] = useState('');
-  const [plan, setPlan] = useState<'GROWTH' | 'BUSINESS'>('GROWTH');
+  const [plan, setPlan] = useState<'BASIC' | 'GROWTH' | 'PRO' | 'MULTI_BRANCH'>('BASIC');
 
   const [ownerName, setOwnerName] = useState('');
   const [ownerPhone, setOwnerPhone] = useState('');
@@ -85,7 +85,7 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
 
   return (
     <main className="login-bg" dir="rtl">
-      <div className="login-card" style={{ maxWidth: 480 }}>
+      <div className="login-card" style={{ maxWidth: 520 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div className="login-logo" style={{ cursor: 'pointer', margin: 0 }} onClick={onNavigateLanding}>
             م
@@ -130,10 +130,28 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
 
             <div style={{ marginTop: 8 }}>
               <span className="field-label" style={{ display: 'block', marginBottom: 8 }}>
-                اختر الباقة (جميع الباقات تشمل 14 يوم مجاناً)
+                اختر الباقة (تشمل 14 يوم تجربة مجانية لكافة الميزات)
               </span>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div
+                  onClick={() => setPlan('BASIC')}
+                  style={{
+                    border: `2px solid ${plan === 'BASIC' ? '#0e7c56' : '#e2e0dc'}`,
+                    background: plan === 'BASIC' ? '#f0faf5' : '#fff',
+                    borderRadius: 12,
+                    padding: 12,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <b style={{ fontSize: 14 }}>Basic (الأساسية)</b>
+                    {plan === 'BASIC' && <Check className="h-4 w-4 text-emerald-700" />}
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#0e7c56', margin: '3px 0' }}>499 ج.م/شهر</div>
+                  <small style={{ fontSize: 10, color: '#6b7280' }}>1 فرع • 1 استقبال • 3,000 زيارة</small>
+                </div>
+
                 <div
                   onClick={() => setPlan('GROWTH')}
                   style={{
@@ -145,29 +163,47 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <b style={{ fontSize: 15 }}>Growth</b>
+                    <b style={{ fontSize: 14 }}>Growth (النمو)</b>
                     {plan === 'GROWTH' && <Check className="h-4 w-4 text-emerald-700" />}
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: '#0e7c56', margin: '4px 0' }}>299 ج.م/شهر</div>
-                  <small style={{ fontSize: 10, color: '#6b7280' }}>مكتب استقبال واحد + فرع</small>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#0e7c56', margin: '3px 0' }}>1,499 ج.م/شهر</div>
+                  <small style={{ fontSize: 10, color: '#6b7280' }}>1 فرع • 3 استقبال • 10,000 زيارة</small>
                 </div>
 
                 <div
-                  onClick={() => setPlan('BUSINESS')}
+                  onClick={() => setPlan('PRO')}
                   style={{
-                    border: `2px solid ${plan === 'BUSINESS' ? '#0e7c56' : '#e2e0dc'}`,
-                    background: plan === 'BUSINESS' ? '#f0faf5' : '#fff',
+                    border: `2px solid ${plan === 'PRO' ? '#0e7c56' : '#e2e0dc'}`,
+                    background: plan === 'PRO' ? '#f0faf5' : '#fff',
                     borderRadius: 12,
                     padding: 12,
                     cursor: 'pointer',
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <b style={{ fontSize: 15 }}>Business</b>
-                    {plan === 'BUSINESS' && <Check className="h-4 w-4 text-emerald-700" />}
+                    <b style={{ fontSize: 14 }}>Pro (المتقدمة)</b>
+                    {plan === 'PRO' && <Check className="h-4 w-4 text-emerald-700" />}
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: '#0e7c56', margin: '4px 0' }}>500 ج.م/شهر</div>
-                  <small style={{ fontSize: 10, color: '#6b7280' }}>مكاتب متزامنة + فروع</small>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#0e7c56', margin: '3px 0' }}>1,999 ج.م/شهر</div>
+                  <small style={{ fontSize: 10, color: '#6b7280' }}>1 فرع • استقبال غير محدود • 20,000 زيارة</small>
+                </div>
+
+                <div
+                  onClick={() => setPlan('MULTI_BRANCH')}
+                  style={{
+                    border: `2px solid ${plan === 'MULTI_BRANCH' ? '#0e7c56' : '#e2e0dc'}`,
+                    background: plan === 'MULTI_BRANCH' ? '#f0faf5' : '#fff',
+                    borderRadius: 12,
+                    padding: 12,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <b style={{ fontSize: 14 }}>Multi-Branch (فروع)</b>
+                    {plan === 'MULTI_BRANCH' && <Check className="h-4 w-4 text-emerald-700" />}
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#0e7c56', margin: '3px 0' }}>4,999 ج.م/شهر</div>
+                  <small style={{ fontSize: 10, color: '#6b7280' }}>فروع متعددة • استقبال غير محدود • 50,000+ زيارة</small>
                 </div>
               </div>
             </div>

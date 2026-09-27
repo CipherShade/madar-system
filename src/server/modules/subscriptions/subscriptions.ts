@@ -1,23 +1,30 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { PaymentMethod, Role, TenantPlan, SubscriptionStatus } from '../../../shared/constants/index.js';
+import { MADAR_PLANS, getPlanConfig } from '../../../shared/constants/plans.js';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
 import { recordAuditEntry } from '../reports/audit.js';
-
-const PLAN_PRICES: Record<string, number> = {
-  GROWTH: 299,
-  BUSINESS: 500,
-  ENTERPRISE: 1200,
-};
+import { getTenantUsageSummary } from './usageService.js';
 
 type UpgradeBody = {
-  plan: 'GROWTH' | 'BUSINESS';
+  plan: 'BASIC' | 'GROWTH' | 'PRO' | 'MULTI_BRANCH' | 'BUSINESS';
   paymentMethod: PaymentMethod;
   paymentReference?: string | null;
 };
 
 const subscriptionRoutes: FastifyPluginAsync = async (app) => {
+  // Public / Authenticated plans configuration endpoint
+  app.get('/plans', async (_request, reply) => {
+    return reply.send({
+      success: true,
+      data: {
+        plans: Object.values(MADAR_PLANS),
+      },
+    });
+  });
+
+  // Current tenant subscription & usage details
   app.get('/current', { preHandler: [authenticate, requireRoles(Role.ADMIN, Role.SUPER_ADMIN)] }, async (request, reply) => {
     const tenantId = request.user.tenantId;
     if (!tenantId) {
@@ -27,7 +34,7 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    const [tenant, subscriptions] = await Promise.all([
+    const [tenant, subscriptions, usageSummary] = await Promise.all([
       prisma.tenant.findUnique({
         where: { id: tenantId },
         select: {
@@ -47,6 +54,7 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
         orderBy: { createdAt: 'desc' },
         take: 10,
       }),
+      getTenantUsageSummary(tenantId).catch(() => null),
     ]);
 
     if (!tenant) {
@@ -67,6 +75,7 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
         tenant,
         trialDaysRemaining,
         isTrialActive: tenant.trialEndsAt ? tenant.trialEndsAt > now : false,
+        usage: usageSummary,
         subscriptions: subscriptions.map((sub) => ({
           ...sub,
           amount: sub.amount.toString(),
@@ -75,6 +84,7 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
+  // Upgrade or subscribe to a plan
   app.post<{ Body: UpgradeBody }>('/upgrade', {
     preHandler: [authenticate, requireRoles(Role.ADMIN, Role.SUPER_ADMIN)],
     schema: {
@@ -82,7 +92,7 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
         type: 'object',
         required: ['plan', 'paymentMethod'],
         properties: {
-          plan: { type: 'string', enum: ['GROWTH', 'BUSINESS'] },
+          plan: { type: 'string', enum: ['BASIC', 'GROWTH', 'PRO', 'MULTI_BRANCH', 'BUSINESS'] },
           paymentMethod: { type: 'string', enum: Object.values(PaymentMethod) },
           paymentReference: { type: ['string', 'null'], maxLength: 100 },
         },
@@ -98,16 +108,26 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    const selectedPlan = request.body.plan;
-    const amount = PLAN_PRICES[selectedPlan] || 299;
+    const requestedPlan = request.body.plan;
+    const planConfig = getPlanConfig(requestedPlan);
+    const amount = planConfig.priceEgp;
     const periodStart = new Date();
     const periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days subscription
+
+    // Map to DB TenantPlan enum
+    let dbPlan: TenantPlan = TenantPlan.BASIC;
+    if (planConfig.id === 'GROWTH') dbPlan = TenantPlan.GROWTH;
+    else if (planConfig.id === 'PRO') dbPlan = TenantPlan.PRO;
+    else if (planConfig.id === 'MULTI_BRANCH') dbPlan = TenantPlan.MULTI_BRANCH;
+
+    const maxDesks = planConfig.maxReceptionists ?? 999;
+    const maxBranches = planConfig.maxBranches ?? 99;
 
     const result = await prisma.$transaction(async (tx) => {
       const subscription = await tx.subscription.create({
         data: {
           tenantId,
-          plan: selectedPlan === 'BUSINESS' ? TenantPlan.BUSINESS : TenantPlan.GROWTH,
+          plan: dbPlan,
           status: SubscriptionStatus.ACTIVE,
           amount: new Prisma.Decimal(amount),
           currency: 'EGP',
@@ -121,9 +141,9 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
       const updatedTenant = await tx.tenant.update({
         where: { id: tenantId },
         data: {
-          plan: selectedPlan === 'BUSINESS' ? TenantPlan.BUSINESS : TenantPlan.GROWTH,
-          maxDesks: selectedPlan === 'BUSINESS' ? 10 : 1,
-          maxBranches: selectedPlan === 'BUSINESS' ? 5 : 1,
+          plan: dbPlan,
+          maxDesks,
+          maxBranches,
         },
       });
 
@@ -134,11 +154,18 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
         entityType: 'SUBSCRIPTION',
         entityId: subscription.id,
         amount,
-        metadata: { plan: selectedPlan, paymentMethod: request.body.paymentMethod },
+        metadata: {
+          plan: planConfig.id,
+          planName: planConfig.name,
+          paymentMethod: request.body.paymentMethod,
+          priceEgp: amount,
+        },
       }, tx);
 
       return { subscription, tenant: updatedTenant };
     });
+
+    const updatedUsage = await getTenantUsageSummary(tenantId).catch(() => null);
 
     return reply.send({
       success: true,
@@ -148,6 +175,7 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
           amount: result.subscription.amount.toString(),
         },
         tenant: result.tenant,
+        usage: updatedUsage,
       },
     });
   });

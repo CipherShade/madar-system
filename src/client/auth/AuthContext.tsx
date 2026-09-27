@@ -11,7 +11,7 @@ export type RegisterCenterParams = {
   ownerPhone: string;
   username: string;
   password: string;
-  plan?: 'GROWTH' | 'BUSINESS';
+  plan?: 'BASIC' | 'GROWTH' | 'PRO' | 'MULTI_BRANCH' | 'BUSINESS';
 };
 
 type AuthContextValue = {

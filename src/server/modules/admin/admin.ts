@@ -17,6 +17,8 @@ import type { FastifyPluginAsync } from 'fastify';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
 import { Role } from '../../../shared/constants/index.js';
+import { getPlanConfig, calculateUsageWarning } from '../../../shared/constants/plans.js';
+import { computeBillingPeriod, getTenantUsageSummary } from '../subscriptions/usageService.js';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -72,7 +74,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // ── GET /api/admin/tenants ──────────────────────────────────────────────
-  app.get<{ Querystring: { page?: string; limit?: string; search?: string } }>(
+  app.get<{ Querystring: { page?: string; limit?: string; search?: string; planFilter?: string; usageFilter?: string } }>(
     '/tenants',
     { preHandler: SUPER_ADMIN_GATE },
     async (request, reply) => {
@@ -80,15 +82,18 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       const limit = Math.min(100, Math.max(1, parseInt(request.query.limit ?? '20', 10)));
       const skip = (page - 1) * limit;
       const search = request.query.search?.trim() ?? '';
+      const planFilter = request.query.planFilter?.trim();
 
-      const where = search
-        ? {
-            OR: [
-              { name: { contains: search, mode: 'insensitive' as const } },
-              { slug: { contains: search, mode: 'insensitive' as const } },
-            ],
-          }
-        : {};
+      const where: any = {};
+      if (search) {
+        where.OR = [
+          { name: { contains: search, mode: 'insensitive' as const } },
+          { slug: { contains: search, mode: 'insensitive' as const } },
+        ];
+      }
+      if (planFilter && planFilter !== 'ALL') {
+        where.plan = planFilter;
+      }
 
       const [tenants, total] = await Promise.all([
         prisma.tenant.findMany({
@@ -107,7 +112,17 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
             maxBranches: true,
             createdAt: true,
             _count: {
-              select: { users: true, students: true, sessions: true },
+              select: {
+                users: true,
+                students: true,
+                sessions: true,
+                branches: true,
+              },
+            },
+            subscriptions: {
+              where: { status: 'ACTIVE' },
+              orderBy: { periodEnd: 'desc' },
+              take: 1,
             },
           },
         }),
@@ -116,10 +131,43 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
 
       const now = new Date();
 
-      return reply.send({
-        success: true,
-        data: {
-          tenants: tenants.map((t) => ({
+      // Gather usage records for each tenant in current billing period
+      const tenantSummaries = await Promise.all(
+        tenants.map(async (t) => {
+          const activeSub = t.subscriptions[0] ?? null;
+          const { periodStart, periodEnd } = computeBillingPeriod(now, activeSub);
+          const planConfig = getPlanConfig(t.plan);
+
+          const [usageRecords, activeReceptionists, actualBranches] = await Promise.all([
+            prisma.usageRecord.findMany({
+              where: {
+                tenantId: t.id,
+                periodStart: { gte: periodStart },
+                periodEnd: { lte: periodEnd },
+              },
+            }),
+            prisma.user.count({
+              where: { tenantId: t.id, role: Role.RECEPTIONIST, isActive: true },
+            }),
+            prisma.branch.count({
+              where: { tenantId: t.id, isActive: true },
+            }),
+          ]);
+
+          let totalVisits = usageRecords.reduce((sum, r) => sum + r.visitCount, 0);
+          if (usageRecords.length === 0) {
+            totalVisits = await prisma.attendance.count({
+              where: {
+                tenantId: t.id,
+                status: { not: 'VOID' },
+                checkInTime: { gte: periodStart, lt: periodEnd },
+              },
+            });
+          }
+
+          const warning = calculateUsageWarning(totalVisits, planConfig.monthlyVisitLimit);
+
+          return {
             ...t,
             trialDaysRemaining: t.trialEndsAt
               ? Math.max(0, Math.ceil((new Date(t.trialEndsAt).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
@@ -128,7 +176,39 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
             userCount: t._count.users,
             studentCount: t._count.students,
             sessionCount: t._count.sessions,
-          })),
+            planDetails: planConfig,
+            monthlyVisitLimit: planConfig.monthlyVisitLimit,
+            usedVisits: totalVisits,
+            usagePercentage: warning.percentage,
+            remainingVisits: warning.remaining,
+            warningLevel: warning.warningLevel,
+            receptionistLimit: planConfig.maxReceptionists,
+            receptionistCount: activeReceptionists,
+            branchLimit: planConfig.maxBranches,
+            branchCount: Math.max(1, actualBranches),
+            billingPeriod: {
+              start: periodStart.toISOString(),
+              end: periodEnd.toISOString(),
+            },
+          };
+        })
+      );
+
+      // Apply usage filter in-memory if specified
+      let filteredTenants = tenantSummaries;
+      const usageFilter = request.query.usageFilter?.trim();
+      if (usageFilter === '80_PLUS') {
+        filteredTenants = tenantSummaries.filter((t) => t.usagePercentage >= 80);
+      } else if (usageFilter === '90_PLUS') {
+        filteredTenants = tenantSummaries.filter((t) => t.usagePercentage >= 90);
+      } else if (usageFilter === '100_REACHED') {
+        filteredTenants = tenantSummaries.filter((t) => t.usagePercentage >= 100);
+      }
+
+      return reply.send({
+        success: true,
+        data: {
+          tenants: filteredTenants,
           pagination: {
             page,
             limit,
@@ -147,11 +227,11 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
     async (request, reply) => {
       const { id } = request.params;
 
-      const [tenant, subscriptions, recentAudit] = await Promise.all([
+      const [tenant, subscriptions, recentAudit, usageSummary] = await Promise.all([
         prisma.tenant.findUnique({
           where: { id },
           include: {
-            _count: { select: { users: true, students: true, teachers: true, sessions: true } },
+            _count: { select: { users: true, students: true, teachers: true, sessions: true, branches: true } },
           },
         }),
         prisma.subscription.findMany({
@@ -165,6 +245,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
           take: 20,
           include: { actor: { select: { username: true, fullName: true } } },
         }),
+        getTenantUsageSummary(id).catch(() => null),
       ]);
 
       if (!tenant) {
@@ -193,7 +274,9 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
             studentCount: tenant._count.students,
             teacherCount: tenant._count.teachers,
             sessionCount: tenant._count.sessions,
+            branchCount: tenant._count.branches,
           },
+          usage: usageSummary,
           subscriptions: subscriptions.map((s) => ({ ...s, amount: s.amount.toString() })),
           recentAudit: recentAudit.map((a) => ({
             ...a,

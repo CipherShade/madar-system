@@ -539,51 +539,179 @@ export function LandingPage({ onNavigateLogin, onNavigateSignup }: LandingPagePr
             </button>
           </div>
 
-          <div className="lp-plans">
-            {/* Growth Tier */}
+          <div className="lp-plans" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 20 }}>
+            {/* Plan 1: Basic */}
             <article className="lp-plan">
-              <h3 style={{ fontSize: 24 }}>Growth</h3>
-              <p style={{ color: 'var(--lp-ink-2)', marginTop: 6, minHeight: 48 }}>
-                كل الأساسيات اللي محتاجها لإدارة سنترك اليومية بكفاءة عالية.
+              <h3 style={{ fontSize: 22 }}>Basic</h3>
+              <p style={{ color: 'var(--lp-ink-2)', marginTop: 6, minHeight: 44, fontSize: 13 }}>
+                للسناتر الصغيرة
               </p>
               <div className="lp-price">
-                <b>299</b>
-                <span style={{ fontSize: 16 }}>جنيه / شهرياً</span>
+                <b>499</b>
+                <span style={{ fontSize: 15 }}>جنيه / شهرياً</span>
               </div>
-              <ul className="lp-checks" style={{ marginBottom: 24 }}>
+              <div style={{ background: '#f9fafb', padding: '10px 12px', borderRadius: 10, marginBottom: 18, fontSize: 12, display: 'grid', gap: 6 }}>
+                <div><strong>فرع واحد</strong></div>
+                <div><strong>حساب استقبال واحد</strong></div>
+                <div><strong>3,000 زيارة طالب شهرياً</strong></div>
+              </div>
+              <ul className="lp-checks" style={{ marginBottom: 24, fontSize: 13 }}>
                 <li>النظام التشغيلي الكامل</li>
-                <li>مكتب استقبال واحد</li>
                 <li>إدارة الطلاب والمدرسين والحصص</li>
-                <li>خزينة الوردية وتسويات المدرسين</li>
+                <li>الاستقبال السريع وتسجيل الحضور</li>
+                <li>خزينة الوردية وتصفية المدرسين</li>
                 <li>التقارير اليومية والمالية</li>
               </ul>
-              <button type="button" onClick={handleCta} className="lp-btn lp-btn-ghost lp-btn-block lp-btn-lg">
+              <button type="button" onClick={handleCta} className="lp-btn lp-btn-ghost lp-btn-block lp-btn-md">
                 ابدأ تجربتك المجانية
               </button>
             </article>
 
-            {/* Business Tier */}
+            {/* Plan 2: Growth */}
             <article className="lp-plan lp-plan--featured">
-              <span className="lp-plan-flag">الأكثر طلباً للسناتر</span>
-              <h3 style={{ fontSize: 24 }}>Business</h3>
-              <p style={{ opacity: 0.85, marginTop: 6, minHeight: 48 }}>
-                للسناتر الكبيرة والتي تحتاج تشغيل متقدم وإدارة فروع متعددة.
+              <span className="lp-plan-flag">الأكثر شيوعاً</span>
+              <h3 style={{ fontSize: 22 }}>Growth</h3>
+              <p style={{ opacity: 0.85, marginTop: 6, minHeight: 44, fontSize: 13 }}>
+                للسناتر التي بدأت في النمو
               </p>
               <div className="lp-price">
-                <b>500</b>
-                <span style={{ fontSize: 16, opacity: 0.85 }}>جنيه / شهرياً</span>
+                <b>1,499</b>
+                <span style={{ fontSize: 15, opacity: 0.85 }}>جنيه / شهرياً</span>
               </div>
-              <ul className="lp-checks" style={{ marginBottom: 24 }}>
-                <li style={{ color: '#fff' }}>كل مميزات خطة Growth</li>
-                <li style={{ color: '#fff' }}>مكاتب استقبال متزامنة غير محدودة</li>
-                <li style={{ color: '#fff' }}>دعم وإدارة عدة فروع</li>
-                <li style={{ color: '#fff' }}>تقارير متقدمة وتصدير بيانات Excel</li>
-                <li style={{ color: '#fff' }}>دعم فني وأولوية تدريب الموظفين</li>
+              <div style={{ background: 'rgba(255,255,255,0.08)', padding: '10px 12px', borderRadius: 10, marginBottom: 18, fontSize: 12, display: 'grid', gap: 6, color: '#fff' }}>
+                <div><strong>فرع واحد</strong></div>
+                <div><strong>3 حسابات استقبال متزامنة</strong></div>
+                <div><strong>10,000 زيارة طالب شهرياً</strong></div>
+              </div>
+              <ul className="lp-checks" style={{ marginBottom: 24, fontSize: 13 }}>
+                <li style={{ color: '#fff' }}>كل مميزات باقة Basic</li>
+                <li style={{ color: '#fff' }}>3 مكاتب استقبال متزامنة</li>
+                <li style={{ color: '#fff' }}>تقارير تفصيلية وتصدير البيانات</li>
+                <li style={{ color: '#fff' }}>تحليلات حضور وإيرادات متقدمة</li>
+                <li style={{ color: '#fff' }}>دعم فني سريع وأولوية متابعة</li>
               </ul>
-              <button type="button" onClick={handleCta} className="lp-btn lp-btn-light lp-btn-block lp-btn-lg">
+              <button type="button" onClick={handleCta} className="lp-btn lp-btn-light lp-btn-block lp-btn-md">
                 ابدأ تجربتك المجانية
               </button>
             </article>
+
+            {/* Plan 3: Pro */}
+            <article className="lp-plan">
+              <h3 style={{ fontSize: 22 }}>Pro</h3>
+              <p style={{ color: 'var(--lp-ink-2)', marginTop: 6, minHeight: 44, fontSize: 13 }}>
+                للسناتر ذات التشغيل العالي
+              </p>
+              <div className="lp-price">
+                <b>1,999</b>
+                <span style={{ fontSize: 15 }}>جنيه / شهرياً</span>
+              </div>
+              <div style={{ background: '#f9fafb', padding: '10px 12px', borderRadius: 10, marginBottom: 18, fontSize: 12, display: 'grid', gap: 6 }}>
+                <div><strong>فرع واحد</strong></div>
+                <div><strong>حسابات استقبال غير محدودة</strong></div>
+                <div><strong>20,000 زيارة طالب شهرياً</strong></div>
+              </div>
+              <ul className="lp-checks" style={{ marginBottom: 24, fontSize: 13 }}>
+                <li>كل مميزات باقة Growth</li>
+                <li>حسابات استقبال غير محدودة</li>
+                <li>أعلى سرعة معالجة وتزامن فوري</li>
+                <li>إدارة صلاحيات موظفين متقدمة</li>
+                <li>تدريب فريق العمل ومتابعة دورية</li>
+              </ul>
+              <button type="button" onClick={handleCta} className="lp-btn lp-btn-ghost lp-btn-block lp-btn-md">
+                ابدأ تجربتك المجانية
+              </button>
+            </article>
+
+            {/* Plan 4: Multi-Branch */}
+            <article className="lp-plan" style={{ border: '2px solid #1e3a8a' }}>
+              <span className="lp-plan-flag" style={{ background: '#1e3a8a', color: '#fff' }}>للمؤسسات والشبكات</span>
+              <h3 style={{ fontSize: 22, color: '#1e3a8a' }}>Multi-Branch</h3>
+              <p style={{ color: 'var(--lp-ink-2)', marginTop: 6, minHeight: 44, fontSize: 13 }}>
+                لأصحاب أكثر من فرع
+              </p>
+              <div className="lp-price">
+                <b>4,999</b>
+                <span style={{ fontSize: 15 }}>جنيه / شهرياً</span>
+              </div>
+              <div style={{ background: '#f9fafb', padding: '10px 12px', borderRadius: 10, marginBottom: 18, fontSize: 12, display: 'grid', gap: 6 }}>
+                <div><strong>فروع متعددة غير محدودة</strong></div>
+                <div><strong>حسابات استقبال غير محدودة</strong></div>
+                <div><strong>50,000+ زيارة طالب شهرياً</strong></div>
+              </div>
+              <ul className="lp-checks" style={{ marginBottom: 24, fontSize: 13 }}>
+                <li>فروع متعددة غير محدودة</li>
+                <li>لوحة تحكم مركزية لجميع الفروع</li>
+                <li>إدارة موظفين وقاعات لكل فرع</li>
+                <li>تقارير مجمعة ومقارنة بين الفروع</li>
+                <li>مدير حساب مخصص ودعم هاتفي 24/7</li>
+              </ul>
+              <button type="button" onClick={handleCta} className="lp-btn lp-btn-ghost lp-btn-block lp-btn-md" style={{ borderColor: '#1e3a8a', color: '#1e3a8a' }}>
+                ابدأ تجربتك المجانية
+              </button>
+            </article>
+          </div>
+
+          {/* Comparison Table */}
+          <div style={{ marginTop: 48, background: '#fff', padding: '24px 28px', borderRadius: 20, border: '1px solid #e5e7eb' }}>
+            <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 6, textAlign: 'center' }}>مقارنة سريعة بين الباقات</h3>
+            <p style={{ fontSize: 13, color: '#6b7280', textAlign: 'center', marginBottom: 20 }}>اختر الباقة المناسبة لحجم ونشاط سنترك</p>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'right' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #e5e7eb', background: '#f9fafb' }}>
+                    <th style={{ padding: '12px 14px' }}>الميزة</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'center' }}>Basic (499 ج.م)</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'center' }}>Growth (1,499 ج.م)</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'center' }}>Pro (1,999 ج.م)</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'center' }}>Multi-Branch (4,999 ج.م)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                    <td style={{ padding: '12px 14px', fontWeight: 700 }}>زيارات الطلاب الشهرية</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>3,000</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>10,000</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>20,000</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>50,000+</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                    <td style={{ padding: '12px 14px', fontWeight: 700 }}>حسابات الاستقبال</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>1</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>3</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>غير محدود</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>غير محدود</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                    <td style={{ padding: '12px 14px', fontWeight: 700 }}>عدد الفروع</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>1</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>1</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>1</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>متعدد الفروع</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                    <td style={{ padding: '12px 14px', fontWeight: 700 }}>النظام التشغيلي والـ POS</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>✓</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>✓</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>✓</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>✓</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                    <td style={{ padding: '12px 14px', fontWeight: 700 }}>التقارير المتقدمة</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>—</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>✓</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>✓</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>✓</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '12px 14px', fontWeight: 700 }}>إدارة فروع مجمعة</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>—</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>—</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>—</td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>✓</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </section>

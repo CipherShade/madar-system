@@ -4,6 +4,7 @@ import { AlertTriangle, ArrowLeft, CalendarDays, ClipboardList, Coins, MapPin, T
 import { useAuth } from '../../auth/AuthContext';
 import { api, money } from '../../lib/api';
 import { EmptyState, Metric, PageHeader, Pill, Progress, notify } from '../../components/ui/kit';
+import { UsageMeter, type UsageData } from './UsageMeter';
 
 type Session = { id: string; title: string; academicStage: string; startTime: string; endTime: string; sessionPrice: number; centerFeePerStudent: number; currentLobbyCount: number; status: string; teacher: { fullName: string; subject: string }; room: { name: string; capacity: number } };
 type Shift = { id: string; status: 'OPEN' | 'CLOSED'; openingCash: number; financials?: { totalCashCollected: number } };
@@ -20,6 +21,8 @@ export function DashboardPage({ onNavigate }: { onNavigate: (id: string) => void
   const [upcoming, setUpcoming] = useState<Session[]>([]);
   const [shift, setShift] = useState<Shift | null>(null);
   const [report, setReport] = useState<DayReport | null>(null);
+  const [usage, setUsage] = useState<UsageData | null>(null);
+  const [usageLoading, setUsageLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
@@ -33,10 +36,15 @@ export function DashboardPage({ onNavigate }: { onNavigate: (id: string) => void
         setUpcoming(scheduleData.sessions.filter((item) => item.status !== 'COMPLETED' && minutesUntil(item.startTime) > 0));
         setShift(shiftData.shift);
         if (isAdmin) {
-          const day = await api<DayReport>(`/reports/daily?date=${today()}`);
-          setReport(day);
+          const [day, subData] = await Promise.all([
+            api<DayReport>(`/reports/daily?date=${today()}`).catch(() => null),
+            api<{ usage: UsageData | null }>('/subscriptions/current').catch(() => null),
+          ]);
+          if (day) setReport(day);
+          if (subData?.usage) setUsage(subData.usage);
         }
       } catch { notify(t('operations.loadError'), 'error'); }
+      finally { setUsageLoading(false); }
     };
     void load();
     const timer = window.setInterval(() => void load(), 30000);
@@ -54,6 +62,15 @@ export function DashboardPage({ onNavigate }: { onNavigate: (id: string) => void
   return (
     <section>
       <PageHeader kicker={t('dashboard.currentSection')} title={t('dashboard.welcome')} subtitle={t('dashboard.welcome')} />
+
+      {/* Owner / Admin Usage Meter with 80% / 90% / 100% Dynamic Warnings & Upgrade CTA */}
+      {isAdmin && (
+        <UsageMeter
+          usage={usage}
+          loading={usageLoading}
+          onNavigateToBilling={() => onNavigate('billing')}
+        />
+      )}
 
       <div className="metric-grid">
         {isAdmin ? (

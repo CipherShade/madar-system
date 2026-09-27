@@ -6,6 +6,7 @@ import { buildLobbyAttendancePayload } from '../../lib/socket.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
 import { recordAuditEntry } from '../reports/audit.js';
 import { isValidMoneyAmount, isValidUUID, parsePagination } from '../../lib/http.js';
+import { checkAndIncrementVisitUsage } from '../subscriptions/usageService.js';
 
 export function calculateChangeOwed(amountReceived: number, fee: number): number {
   const change = amountReceived - fee;
@@ -200,13 +201,25 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
     }
 
     try {
+      const effectiveTenantId = request.user.tenantId || session.tenantId;
+
       const { attendance, newLobbyCount } = await prisma.$transaction(async (transaction) => {
         const currentShift = await transaction.shiftRegister.findUnique({ where: { id: activeShift.id }, select: { status: true } });
         if (!currentShift || currentShift.status !== ShiftStatus.OPEN) throw new Error('SHIFT_CLOSED_DURING_CHECKIN');
         const currentAttendanceCount = await transaction.attendance.count({ where: { sessionId, status: { not: AttendanceStatus.VOID } } });
         if (currentAttendanceCount >= session.room.capacity) throw new Error('SESSION_CAPACITY_REACHED');
+
+        // Server-side subscription monthly visit limit check and atomic usage tracking
+        if (effectiveTenantId) {
+          await checkAndIncrementVisitUsage(transaction, {
+            tenantId: effectiveTenantId,
+            branchId: session.room.branchId,
+          });
+        }
+
         const attendance = await transaction.attendance.create({
           data: {
+            tenantId: effectiveTenantId || null,
             sessionId,
             studentId,
             receptionistId: request.user.sub,
@@ -258,6 +271,17 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
         },
       });
     } catch (error) {
+      if (error instanceof Error && error.message === 'VISIT_LIMIT_REACHED') {
+        return reply.code(403).send({
+          success: false,
+          error: {
+            code: 'VISIT_LIMIT_REACHED',
+            message: 'وصلت للحد الشهري للزيارات. قم بترقية باقتك للاستمرار في تسجيل زيارات جديدة.',
+            messageEn: 'Monthly student visit limit reached. Please upgrade your plan to continue recording visits.',
+            cta: 'UPGRADE_PLAN',
+          },
+        });
+      }
       if (error instanceof Error && error.message === 'SHIFT_CLOSED_DURING_CHECKIN') {
         return reply.code(409).send(validation('تم إغلاق الوردية أثناء تسجيل الحضور.', 'The shift was closed while checking in.', 'SHIFT_CLOSED'));
       }

@@ -190,5 +190,50 @@
     "settlement": { "title": "Teacher Settlement", "subtitle": "Pay out and close the session", "session": "Session", "price": "Session price", "centerFee": "Center fee", "payment": "Payout method", "recipient": "Recipient name", "saved": "Settlement completed." },
     "reports": { "title": "Financial Reports", "subtitle": "Daily summary and drawer audit", "load": "Load report", "totalAttendees": "Total attendees", "centerNetRevenue": "Center net revenue", "teacherPayouts": "Teacher payouts", "digitalCollections": "Digital collections", "shiftId": "Shift ID", "loadAudit": "View audit log" },
     "auditEmpty": "No audit entries recorded for this shift."
+  },
+  "usage": {
+    "title": "Monthly Usage",
+    "subtitle": "Your plan consumption for the current billing cycle",
+    "visits": "{{used}} / {{limit}} visits",
+    "percentageUsed": "{{percentage}}% used",
+    "remaining": "{{count}} visits remaining",
+    "planLabel": "Current Plan",
+    "monthlyVisitsLabel": "Monthly Visits",
+    "receptionistsLabel": "Receptionist Accounts",
+    "branchesLabel": "Branches",
+    "unlimited": "Unlimited",
+    "upgradeCta": "Upgrade Plan",
+    "warning80Title": "Approaching Monthly Usage Limit",
+    "warning80Desc": "You have used {{used}} of {{limit}} visits. You have {{remaining}} visits remaining this month.",
+    "warning90Title": "Visit Limit Warning",
+    "warning90Desc": "You only have {{remaining}} visits remaining this month.",
+    "limitReachedTitle": "Monthly Visit Limit Reached",
+    "limitReachedDesc": "You have used {{used}} of {{limit}} visits this month. Please upgrade your plan to continue recording new visits.",
+    "receptionistLimitReached": "You have reached the maximum number of receptionist accounts for your plan.",
+    "branchLimitReached": "Adding more than 1 branch is available on the Multi-Branch plan.",
+    "currentBillingCycle": "Billing Cycle",
+    "cycleDates": "From {{start}} to {{end}}"
+  },
+  "plans": {
+    "basic": "Basic",
+    "growth": "Growth",
+    "pro": "Pro",
+    "multiBranch": "Multi-Branch",
+    "basicDesc": "For small educational centers",
+    "growthDesc": "For growing centers",
+    "proDesc": "For high-capacity centers",
+    "multiBranchDesc": "For multi-branch centers",
+    "perMonth": "EGP / month",
+    "currentPlanBadge": "Current Plan",
+    "popularBadge": "Most Popular",
+    "enterpriseBadge": "Enterprise Network",
+    "subscribe": "Subscribe to {{plan}}",
+    "upgradeTo": "Upgrade to {{plan}}",
+    "categories": {
+      "operations": "Operations & Check-In",
+      "capacity": "Capacity & Usage",
+      "management": "Management & Reports",
+      "multiBranch": "Multi-Branch"
+    }
   }
 }

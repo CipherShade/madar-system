@@ -1,8 +1,18 @@
 import { useState, useEffect } from 'react';
-import { Check, Sparkles, History } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import {
+  Check,
+  Sparkles,
+  History,
+  Building2,
+  Users,
+  UserCheck,
+} from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 import { notify } from '../../components/ui/kit';
 import { apiUrl } from '../../lib/config';
+import { MADAR_PLANS, getPlanConfig, type PlanId } from '../../../shared/constants/plans';
+import { UsageMeter, type UsageData } from '../dashboard/UsageMeter';
 
 type SubscriptionItem = {
   id: string;
@@ -27,13 +37,16 @@ type TenantDetails = {
 };
 
 export function BillingPage() {
+  const { t, i18n } = useTranslation();
+  const isArabic = i18n.language === 'ar';
   const { user } = useAuth();
   const [tenant, setTenant] = useState<TenantDetails | null>(null);
+  const [usage, setUsage] = useState<UsageData | null>(null);
   const [trialDaysRemaining, setTrialDaysRemaining] = useState<number>(0);
   const [isTrialActive, setIsTrialActive] = useState<boolean>(false);
   const [subscriptions, setSubscriptions] = useState<SubscriptionItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedPlan, setSelectedPlan] = useState<'GROWTH' | 'BUSINESS'>('BUSINESS');
+  const [selectedPlan, setSelectedPlan] = useState<PlanId>('GROWTH');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'VODAFONE_CASH' | 'INSTAPAY' | 'CASH'>('VODAFONE_CASH');
   const [paymentReference, setPaymentReference] = useState('');
   const [isUpgrading, setIsUpgrading] = useState(false);
@@ -48,6 +61,7 @@ export function BillingPage() {
           tenant: TenantDetails;
           trialDaysRemaining: number;
           isTrialActive: boolean;
+          usage: UsageData | null;
           subscriptions: SubscriptionItem[];
         };
       };
@@ -55,6 +69,7 @@ export function BillingPage() {
         setTenant(json.data.tenant);
         setTrialDaysRemaining(json.data.trialDaysRemaining);
         setIsTrialActive(json.data.isTrialActive);
+        setUsage(json.data.usage);
         setSubscriptions(json.data.subscriptions);
       }
     } catch {
@@ -83,7 +98,7 @@ export function BillingPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error?.message || 'فشلت عملية الترقية');
-      notify('تمت ترقية الاشتراك بنجاح! ✓', 'success');
+      notify(isArabic ? 'تم تفعيل باقة الاشتراك بنجاح! ✓' : 'Plan upgraded successfully! ✓', 'success');
       setShowPaymentModal(false);
       void fetchSubscriptionDetails();
     } catch (err: unknown) {
@@ -94,11 +109,14 @@ export function BillingPage() {
     }
   };
 
-  const currentPlan = tenant?.plan || user?.tenant?.plan || 'FREE_TRIAL';
+  const currentPlanRaw = tenant?.plan || user?.tenant?.plan || 'BASIC';
+  const currentPlanConfig = getPlanConfig(currentPlanRaw);
+  const planList = Object.values(MADAR_PLANS);
+  const selectedPlanConfig = getPlanConfig(selectedPlan);
 
   if (loading) {
     return (
-      <div className="page" dir="rtl" style={{ padding: 32, textAlign: 'center' }}>
+      <div className="page" dir="rtl" style={{ padding: 48, textAlign: 'center' }}>
         <p style={{ color: '#6b7280' }}>جاري تحميل بيانات الاشتراك والفوترة...</p>
       </div>
     );
@@ -106,18 +124,44 @@ export function BillingPage() {
 
   return (
     <div className="page" dir="rtl">
-      <div className="page-head">
+      <div className="page-head" style={{ marginBottom: 24 }}>
         <div>
-          <h1 className="page-title">إدارة الاشتراك والفوترة</h1>
-          <p className="page-sub">تفاصيل باقة السنتر الحالية، ترقية الاشتراك، وسجل المدفوعات بالجنيه المصري.</p>
+          <h1 className="page-title">إدارة الاشتراك وباقات مدار</h1>
+          <p className="page-sub">
+            اختر الباقة المناسبة لحجم ونشاط سنترك. جميع الباقات تتضمن النظام التشغيلي الكامل لمدار.
+          </p>
         </div>
       </div>
 
       {/* Trial Alert Banner */}
       {isTrialActive && (
-        <div style={{ background: '#e8f5ef', border: '1px solid #c9e8db', borderRadius: 14, padding: 18, marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+        <div
+          style={{
+            background: '#e8f5ef',
+            border: '1px solid #c9e8db',
+            borderRadius: 16,
+            padding: 20,
+            marginBottom: 28,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 16,
+            flexWrap: 'wrap',
+          }}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: '#0e7c56', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 12,
+                background: '#0e7c56',
+                color: '#fff',
+                display: 'grid',
+                placeItems: 'center',
+                flexShrink: 0,
+              }}
+            >
               <Sparkles className="h-6 w-6" />
             </div>
             <div>
@@ -131,7 +175,7 @@ export function BillingPage() {
             type="button"
             className="btn btn--primary"
             onClick={() => {
-              setSelectedPlan('BUSINESS');
+              setSelectedPlan('GROWTH');
               setShowPaymentModal(true);
             }}
           >
@@ -140,125 +184,367 @@ export function BillingPage() {
         </div>
       )}
 
-      {/* Plans Comparison */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20, marginBottom: 32 }}>
-        {/* Growth Plan Card */}
-        <div
-          style={{
-            background: '#fff',
-            border: currentPlan === 'GROWTH' ? '2px solid #0e7c56' : '1px solid #e2e0dc',
-            borderRadius: 18,
-            padding: 24,
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <h3 style={{ fontSize: 20, fontWeight: 800 }}>Growth</h3>
-            {currentPlan === 'GROWTH' && (
-              <span style={{ background: '#e8f5ef', color: '#0e7c56', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 99 }}>
-                باقتك الحالية
-              </span>
-            )}
-          </div>
-          <p style={{ fontSize: 13, color: '#6b7280', minHeight: 40 }}>الخطة المثالية للسناتر ذات الفرع الواحد والمكتب الواحد.</p>
-          <div style={{ fontSize: 32, fontWeight: 800, margin: '14px 0' }}>
-            299 <span style={{ fontSize: 14, color: '#6b7280' }}>ج.م / شهرياً</span>
-          </div>
-
-          <ul style={{ display: 'grid', gap: 10, margin: '14px 0 24px', flex: 1, fontSize: 13 }}>
-            <li style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Check className="h-4 w-4 text-emerald-700" /> مكتب استقبال واحد متصل
-            </li>
-            <li style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Check className="h-4 w-4 text-emerald-700" /> إدارة الطلاب، المدرسين، والحصص
-            </li>
-            <li style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Check className="h-4 w-4 text-emerald-700" /> خزينة الوردية وتصفية المدرسين
-            </li>
-            <li style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Check className="h-4 w-4 text-emerald-700" /> التقارير اليومية والمالية
-            </li>
-          </ul>
-
-          <button
-            type="button"
-            className="btn btn--secondary"
-            disabled={currentPlan === 'GROWTH'}
-            onClick={() => {
-              setSelectedPlan('GROWTH');
-              setShowPaymentModal(true);
+      {/* Current Plan Overview with Real-Time Usage */}
+      {usage && (
+        <div style={{ marginBottom: 32 }}>
+          <UsageMeter
+            usage={usage}
+            onNavigateToBilling={() => {
+              const target = document.getElementById('plans-grid');
+              target?.scrollIntoView({ behavior: 'smooth' });
             }}
-          >
-            {currentPlan === 'GROWTH' ? 'باقتك الحالية' : 'الاشتراك في Growth'}
-          </button>
+          />
+        </div>
+      )}
+
+      {/* ── 4 Main Pricing Plan Cards ───────────────────────────────────── */}
+      <div id="plans-grid" style={{ marginBottom: 36 }}>
+        <div style={{ textAlign: 'center', marginBottom: 28 }}>
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: '#111827' }}>
+            باقات مدار للاشتراك الشهري
+          </h2>
+          <p style={{ fontSize: 14, color: '#6b7280', marginTop: 4 }}>
+            الأسعار واضحة بالجنيه المصري، وبدون أي رسوم خفية.
+          </p>
         </div>
 
-        {/* Business Plan Card */}
         <div
           style={{
-            background: '#043128',
-            color: '#fff',
-            border: '2px solid #0e7c56',
-            borderRadius: 18,
-            padding: 24,
-            display: 'flex',
-            flexDirection: 'column',
-            boxShadow: '0 12px 32px -8px rgba(4, 49, 40, 0.4)',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+            gap: 20,
+            alignItems: 'stretch',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <h3 style={{ fontSize: 20, fontWeight: 800, color: '#fff' }}>Business</h3>
-            <span style={{ background: '#f59e0b', color: '#3b2400', fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 99 }}>
-              الأكثر طلباً للسناتر الكبيرة
-            </span>
-          </div>
-          <p style={{ fontSize: 13, color: '#a3d9c1', minHeight: 40 }}>تشغيل متزامن لعدة مكاتب استقبال وإدارة متعددة الفروع.</p>
-          <div style={{ fontSize: 32, fontWeight: 800, margin: '14px 0', color: '#fff' }}>
-            500 <span style={{ fontSize: 14, color: '#a3d9c1' }}>ج.م / شهرياً</span>
-          </div>
+          {planList.map((p) => {
+            const isCurrent = currentPlanConfig.id === p.id && !isTrialActive;
+            const isFeatured = p.isPopular;
 
-          <ul style={{ display: 'grid', gap: 10, margin: '14px 0 24px', flex: 1, fontSize: 13 }}>
-            <li style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Check className="h-4 w-4 text-emerald-400" /> كل ميزات باقة Growth
-            </li>
-            <li style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Check className="h-4 w-4 text-emerald-400" /> مكاتب استقبال غير محدودة تعمل معاً
-            </li>
-            <li style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Check className="h-4 w-4 text-emerald-400" /> دعم وإدارة حتى 5 فروع
-            </li>
-            <li style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Check className="h-4 w-4 text-emerald-400" /> تقارير متقدمة وتصدير ملفات Excel
-            </li>
-            <li style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Check className="h-4 w-4 text-emerald-400" /> أولوية في الدعم الفني وتدريب الموظفين
-            </li>
-          </ul>
+            return (
+              <div
+                key={p.id}
+                style={{
+                  background: isFeatured ? '#043128' : '#fff',
+                  color: isFeatured ? '#fff' : '#111827',
+                  border: isCurrent
+                    ? '2px solid #0e7c56'
+                    : isFeatured
+                    ? '2px solid #0e7c56'
+                    : '1px solid #e5e7eb',
+                  borderRadius: 20,
+                  padding: 24,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  position: 'relative',
+                  boxShadow: isFeatured
+                    ? '0 16px 36px -12px rgba(4, 49, 40, 0.45)'
+                    : '0 2px 10px rgba(0,0,0,0.03)',
+                  transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                }}
+              >
+                {p.badgeAr && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: 16,
+                      left: 16,
+                      background: isFeatured ? '#f59e0b' : '#e8f5ef',
+                      color: isFeatured ? '#3b2400' : '#0e7c56',
+                      fontSize: 11,
+                      fontWeight: 800,
+                      padding: '4px 10px',
+                      borderRadius: 99,
+                    }}
+                  >
+                    {p.badgeAr}
+                  </span>
+                )}
 
-          <button
-            type="button"
-            className="btn btn--primary"
-            style={{ background: '#fff', color: '#043128', fontWeight: 800 }}
-            disabled={currentPlan === 'BUSINESS' && !isTrialActive}
-            onClick={() => {
-              setSelectedPlan('BUSINESS');
-              setShowPaymentModal(true);
-            }}
-          >
-            {currentPlan === 'BUSINESS' && !isTrialActive ? 'باقتك الحالية' : 'ترقية إلى Business'}
-          </button>
+                <div style={{ marginBottom: 12 }}>
+                  <h3 style={{ fontSize: 22, fontWeight: 800, color: isFeatured ? '#fff' : '#111827' }}>
+                    {p.name}
+                  </h3>
+                  <p
+                    style={{
+                      fontSize: 13,
+                      color: isFeatured ? '#a3d9c1' : '#6b7280',
+                      marginTop: 4,
+                      minHeight: 38,
+                    }}
+                  >
+                    {p.positioningAr}
+                  </p>
+                </div>
+
+                <div style={{ margin: '14px 0 20px' }}>
+                  <span style={{ fontSize: 34, fontWeight: 900 }}>
+                    {p.priceEgp.toLocaleString('ar-EG')}
+                  </span>
+                  <span style={{ fontSize: 13, color: isFeatured ? '#a3d9c1' : '#6b7280', marginInlineStart: 6 }}>
+                    جنيه / شهرياً
+                  </span>
+                </div>
+
+                {/* Primary capacity differentiators */}
+                <div
+                  style={{
+                    background: isFeatured ? 'rgba(255,255,255,0.08)' : '#f9fafb',
+                    padding: '12px 14px',
+                    borderRadius: 12,
+                    marginBottom: 20,
+                    fontSize: 13,
+                    display: 'grid',
+                    gap: 8,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Users className="h-4 w-4 text-emerald-500 flex-shrink-0" />
+                    <span>
+                      <strong>{p.monthlyVisitLimit.toLocaleString('ar-EG')}</strong> زيارة شهرياً
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <UserCheck className="h-4 w-4 text-emerald-500 flex-shrink-0" />
+                    <span>
+                      {p.maxReceptionists === null ? (
+                        <strong>حسابات استقبال غير محدودة</strong>
+                      ) : (
+                        <><strong>{p.maxReceptionists}</strong> حساب استقبال</>
+                      )}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Building2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />
+                    <span>
+                      {p.maxBranches === null ? (
+                        <strong>فروع متعددة</strong>
+                      ) : (
+                        <><strong>فرع واحد</strong></>
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Feature Bullet List */}
+                <ul
+                  style={{
+                    display: 'grid',
+                    gap: 10,
+                    marginBottom: 24,
+                    flex: 1,
+                    fontSize: 13,
+                    listStyle: 'none',
+                    padding: 0,
+                  }}
+                >
+                  {p.featuresAr.map((feat, idx) => (
+                    <li key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Check className={`h-4 w-4 ${isFeatured ? 'text-emerald-400' : 'text-emerald-600'} flex-shrink-0`} />
+                      <span style={{ color: isFeatured ? '#e5e7eb' : '#374151' }}>{feat}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <button
+                  type="button"
+                  className={`btn ${isFeatured ? 'btn--primary' : isCurrent ? 'btn--soft' : 'btn--secondary'}`}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    fontWeight: 800,
+                    ...(isFeatured
+                      ? { background: '#fff', color: '#043128', border: 'none' }
+                      : {}),
+                  }}
+                  disabled={isCurrent}
+                  onClick={() => {
+                    setSelectedPlan(p.id as PlanId);
+                    setShowPaymentModal(true);
+                  }}
+                >
+                  {isCurrent ? 'باقتك الحالية' : `الاشتراك في ${p.name}`}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Detailed Plan Comparison Table ──────────────────────────────── */}
+      <div className="card" style={{ padding: 28, marginBottom: 36, borderRadius: 20 }}>
+        <h3 style={{ fontSize: 19, fontWeight: 800, marginBottom: 8 }}>
+          مقارنة تفصيلية بين باقات مدار
+        </h3>
+        <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 20 }}>
+          جميع الباقات تتضمن الأساسيات التشغيلية، والترقية تمنحك سعة واستقبال وفروع أكبر.
+        </p>
+
+        <div className="table-wrap">
+          <table className="table" style={{ fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: '#f9fafb' }}>
+                <th style={{ width: '32%' }}>الميزة / الإمكانية</th>
+                {planList.map((p) => (
+                  <th key={p.id} style={{ textAlign: 'center', fontWeight: 800 }}>
+                    {p.name}
+                    <div style={{ fontSize: 11, fontWeight: 400, color: '#6b7280' }}>
+                      {p.priceEgp} ج.م / شهر
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {/* Category: Operations */}
+              <tr style={{ background: '#f3f4f6', fontWeight: 800 }}>
+                <td colSpan={5} style={{ color: '#111827' }}>
+                  ⚙️ {t('plans.categories.operations')}
+                </td>
+              </tr>
+              <tr>
+                <td>إدارة الطلاب والمدرسين والحصص</td>
+                {planList.map((p) => (
+                  <td key={p.id} style={{ textAlign: 'center' }}>
+                    <Check className="h-4 w-4 text-emerald-600 inline" />
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td>الاستقبال السريع وتسجيل الحضور (Lobby)</td>
+                {planList.map((p) => (
+                  <td key={p.id} style={{ textAlign: 'center' }}>
+                    <Check className="h-4 w-4 text-emerald-600 inline" />
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td>خزينة الوردية وتصفية المدرسين</td>
+                {planList.map((p) => (
+                  <td key={p.id} style={{ textAlign: 'center' }}>
+                    <Check className="h-4 w-4 text-emerald-600 inline" />
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td>طرق الدفع (كاش، فودافون كاش، إنستاباي)</td>
+                {planList.map((p) => (
+                  <td key={p.id} style={{ textAlign: 'center' }}>
+                    <Check className="h-4 w-4 text-emerald-600 inline" />
+                  </td>
+                ))}
+              </tr>
+
+              {/* Category: Capacity & Usage */}
+              <tr style={{ background: '#f3f4f6', fontWeight: 800 }}>
+                <td colSpan={5} style={{ color: '#111827' }}>
+                  📊 {t('plans.categories.capacity')}
+                </td>
+              </tr>
+              <tr>
+                <td>الحد الأقصى لزيارات الطلاب شهرياً</td>
+                {planList.map((p) => (
+                  <td key={p.id} style={{ textAlign: 'center', fontWeight: 700 }}>
+                    {p.featureBreakdown.capacity.monthlyVisits}
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td>عدد حسابات الاستقبال المتزامنة</td>
+                {planList.map((p) => (
+                  <td key={p.id} style={{ textAlign: 'center', fontWeight: 700 }}>
+                    {p.featureBreakdown.capacity.receptionists}
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td>عدد الفروع المسموحة</td>
+                {planList.map((p) => (
+                  <td key={p.id} style={{ textAlign: 'center', fontWeight: 700 }}>
+                    {p.featureBreakdown.capacity.branches}
+                  </td>
+                ))}
+              </tr>
+
+              {/* Category: Management */}
+              <tr style={{ background: '#f3f4f6', fontWeight: 800 }}>
+                <td colSpan={5} style={{ color: '#111827' }}>
+                  📈 {t('plans.categories.management')}
+                </td>
+              </tr>
+              <tr>
+                <td>التقارير اليومية والمالية</td>
+                {planList.map((p) => (
+                  <td key={p.id} style={{ textAlign: 'center' }}>
+                    <Check className="h-4 w-4 text-emerald-600 inline" />
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td>التقارير المتقدمة وتصدير البيانات</td>
+                {planList.map((p) => (
+                  <td key={p.id} style={{ textAlign: 'center' }}>
+                    {p.featureBreakdown.management.advancedReports ? (
+                      <Check className="h-4 w-4 text-emerald-600 inline" />
+                    ) : (
+                      <span style={{ color: '#9ca3af' }}>—</span>
+                    )}
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td>إدارة صلاحيات الموظفين</td>
+                {planList.map((p) => (
+                  <td key={p.id} style={{ textAlign: 'center' }}>
+                    {p.featureBreakdown.management.permissions}
+                  </td>
+                ))}
+              </tr>
+
+              {/* Category: Multi-Branch */}
+              <tr style={{ background: '#f3f4f6', fontWeight: 800 }}>
+                <td colSpan={5} style={{ color: '#111827' }}>
+                  🏢 {t('plans.categories.multiBranch')}
+                </td>
+              </tr>
+              <tr>
+                <td>إدارة فروع متعددة في حساب واحد</td>
+                {planList.map((p) => (
+                  <td key={p.id} style={{ textAlign: 'center' }}>
+                    {p.featureBreakdown.multiBranch.multiBranchSupport ? (
+                      <Check className="h-4 w-4 text-emerald-600 inline" />
+                    ) : (
+                      <span style={{ color: '#9ca3af' }}>—</span>
+                    )}
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td>لوحة قيادة مركزية وتقارير الفروع</td>
+                {planList.map((p) => (
+                  <td key={p.id} style={{ textAlign: 'center' }}>
+                    {p.featureBreakdown.multiBranch.centralDashboard ? (
+                      <Check className="h-4 w-4 text-emerald-600 inline" />
+                    ) : (
+                      <span style={{ color: '#9ca3af' }}>—</span>
+                    )}
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
       {/* Subscription Invoices History */}
-      <div className="card" style={{ padding: 20 }}>
+      <div className="card" style={{ padding: 24, borderRadius: 20 }}>
         <h3 style={{ fontSize: 17, fontWeight: 800, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <History className="h-5 w-5 text-emerald-700" /> سجل مدفوعات الاشتراك
+          <History className="h-5 w-5 text-emerald-700" /> سجل مدفوعات وفواتير الاشتراك
         </h3>
 
         {subscriptions.length === 0 ? (
-          <p style={{ color: '#6b7280', fontSize: 13 }}>لا توجد مدفوعات سابقة حتى الآن (السنتر في فترة التجربة المجانية).</p>
+          <p style={{ color: '#6b7280', fontSize: 13 }}>
+            لا توجد مدفوعات سابقة حتى الآن (السنتر في فترة التجربة المجانية).
+          </p>
         ) : (
           <div className="table-wrap">
             <table className="table">
@@ -278,7 +564,13 @@ export function BillingPage() {
                     <td>{new Date(sub.createdAt).toLocaleDateString('ar-EG')}</td>
                     <td><b>{sub.plan}</b></td>
                     <td>{sub.amount} ج.م</td>
-                    <td>{sub.paymentMethod === 'VODAFONE_CASH' ? 'فودافون كاش' : sub.paymentMethod === 'INSTAPAY' ? 'إنستاباي' : 'كاش'}</td>
+                    <td>
+                      {sub.paymentMethod === 'VODAFONE_CASH'
+                        ? 'فودافون كاش'
+                        : sub.paymentMethod === 'INSTAPAY'
+                        ? 'إنستاباي'
+                        : 'كاش'}
+                    </td>
                     <td><code style={{ fontSize: 11 }}>{sub.paymentReference}</code></td>
                     <td><span className="badge badge--ok">مفعل</span></td>
                   </tr>
@@ -289,20 +581,37 @@ export function BillingPage() {
         )}
       </div>
 
-      {/* Payment Modal */}
+      {/* Payment / Upgrade Modal */}
       {showPaymentModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'grid', placeItems: 'center', zIndex: 100, padding: 16 }}>
-          <div className="card" style={{ maxWidth: 460, width: '100%', padding: 24 }}>
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'grid',
+            placeItems: 'center',
+            zIndex: 100,
+            padding: 16,
+          }}
+          onClick={() => setShowPaymentModal(false)}
+        >
+          <div
+            className="card"
+            style={{ maxWidth: 480, width: '100%', padding: 24, borderRadius: 20 }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 6 }}>
-              تأكيد ترقية الاشتراك إلى {selectedPlan}
+              تأكيد تفعيل باقة {selectedPlanConfig.name}
             </h3>
             <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 18 }}>
-              المبلغ المطلوب: <b>{selectedPlan === 'BUSINESS' ? '500' : '299'} ج.م / شهر</b>
+              المبلغ المطلوب: <b>{selectedPlanConfig.priceEgp.toLocaleString('ar-EG')} ج.م / شهر</b> ({selectedPlanConfig.positioningAr})
             </p>
 
             <div style={{ display: 'grid', gap: 14 }}>
               <div>
-                <label className="field-label" style={{ display: 'block', marginBottom: 6 }}>طريقة الدفع (مصر):</label>
+                <label className="field-label" style={{ display: 'block', marginBottom: 6 }}>
+                  طريقة الدفع (مصر):
+                </label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
                   <button
                     type="button"

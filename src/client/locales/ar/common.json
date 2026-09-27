@@ -190,5 +190,50 @@
     "settlement": { "title": "تصفية مستحقات المدرس", "subtitle": "صرف المستحقات وإغلاق الحصة", "session": "الحصة", "price": "سعر الحصة", "centerFee": "رسوم السنتر", "payment": "طريقة الصرف", "recipient": "اسم المستلم", "saved": "تمت التصفية بنجاح." },
     "reports": { "title": "التقارير المالية", "subtitle": "ملخص اليوم وسجل الخزينة", "load": "تحميل التقرير", "totalAttendees": "إجمالي الحضور", "centerNetRevenue": "صافي إيراد السنتر", "teacherPayouts": "مستحقات المدرسين", "digitalCollections": "التحصيل الرقمي", "shiftId": "معرف الوردية", "loadAudit": "عرض سجل العمليات" },
     "auditEmpty": "لا توجد حركات مسجلة لهذه الوردية."
+  },
+  "usage": {
+    "title": "الاستخدام الشهري",
+    "subtitle": "استهلاك باقتك خلال دورة الفوترة الحالية",
+    "visits": "{{used}} / {{limit}} زيارة",
+    "percentageUsed": "{{percentage}}% مستخدم",
+    "remaining": "{{count}} زيارة متبقية",
+    "planLabel": "الباقة الحالية",
+    "monthlyVisitsLabel": "الزيارات الشهرية",
+    "receptionistsLabel": "حسابات الاستقبال",
+    "branchesLabel": "الفروع",
+    "unlimited": "غير محدود",
+    "upgradeCta": "ترقية الباقة",
+    "warning80Title": "اقتربت من حد الاستخدام الشهري",
+    "warning80Desc": "استخدمت {{used}} من {{limit}} زيارة. لديك {{remaining}} زيارة متبقية هذا الشهر.",
+    "warning90Title": "تنبيه استهلاك الزيارات",
+    "warning90Desc": "تبقى لديك {{remaining}} زيارة فقط هذا الشهر.",
+    "limitReachedTitle": "وصلت للحد الشهري للزيارات",
+    "limitReachedDesc": "لقد استهلكت {{used}} من أصل {{limit}} زيارة هذا الشهر. قم بترقية باقتك للاستمرار في تسجيل زيارات جديدة.",
+    "receptionistLimitReached": "لقد وصلت إلى الحد الأقصى لعدد حسابات الاستقبال في باقتك.",
+    "branchLimitReached": "إضافة أكثر من فرع متاحة في باقة Multi-Branch.",
+    "currentBillingCycle": "دورة الفوترة",
+    "cycleDates": "من {{start}} إلى {{end}}"
+  },
+  "plans": {
+    "basic": "Basic",
+    "growth": "Growth",
+    "pro": "Pro",
+    "multiBranch": "Multi-Branch",
+    "basicDesc": "للسناتر الصغيرة",
+    "growthDesc": "للسناتر التي بدأت في النمو",
+    "proDesc": "للسناتر ذات التشغيل العالي",
+    "multiBranchDesc": "لأصحاب أكثر من فرع",
+    "perMonth": "ج.م / شهرياً",
+    "currentPlanBadge": "باقتك الحالية",
+    "popularBadge": "الأكثر شيوعاً",
+    "enterpriseBadge": "للمؤسسات والشبكات",
+    "subscribe": "الاشتراك في {{plan}}",
+    "upgradeTo": "ترقية إلى {{plan}}",
+    "categories": {
+      "operations": "التشغيل والعمليات",
+      "capacity": "السعة والاستخدام",
+      "management": "الإدارة والتقارير",
+      "multiBranch": "الفروع المتعددة"
+    }
   }
 }

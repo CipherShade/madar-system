@@ -28,6 +28,19 @@ type TenantRow = {
   userCount: number;
   studentCount: number;
   sessionCount: number;
+  monthlyVisitLimit?: number;
+  usedVisits?: number;
+  usagePercentage?: number;
+  remainingVisits?: number;
+  warningLevel?: 'NONE' | 'WARNING_80' | 'WARNING_90' | 'LIMIT_100';
+  receptionistLimit?: number;
+  receptionistCount?: number;
+  branchLimit?: number;
+  branchCount?: number;
+  billingPeriod?: {
+    start: string;
+    end: string;
+  };
 };
 
 type AuditLogEntry = {
@@ -43,10 +56,12 @@ type AuditLogEntry = {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const PLAN_LABELS: Record<string, { ar: string; tone: 'primary' | 'accent' | 'success' | 'muted' | 'warning' | 'danger' }> = {
+  BASIC: { ar: 'Basic (أساسية)', tone: 'muted' },
+  GROWTH: { ar: 'Growth (نمو)', tone: 'primary' },
+  PRO: { ar: 'Pro (متقدمة)', tone: 'accent' },
+  MULTI_BRANCH: { ar: 'Multi-Branch (فروع)', tone: 'success' },
+  BUSINESS: { ar: 'Business (فروع)', tone: 'success' },
   FREE_TRIAL: { ar: 'تجريبي', tone: 'warning' },
-  GROWTH: { ar: 'نمو', tone: 'primary' },
-  BUSINESS: { ar: 'أعمال', tone: 'accent' },
-  ENTERPRISE: { ar: 'مؤسسي', tone: 'success' },
 };
 
 function planLabel(plan: string) {
@@ -125,6 +140,8 @@ export function SuperAdminPage() {
   const [total, setTotal] = useState(0);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [search, setSearch] = useState('');
+  const [planFilter, setPlanFilter] = useState('ALL');
+  const [usageFilter, setUsageFilter] = useState('ALL');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -150,6 +167,8 @@ export function SuperAdminPage() {
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
       if (search) params.set('search', search);
+      if (planFilter !== 'ALL') params.set('planFilter', planFilter);
+      if (usageFilter !== 'ALL') params.set('usageFilter', usageFilter);
       const data = await api<{ tenants: TenantRow[]; pagination: { total: number } }>(`/admin/tenants?${params}`);
       setTenants(data.tenants);
       setTotal(data.pagination.total);
@@ -158,7 +177,7 @@ export function SuperAdminPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, search]);
+  }, [page, search, planFilter, usageFilter]);
 
   const fetchAuditLogs = useCallback(async () => {
     setAuditLoading(true);
@@ -220,7 +239,7 @@ export function SuperAdminPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">لوحة إدارة المنصة</h1>
-          <p className="page-sub">مراقبة وإدارة جميع المراكز التعليمية المسجلة</p>
+          <p className="page-sub">مراقبة وإدارة جميع المراكز التعليمية المسجلة وتتبع خطط الاشتراك والاستهلاك</p>
         </div>
         <button
           className="btn btn--ghost"
@@ -288,18 +307,49 @@ export function SuperAdminPage() {
       {/* ── Tenants Tab ─────────────────────────────────────────────────── */}
       {activeTab === 'tenants' && (
         <>
-          {/* Search */}
-          <div className="search-bar" style={{ marginBottom: 16 }}>
-            <Search className="search-icon h-4 w-4" aria-hidden="true" />
-            <input
-              id="sa-search"
-              type="search"
-              className="search-input"
-              placeholder="ابحث باسم المركز أو الـ slug..."
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              aria-label="بحث عن مركز"
-            />
+          {/* Filters Bar */}
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
+            <div className="search-bar" style={{ flex: 1, minWidth: 260, marginBottom: 0 }}>
+              <Search className="search-icon h-4 w-4" aria-hidden="true" />
+              <input
+                id="sa-search"
+                type="search"
+                className="search-input"
+                placeholder="ابحث باسم المركز أو الـ slug..."
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                aria-label="بحث عن مركز"
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <select
+                value={planFilter}
+                onChange={(e) => { setPlanFilter(e.target.value); setPage(1); }}
+                className="form-input"
+                style={{ width: 'auto', padding: '8px 12px', fontSize: 13 }}
+                aria-label="تصفية حسب الباقة"
+              >
+                <option value="ALL">جميع الباقات</option>
+                <option value="BASIC">باقة Basic</option>
+                <option value="GROWTH">باقة Growth</option>
+                <option value="PRO">باقة Pro</option>
+                <option value="MULTI_BRANCH">باقة Multi-Branch</option>
+              </select>
+
+              <select
+                value={usageFilter}
+                onChange={(e) => { setUsageFilter(e.target.value); setPage(1); }}
+                className="form-input"
+                style={{ width: 'auto', padding: '8px 12px', fontSize: 13 }}
+                aria-label="تصفية حسب الاستهلاك"
+              >
+                <option value="ALL">كل مستويات الاستهلاك</option>
+                <option value="80_PLUS">استهلاك 80% فأكثر ⚠️</option>
+                <option value="90_PLUS">استهلاك 90% فأكثر 🚨</option>
+                <option value="100_REACHED">وصل للحد (100%) ⛔</option>
+              </select>
+            </div>
           </div>
 
           {/* Table */}
@@ -309,10 +359,10 @@ export function SuperAdminPage() {
                 <tr>
                   <th scope="col">المركز</th>
                   <th scope="col">الخطة</th>
+                  <th scope="col">استهلاك الزيارات الشهري</th>
+                  <th scope="col">الاستقبال</th>
+                  <th scope="col">الفروع</th>
                   <th scope="col">الحالة</th>
-                  <th scope="col">المستخدمون</th>
-                  <th scope="col">الطلاب</th>
-                  <th scope="col">تاريخ التسجيل</th>
                   <th scope="col">إجراءات</th>
                 </tr>
               </thead>
@@ -326,13 +376,23 @@ export function SuperAdminPage() {
                 ) : tenants.length === 0 ? (
                   <tr>
                     <td colSpan={7} style={{ textAlign: 'center', padding: 32 }}>
-                      <span className="page-sub">لا توجد مراكز مسجلة</span>
+                      <span className="page-sub">لا توجد مراكز مطابقة للشروط</span>
                     </td>
                   </tr>
                 ) : (
                   tenants.map((tenant) => {
                     const isExpanded = expandedId === tenant.id;
                     const pl = planLabel(tenant.plan);
+                    const usedVisits = tenant.usedVisits ?? 0;
+                    const monthlyLimit = tenant.monthlyVisitLimit ?? 3000;
+                    const pct = tenant.usagePercentage ?? Math.round((usedVisits / monthlyLimit) * 100);
+                    const remaining = tenant.remainingVisits ?? Math.max(0, monthlyLimit - usedVisits);
+
+                    let progressColor = '#10b981';
+                    if (pct >= 100) progressColor = '#ef4444';
+                    else if (pct >= 90) progressColor = '#f59e0b';
+                    else if (pct >= 80) progressColor = '#eab308';
+
                     return (
                       <>
                         <tr key={tenant.id} style={{ opacity: tenant.isActive ? 1 : 0.55 }}>
@@ -358,14 +418,35 @@ export function SuperAdminPage() {
                               </span>
                             )}
                           </td>
+                          <td style={{ minWidth: 180 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                              <span><strong>{usedVisits.toLocaleString('ar-EG')}</strong> / {monthlyLimit.toLocaleString('ar-EG')}</span>
+                              <span style={{ fontWeight: 800, color: progressColor }}>{pct}%</span>
+                            </div>
+                            <div style={{ height: 6, background: '#e2e8f0', borderRadius: 99, overflow: 'hidden' }}>
+                              <div style={{ width: `${Math.min(100, pct)}%`, height: '100%', background: progressColor, borderRadius: 99 }} />
+                            </div>
+                            {pct >= 80 && (
+                              <span style={{ display: 'inline-block', fontSize: 10, marginTop: 4, fontWeight: 700, color: progressColor }}>
+                                {pct >= 100 ? '⛔ وصل للحد الأقصى' : pct >= 90 ? '🚨 اقترب جداً من الحد' : '⚠️ استهلاك مرتفع'}
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            <span style={{ fontSize: 13, fontWeight: 700 }}>
+                              {tenant.receptionistCount ?? tenant.userCount} / {tenant.receptionistLimit === 999999 ? 'غير محدود' : tenant.receptionistLimit ?? 1}
+                            </span>
+                          </td>
+                          <td>
+                            <span style={{ fontSize: 13, fontWeight: 700 }}>
+                              {tenant.branchCount ?? 1} / {tenant.branchLimit === 999999 ? 'متعدد' : tenant.branchLimit ?? 1}
+                            </span>
+                          </td>
                           <td>
                             <Pill tone={tenant.isActive ? 'success' : 'danger'}>
                               {tenant.isActive ? 'نشط' : 'موقوف'}
                             </Pill>
                           </td>
-                          <td>{tenant.userCount.toLocaleString('ar-EG')}</td>
-                          <td>{tenant.studentCount.toLocaleString('ar-EG')}</td>
-                          <td style={{ fontSize: 13 }}>{formatDate(tenant.createdAt)}</td>
                           <td>
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                               <button
@@ -395,11 +476,15 @@ export function SuperAdminPage() {
                         </tr>
                         {isExpanded && (
                           <tr key={`${tenant.id}-detail`} className="expanded-row">
-                            <td colSpan={7} style={{ padding: '8px 24px 16px', background: 'var(--bg-surface-alt, rgba(0,0,0,0.04))' }}>
+                            <td colSpan={7} style={{ padding: '12px 24px 18px', background: 'var(--bg-surface-alt, rgba(0,0,0,0.04))' }}>
                               <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', fontSize: 13 }}>
+                                <span><strong>الطلاب:</strong> {tenant.studentCount.toLocaleString('ar-EG')}</span>
                                 <span><strong>الحصص:</strong> {tenant.sessionCount.toLocaleString('ar-EG')}</span>
-                                <span><strong>الحد الأقصى للمكاتب:</strong> {tenant.maxDesks}</span>
-                                <span><strong>الحد الأقصى للفروع:</strong> {tenant.maxBranches}</span>
+                                <span><strong>الزيارات المتبقية:</strong> {remaining.toLocaleString('ar-EG')} زيارة</span>
+                                <span><strong>تاريخ التسجيل:</strong> {formatDate(tenant.createdAt)}</span>
+                                {tenant.billingPeriod && (
+                                  <span><strong>دورة الفوترة:</strong> {formatDate(tenant.billingPeriod.start)} ← {formatDate(tenant.billingPeriod.end)}</span>
+                                )}
                                 {tenant.trialEndsAt && (
                                   <span><strong>نهاية التجربة:</strong> {formatDate(tenant.trialEndsAt)}</span>
                                 )}

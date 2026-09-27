@@ -15,7 +15,10 @@ enum Role {
 
 enum TenantPlan {
   FREE_TRIAL
+  BASIC
   GROWTH
+  PRO
+  MULTI_BRANCH
   BUSINESS
   ENTERPRISE
 }
@@ -80,6 +83,8 @@ model Tenant {
   updatedAt             DateTime               @default(now()) @updatedAt @map("updated_at")
 
   users                 User[]
+  branches              Branch[]
+  usageRecords          UsageRecord[]
   rooms                 Room[]
   teachers              Teacher[]
   students              Student[]
@@ -116,6 +121,45 @@ model Subscription {
   @@map("subscriptions")
 }
 
+// 0.2 SaaS Tenant Branches
+model Branch {
+  id                    String                 @id @default(uuid())
+  tenantId              String                 @map("tenant_id")
+  name                  String
+  address               String?
+  phoneNumber           String?                @map("phone_number")
+  isActive              Boolean                @default(true) @map("is_active")
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @default(now()) @updatedAt @map("updated_at")
+
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  usageRecords          UsageRecord[]
+  rooms                 Room[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("branches")
+}
+
+// 0.3 Monthly Usage Records
+model UsageRecord {
+  id                    String                 @id @default(uuid())
+  tenantId              String                 @map("tenant_id")
+  branchId              String?                @map("branch_id")
+  periodStart           DateTime               @map("period_start")
+  periodEnd             DateTime               @map("period_end")
+  visitCount            Int                    @default(0) @map("visit_count")
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @default(now()) @updatedAt @map("updated_at")
+
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch                Branch?                @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, branchId, periodStart, periodEnd])
+  @@index([tenantId, periodStart, periodEnd])
+  @@map("usage_records")
+}
+
 // 1. Center Staff Internal Accounts
 model User {
   id                String          @id @default(uuid())
@@ -148,6 +192,7 @@ model User {
 model Room {
   id        String    @id @default(uuid())
   tenantId  String?   @map("tenant_id")
+  branchId  String?   @map("branch_id")
   name      String
   capacity  Int
   floor     String?
@@ -155,10 +200,12 @@ model Room {
   createdAt DateTime  @default(now()) @map("created_at")
 
   tenant    Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch    Branch?   @relation(fields: [branchId], references: [id], onDelete: SetNull)
   sessions  Session[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
+  @@index([branchId])
   @@map("rooms")
 }
 
