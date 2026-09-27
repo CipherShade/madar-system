@@ -28,7 +28,8 @@ This document specifies mandatory rules, architectural constraints, and quality 
 4. **Strict Concurrency & Duplicate Check-In Prevention:**
    - Check-in mutations must be wrapped in database ACID transactions (`prisma.$transaction`).
    - Rely on the database constraint `UNIQUE (session_id, student_id)`. Handle PostgreSQL code `23505` gracefully by returning HTTP `409 Conflict` with `DUPLICATE_CHECK_IN`.
-   - Broadcast check-in events over WebSocket room `center:lobby` immediately after transaction commit.
+   - Broadcast check-in and void events over WebSocket immediately after transaction commit, into the room returned by `lobbyRoomFor(tenantId)` in `src/server/lib/socket.ts`.
+   - Lobby rooms are **tenant-isolated**. A center's staff must only ever join `tenant:<id>:lobby`; the shared `center:lobby` room is reserved for users who belong to no single center (super admin). Never emit a tenant's event to `center:lobby`, and never spell a room name out as a literal — a duplicated room string is how this leak originally happened.
 
 5. **Historical Financial Immutability:**
    - Once a session is `COMPLETED`, its settlement record is permanently locked.

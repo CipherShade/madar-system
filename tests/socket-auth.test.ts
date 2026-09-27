@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { Server } from 'socket.io';
 import { io as ioc, type Socket as ClientSocket } from 'socket.io-client';
@@ -8,14 +11,22 @@ import type { FastifyInstance } from 'fastify';
 import { Role } from '../src/shared/constants/index.js';
 
 import { buildApp } from '../src/server/app.js';
-import { attachSocketServer } from '../src/server/lib/socket.js';
+import { attachSocketServer, lobbyRoomFor } from '../src/server/lib/socket.js';
 import { signCookieValue } from '../src/server/lib/security.js';
-import { signToken, ADMIN_USER_ID, RECEPTIONIST_USER_ID, TEST_TENANT_ID } from './helpers.js';
+import { signToken, ADMIN_USER_ID, RECEPTIONIST_USER_ID, TEST_TENANT_ID, OTHER_TENANT_ID } from './helpers.js';
 import { config } from '../src/server/config/index.js';
 
 type ServerContext = { app: FastifyInstance; io: Server; port: number };
 
 const sockets: ClientSocket[] = [];
+
+async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error('waitFor timed out');
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
 
 function makeClient(port: number, opts: { token?: string; cookie?: string } = {}): ClientSocket {
   const sock = ioc(`http://127.0.0.1:${port}`, {
@@ -167,11 +178,119 @@ test('two authenticated desks both receive attendance broadcasts', async () => {
     };
 
     const received = Promise.all([once(s1, 'attendance:checked_in'), once(s2, 'attendance:checked_in')]);
-    ctx.io.to('center:lobby').emit('attendance:checked_in', payload);
+    ctx.io.to(lobbyRoomFor(TEST_TENANT_ID)).emit('attendance:checked_in', payload);
     const [[event1], [event2]] = await received;
 
     assert.deepEqual(event1, payload);
     assert.deepEqual(event2, payload);
+  } finally {
+    await stopLobbyServer(ctx);
+  }
+});
+
+test('a check-in broadcast reaches the whole center and nobody else', async () => {
+  const ctx = await startLobbyServer();
+  try {
+    const deskA = makeClient(ctx.port, { token: signToken(ctx.app, { sub: ADMIN_USER_ID, username: 'admin', role: Role.ADMIN }) });
+    const deskB = makeClient(ctx.port, { token: signToken(ctx.app, { sub: RECEPTIONIST_USER_ID, username: 'reception1', role: Role.RECEPTIONIST }) });
+    const otherCenter = makeClient(ctx.port, { token: signToken(ctx.app, { sub: ADMIN_USER_ID, username: 'other', role: Role.ADMIN, tenantId: OTHER_TENANT_ID }) });
+
+    for (const s of [deskA, deskB, otherCenter]) {
+      await once(s, 'connect');
+      s.emit('join:lobby');
+    }
+    const joins = await Promise.all([once(deskA, 'lobby:joined'), once(deskB, 'lobby:joined'), once(otherCenter, 'lobby:joined')]);
+    assert.equal(joins[0][0].room, `tenant:${TEST_TENANT_ID}:lobby`);
+    assert.equal(joins[1][0].room, `tenant:${TEST_TENANT_ID}:lobby`);
+    assert.equal(joins[2][0].room, `tenant:${OTHER_TENANT_ID}:lobby`);
+
+    const gotA: unknown[] = [];
+    const gotB: unknown[] = [];
+    const gotOther: unknown[] = [];
+    deskA.on('attendance:checked_in', (p) => gotA.push(p));
+    deskB.on('attendance:checked_in', (p) => gotB.push(p));
+    otherCenter.on('attendance:checked_in', (p) => gotOther.push(p));
+
+    ctx.io.to(lobbyRoomFor(TEST_TENANT_ID)).emit('attendance:checked_in', {
+      sessionId: 'session-1',
+      studentId: 'student-1',
+      studentName: 'يوسف أحمد',
+      deskIdentifier: 'Desk 1',
+      paymentMethod: 'CASH',
+      newLobbyCount: 7,
+      timestamp: '2026-09-04T12:00:00.000Z',
+    });
+
+    // Both of this center's desks must update, and the other center must not.
+    // This is the assertion that would have failed while the check-in handler
+    // also emitted to the shared room.
+    await waitFor(() => gotA.length > 0 && gotB.length > 0);
+    assert.equal(gotA.length, 1);
+    assert.equal(gotB.length, 1);
+    await new Promise((r) => setTimeout(r, 250));
+    assert.deepEqual(gotOther, [], 'another center received this center check-in event');
+  } finally {
+    await stopLobbyServer(ctx);
+  }
+});
+
+/**
+ * The cross-tenant leak was caused by an emitter targeting the shared room
+ * unconditionally, which no behavioural test can catch without a live database
+ * to run a real check-in. Pin the invariant at the source level instead: no
+ * module may name a lobby room itself, so every broadcast is forced through
+ * `lobbyRoomFor(tenantId)`.
+ */
+test('no server module spells out a lobby room name', () => {
+  const serverRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'server');
+  const socketModule = join(serverRoot, 'lib', 'socket.ts');
+  const offenders: string[] = [];
+
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!full.endsWith('.ts') || full === socketModule) continue;
+      const source = readFileSync(full, 'utf8');
+      if (source.includes('center:lobby') || source.includes(':lobby`') || source.includes("':lobby'")) {
+        offenders.push(relative(serverRoot, full).replace(/\\/g, '/'));
+      }
+    }
+  };
+  walk(serverRoot);
+
+  assert.deepEqual(offenders, [], `lobby room names must only be built in lib/socket.ts: ${offenders.join(', ')}`);
+});
+
+test('a tenant desk is never in the shared platform room', async () => {
+  const ctx = await startLobbyServer();
+  try {
+    const s = makeClient(ctx.port, { token: signToken(ctx.app, { sub: ADMIN_USER_ID, username: 'admin', role: Role.ADMIN }) });
+    await once(s, 'connect');
+    s.emit('join:lobby');
+    await once(s, 'lobby:joined');
+
+    // The regression this guards: a tenant socket used to be added to
+    // 'center:lobby' as well, so it received every other center's traffic.
+    assert.equal(ctx.io.sockets.adapter.rooms.get('center:lobby')?.size ?? 0, 0);
+    assert.equal(ctx.io.sockets.adapter.rooms.get(lobbyRoomFor(TEST_TENANT_ID))?.size, 1);
+  } finally {
+    await stopLobbyServer(ctx);
+  }
+});
+
+test('a super admin cannot open a lobby socket at all', async () => {
+  const ctx = await startLobbyServer();
+  try {
+    const s = makeClient(ctx.port, { token: signToken(ctx.app, { sub: ADMIN_USER_ID, username: 'root', role: Role.SUPER_ADMIN, tenantId: null }) });
+    // The handshake itself only admits lobby staff, so a super admin never gets
+    // as far as choosing a room.
+    const [err] = await once(s, 'connect_error');
+    assert.equal(err.message, 'forbidden');
+    assert.equal(ctx.io.sockets.adapter.rooms.get('center:lobby')?.size ?? 0, 0);
   } finally {
     await stopLobbyServer(ctx);
   }

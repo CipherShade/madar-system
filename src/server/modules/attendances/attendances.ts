@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { AttendanceStatus, PaymentMethod, Role, SessionStatus, ShiftStatus } from '../../../shared/constants/index.js';
 import { prisma } from '../../lib/prisma.js';
-import { buildLobbyAttendancePayload } from '../../lib/socket.js';
+import { buildLobbyAttendancePayload, lobbyRoomFor } from '../../lib/socket.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
 import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
 import { recordAuditEntry } from '../reports/audit.js';
@@ -234,10 +234,10 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
         timestamp: attendance.checkInTime,
       });
 
-      if (request.user.tenantId) {
-        app.io?.to(`tenant:${request.user.tenantId}:lobby`).emit('attendance:checked_in', payload);
-      }
-      app.io?.to('center:lobby').emit('attendance:checked_in', payload);
+      // One room only. The previous code emitted to the tenant room and then
+      // unconditionally to the shared room as well, so every center's check-in
+      // reached every other center's lobby.
+      app.io?.to(lobbyRoomFor(request.user.tenantId)).emit('attendance:checked_in', payload);
 
       return reply.code(201).send({
         success: true,
@@ -391,7 +391,9 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     const newLobbyCount = await prisma.attendance.count({ where: { sessionId: attendance.session.id, status: { not: AttendanceStatus.VOID } } });
-    app.io?.to('center:lobby').emit('attendance:voided', { sessionId: attendance.session.id, attendanceId: voided.id, newLobbyCount });
+    // Scoped to the same center as the check-in, for the same reason: this event
+    // carries a student id and a session id.
+    app.io?.to(lobbyRoomFor(request.user.tenantId)).emit('attendance:voided', { sessionId: attendance.session.id, attendanceId: voided.id, newLobbyCount });
 
     return reply.send({
       success: true,

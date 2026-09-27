@@ -6,8 +6,27 @@ import { extractCookieHeader, unsignCookieValue } from './security.js';
 import type { AuthTokenPayload } from '../modules/auth/auth.js';
 
 const ACCESS_TOKEN_COOKIE = 'access_token';
-const LOBBY_ROOM = 'center:lobby';
 const LOBBY_STAFF_ROLES: Role[] = [Role.ADMIN, Role.RECEPTIONIST];
+
+/**
+ * Cross-tenant oversight room, used only by users who belong to no single
+ * center (a super admin watching every center at once). Tenant staff must never
+ * be placed in it: doing so leaks one center's check-in and void events, which
+ * carry student names and session details, to every other center.
+ */
+const PLATFORM_LOBBY_ROOM = 'center:lobby';
+
+/**
+ * The single source of truth for lobby room names.
+ *
+ * This used to be spelled out as `'center:lobby'` in three separate places,
+ * which is how a tenant-scoped broadcast and a tenant-less broadcast drifted
+ * apart and ended up leaking across centers. Both the join handler and every
+ * emitter must go through here.
+ */
+export function lobbyRoomFor(tenantId: string | null | undefined): string {
+  return tenantId ? `tenant:${tenantId}:lobby` : PLATFORM_LOBBY_ROOM;
+}
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -72,20 +91,19 @@ export function attachSocketServer(app: FastifyInstance, io: Server) {
         socket.emit('lobby:denied', { code: 'FORBIDDEN', message: 'ليس لديك صلاحية لمشاهدة لوحة الاستقبال.', messageEn: 'You do not have permission to view the lobby.' });
         return;
       }
-      const tenantRoom = user.tenantId ? `tenant:${user.tenantId}:lobby` : LOBBY_ROOM;
-      await socket.join(tenantRoom);
-      if (tenantRoom !== LOBBY_ROOM) {
-        await socket.join(LOBBY_ROOM);
-      }
-      socket.emit('lobby:joined', { room: tenantRoom, joinedAt: new Date().toISOString() });
+      // Exactly one room, and for a tenant user it is that center's own room.
+      // Joining the shared room as well would hand this socket every other
+      // center's lobby traffic.
+      const room = lobbyRoomFor(user.tenantId);
+      await socket.join(room);
+      socket.emit('lobby:joined', { room, joinedAt: new Date().toISOString() });
     });
 
     socket.on('leave:lobby', async () => {
       const user = socket.data.user as AuthTokenPayload | undefined;
-      const tenantRoom = user?.tenantId ? `tenant:${user.tenantId}:lobby` : LOBBY_ROOM;
-      await socket.leave(tenantRoom);
-      await socket.leave(LOBBY_ROOM);
-      socket.emit('lobby:left', { room: tenantRoom, leftAt: new Date().toISOString() });
+      const room = lobbyRoomFor(user?.tenantId);
+      await socket.leave(room);
+      socket.emit('lobby:left', { room, leftAt: new Date().toISOString() });
     });
   });
 
