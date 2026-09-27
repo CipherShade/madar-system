@@ -49,4 +49,12 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 # Migrations are applied at container start (not build) so the image is reusable
 # across environments. The deployment entrypoint (and start:production) runs:
 #   prisma migrate deploy && node dist/server/server/server.js
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss && node dist/server/server/server.js"]
+# Must be `migrate deploy`, never `db push`. `prisma db push --accept-data-loss`
+# reconciles the database by running DDL straight from schema.prisma and is
+# explicitly permitted to drop columns and tables to make the shapes match, so a
+# later edit that removes a field would silently delete real student and payment
+# data on the next deploy. Migrations force that decision to be written down as
+# reviewable SQL. A dev shortcut that reached this file in 7d2369a, and the
+# comment above already said migrate deploy, so nothing reviewed the difference.
+# tests/production-safety.test.ts pins this.
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server/server/server.js"]

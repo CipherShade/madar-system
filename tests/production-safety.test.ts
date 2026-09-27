@@ -90,3 +90,42 @@ test('a generated secret is random per load, not a shared constant', async () =>
   assert.equal(configured.generated, false);
   assert.equal(configured.secret, 'a-real-configured-secret-value-32chars');
 });
+
+/**
+ * The container start command once ran `prisma db push --accept-data-loss`. That
+ * reconciles the database by running DDL straight from schema.prisma, and
+ * --accept-data-loss permits it to drop columns and tables to make the shapes
+ * match. So any later edit that removed a field would delete that column's real
+ * student and payment data on the next deploy, with no migration and no warning.
+ * The comment directly above the command already said `migrate deploy`, which is
+ * how a destructive shortcut survives review.
+ */
+test('deploys change the database through migrations, not db push', () => {
+  const dockerfile = read('Dockerfile');
+  const cmd = dockerfile.slice(dockerfile.lastIndexOf('CMD '));
+
+  assert.match(cmd, /prisma migrate deploy/, 'the container must apply migrations on start');
+  assert.doesNotMatch(cmd, /prisma db push/, 'db push must never run against production');
+  assert.doesNotMatch(cmd, /--accept-data-loss/, 'a production start must never accept data loss');
+
+  // Anywhere else in the file too, ignoring comments, which legitimately have to
+  // name the command they are warning against.
+  const code = dockerfile
+    .split('\n')
+    .filter((l) => !l.trimStart().startsWith('#'))
+    .join('\n');
+  assert.doesNotMatch(code, /db push/, 'db push must not appear in any executable line');
+});
+
+test('the container start command agrees with the documented one', () => {
+  const dockerfile = read('Dockerfile');
+  const cmd = dockerfile.slice(dockerfile.lastIndexOf('CMD '));
+  const pkg = JSON.parse(read('package.json')) as { scripts: Record<string, string> };
+
+  // The image comment documents the command. If the two drift apart, the comment
+  // is what a reviewer trusts, and it is the one that gets ignored.
+  const documented = /prisma migrate deploy && node dist\/server\/server\/server\.js/;
+  assert.match(cmd, documented, 'the CMD should be the command the comment above it describes');
+  assert.match(pkg.scripts['start:production'], /migrate deploy/, 'start:production must also use migrations');
+  assert.doesNotMatch(pkg.scripts['start:production'], /db push/);
+});
