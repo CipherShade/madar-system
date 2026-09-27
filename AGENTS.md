@@ -78,3 +78,17 @@ This document specifies mandatory rules, architectural constraints, and quality 
 - **Unit Tests:** All financial calculations (split math, cash drawer expected balance) must have 100% unit test coverage.
 - **Arabic Normalization Tests:** Verify that names with varied spellings (e.g. "أحمد", "إحمد", "احمد") produce identical normalized strings.
 - **Concurrency Integration Tests:** Verify that simultaneous check-in attempts for the same student in the same session safely produce exactly 1 success and 1+ `409 Conflict`.
+- **Lifecycle Integration Tests:** Verify the subscription guard against real `Subscription` rows — no subscription and a rejected (`CANCELED`) payment are read-only, an expired center keeps writing through the whole grace window, a past-grace center gets `403 TENANT_FROZEN` on writes while reads still succeed, and paying again restores writes. A token with no `tenantId` must get `403 TENANT_CONTEXT_MISSING`.
+
+### Running the DB-backed suite
+
+`tests/integration/db/*` is **destructive** — it empties every business table on each run. It is skipped unless `TEST_DATABASE_URL` is set, and it refuses to start if that database's name does not contain `test` or if it points at the same database as `DATABASE_URL` (the app's own `.env` points at a live Supabase instance).
+
+```powershell
+npm run db:start          # local PostgreSQL, if not already running
+npm run test:db:setup     # create edu_center_erp_test + apply migrations
+$env:TEST_DATABASE_URL = 'postgresql://postgres:postgrespassword@127.0.0.1:5432/edu_center_erp_test?schema=public'
+npm run test:integration
+```
+
+`npm run test:db:reset` drops and recreates the test database. `scripts/test-db.ps1 url` prints the connection string, so it never has to be typed by hand and drift is impossible.

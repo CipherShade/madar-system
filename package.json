@@ -28,6 +28,8 @@
     "test:unit": "tsx --test --test-concurrency=1 tests/*.test.ts",
     "test:integration": "tsx --test --test-concurrency=1 tests/integration/db/*.test.ts",
     "test:db": "tsx --test --test-concurrency=1 tests/integration/db/*.test.ts",
+    "test:db:setup": "powershell -ExecutionPolicy Bypass -File scripts/test-db.ps1 setup",
+    "test:db:reset": "powershell -ExecutionPolicy Bypass -File scripts/test-db.ps1 reset",
     "test:frontend": "vitest run",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down"

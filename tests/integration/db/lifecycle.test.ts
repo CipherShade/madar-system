@@ -6,11 +6,40 @@ import assert from 'node:assert/strict';
 // that has the Prisma schema applied (`npm run db:migrate:deploy`).
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 
+/**
+ * This suite is destructive: `clean()` empties every business table before each
+ * run. The project's own `.env` points DATABASE_URL at a live Supabase
+ * instance, so a mis-set TEST_DATABASE_URL would wipe real data. Refuse to run
+ * unless the target is unambiguously disposable.
+ */
+function assertDisposableDatabase(url: string): void {
+  const databaseName = (u: string): string => {
+    try {
+      return decodeURIComponent(new URL(u).pathname.replace(/^\//, ''));
+    } catch {
+      return '';
+    }
+  };
+  const name = databaseName(url);
+  if (!name) throw new Error('TEST_DATABASE_URL is not a parseable database URL.');
+  if (!/test/i.test(name)) {
+    throw new Error(
+      `Refusing to run destructive integration tests against database "${name}": the name does not contain "test". ` +
+        'Point TEST_DATABASE_URL at a disposable database.',
+    );
+  }
+  const live = process.env.DATABASE_URL;
+  if (live && databaseName(live) === name) {
+    throw new Error(`Refusing to run: TEST_DATABASE_URL and DATABASE_URL both point at database "${name}".`);
+  }
+}
+if (TEST_DATABASE_URL) assertDisposableDatabase(TEST_DATABASE_URL);
+
 type FastifyLike = {
   ready(): Promise<void>;
   close(): Promise<void>;
   log: { level: string };
-  jwt: { sign(payload: Record<string, unknown>, opts?: { expiresIn?: string }): string };
+  jwt: { sign(payload: Record<string, unknown>, opts?: { expiresIn?: string }): string; verify(token: string): { sub: string } };
   inject(opts: {
     method: string;
     url: string;
@@ -36,9 +65,12 @@ describe(
     let adminToken: string;
     let receptionistToken: string;
     let otherReceptionistToken: string;
+    let tenantlessToken: string;
     let receptionistId: string;
     let otherReceptionistId: string;
     let adminId: string;
+    let tenantId: string;
+    let subscriptionId: string;
 
     const students: Record<string, string> = {};
     const sessions: Record<string, string> = {};
@@ -51,8 +83,17 @@ describe(
     async function seed(): Promise<void> {
       const argon2 = await import('argon2');
 
+      // A real center. Every record below is scoped to it, and every token is
+      // signed with it, because `requireTenantWritable` fails closed without a
+      // tenant and scopes every query by it.
+      const tenant = await prisma.tenant.create({
+        data: { name: 'مركز الاختبار التكاملي', slug: `int-center-${Date.now()}`, isActive: true },
+      });
+      tenantId = tenant.id;
+
       const admin = await prisma.user.create({
         data: {
+          tenantId,
           username: 'int_admin',
           fullName: 'مدير الاختبارات',
           passwordHash: await argon2.hash('IntAdmin@123'),
@@ -66,6 +107,7 @@ describe(
 
       const reception1 = await prisma.user.create({
         data: {
+          tenantId,
           username: 'int_recep1',
           fullName: 'استقبال واحد',
           passwordHash: await argon2.hash('IntDesk@123'),
@@ -79,6 +121,7 @@ describe(
 
       const reception2 = await prisma.user.create({
         data: {
+          tenantId,
           username: 'int_recep2',
           fullName: 'استقبال اثنان',
           passwordHash: await argon2.hash('IntDesk@123'),
@@ -90,9 +133,10 @@ describe(
       });
       otherReceptionistId = reception2.id;
 
-      const room = await prisma.room.create({ data: { name: 'قاعة الاختبار التكاملية', capacity: 50, isActive: true } });
+      const room = await prisma.room.create({ data: { tenantId, name: 'قاعة الاختبار التكاملية', capacity: 50, isActive: true } });
       const teacher = await prisma.teacher.create({
         data: {
+          tenantId,
           fullName: 'م/ اختبار التكامل',
           searchName: 'م/ اختبار التكامل',
           phoneNumber: '01033333333',
@@ -105,6 +149,7 @@ describe(
       for (let i = 1; i <= 5; i += 1) {
         const s = await prisma.student.create({
           data: {
+            tenantId,
             studentCode: `INT-${String(i).padStart(5, '0')}`,
             fullName: `طالب اختبار ${i}`,
             searchName: `طالب اختبار ${i}`,
@@ -120,6 +165,7 @@ describe(
       const makeSession = async (title: string, startOffsetMin: number) => {
         const s = await prisma.session.create({
           data: {
+            tenantId,
             teacherId: teacher.id,
             roomId: room.id,
             title,
@@ -140,7 +186,48 @@ describe(
       sessions.C = await makeSession('حصة التصفية النقدية', 125);
       sessions.D = await makeSession('حصة تحويل فودافون', 185);
       sessions.E = await makeSession('حصة إنستاباي', 245);
+
+      // A live paid period: the only thing that makes this center writable.
+      // The lifecycle guard reads nothing but Subscription rows.
+      const subscription = await prisma.subscription.create({
+        data: {
+          tenantId,
+          plan: 'GROWTH',
+          amount: 1199,
+          status: 'ACTIVE',
+          periodStart: new Date(now.getTime() - 5 * 24 * 60 * 60_000),
+          periodEnd: new Date(now.getTime() + 25 * 24 * 60 * 60_000),
+        },
+      });
+      subscriptionId = subscription.id;
     }
+
+    /** Rewind the seeded subscription to a precise lifecycle scenario. */
+    async function setSubscriptionState(periodEnd: Date, status: 'ACTIVE' | 'PENDING' | 'CANCELED' | 'EXPIRED' | 'TRIALING' | 'PAST_DUE' = 'ACTIVE'): Promise<void> {
+      // Upsert, because the "no subscription at all" scenario deletes the row
+      // and the restore that follows has to bring it back.
+      const data = {
+        tenantId,
+        plan: 'GROWTH' as const,
+        amount: 1199,
+        status,
+        periodStart: new Date(periodEnd.getTime() - 30 * 24 * 60 * 60_000),
+        periodEnd,
+      };
+      await prisma.subscription.upsert({
+        where: { id: subscriptionId },
+        create: { id: subscriptionId, ...data },
+        update: data,
+      });
+    }
+
+    /** The state a center is in before it has ever paid. */
+    async function clearSubscription(): Promise<void> {
+      await prisma.subscription.deleteMany({ where: { id: subscriptionId } });
+    }
+
+    const restoreActiveSubscription = () =>
+      setSubscriptionState(new Date(now.getTime() + 25 * 24 * 60 * 60_000), 'ACTIVE');
 
     async function clean(): Promise<void> {
       await prisma.auditLog.deleteMany({});
@@ -154,9 +241,23 @@ describe(
       await prisma.teacher.deleteMany({});
       await prisma.room.deleteMany({});
       await prisma.user.deleteMany({});
+      // Cascades to subscriptions, so the next seed starts from a clean center.
+      await prisma.tenant.deleteMany({});
     }
 
     async function openShift(token: string, desk = 'Desk 1', openingCash = 500): Promise<string> {
+      // Scaffolding: each test below needs its own shift, and the product rightly
+      // refuses two open shifts per receptionist. Retire the previous one
+      // directly instead of going through the close endpoint, so the SHIFT CLOSE
+      // test still gets to exercise the real variance arithmetic on its own
+      // shift. This conflict was invisible while the whole suite was failing
+      // earlier for unrelated reasons.
+      const claims = app.jwt.verify(token);
+      await prisma.shiftRegister.updateMany({
+        where: { receptionistId: claims.sub, status: 'OPEN' },
+        data: { status: 'CLOSED', closedAt: new Date() },
+      });
+
       const res = await app.inject({
         method: 'POST',
         url: '/api/shifts/open',
@@ -189,9 +290,12 @@ describe(
       await clean();
       await seed();
 
-      adminToken = app.jwt.sign({ sub: adminId, username: 'int_admin', role: 'ADMIN' }, { expiresIn: '1h' });
-      receptionistToken = app.jwt.sign({ sub: receptionistId, username: 'int_recep1', role: 'RECEPTIONIST' }, { expiresIn: '1h' });
-      otherReceptionistToken = app.jwt.sign({ sub: otherReceptionistId, username: 'int_recep2', role: 'RECEPTIONIST' }, { expiresIn: '1h' });
+      adminToken = app.jwt.sign({ sub: adminId, username: 'int_admin', role: 'ADMIN', tenantId }, { expiresIn: '1h' });
+      receptionistToken = app.jwt.sign({ sub: receptionistId, username: 'int_recep1', role: 'RECEPTIONIST', tenantId }, { expiresIn: '1h' });
+      otherReceptionistToken = app.jwt.sign({ sub: otherReceptionistId, username: 'int_recep2', role: 'RECEPTIONIST', tenantId }, { expiresIn: '1h' });
+      // Deliberately tenant-less: proves the guard fails closed rather than
+      // letting a token with no center through.
+      tenantlessToken = app.jwt.sign({ sub: receptionistId, username: 'int_recep1', role: 'RECEPTIONIST' }, { expiresIn: '1h' });
     });
 
     after(async () => {
@@ -472,6 +576,126 @@ describe(
       });
       assert.equal(asOther.statusCode, 403);
       assert.equal(json(asOther.body).error.code, 'AUDIT_ACCESS_DENIED');
+    });
+
+    // --- Subscription lifecycle, exercised through the real database ---------
+    //
+    // These assert the guard's whole contract against actual Subscription rows
+    // rather than a stubbed resolver: reads stay open through every state, and
+    // only writes are closed, and only while closed.
+
+    const createStudent = (token: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/registry/students',
+        headers: authHeaders(token),
+        payload: { fullName: 'طالب دورة الحياة', guardianPhone: '01255556666', academicStage: 'الثالث الثانوي' },
+      });
+
+    const listStudents = (token: string) =>
+      app.inject({ method: 'GET', url: '/api/registry/students', headers: authHeaders(token) });
+
+    test('LIFECYCLE: a center with no subscription is read-only, not locked out', async () => {
+      await clearSubscription();
+      try {
+        const write = await createStudent(adminToken);
+        assert.equal(write.statusCode, 403, write.body);
+        assert.equal(json(write.body).error.code, 'TENANT_NOT_APPROVED');
+
+        const read = await listStudents(adminToken);
+        assert.equal(read.statusCode, 200, read.body);
+      } finally {
+        await restoreActiveSubscription();
+      }
+    });
+
+    test('LIFECYCLE: a rejected payment never gets a grace period', async () => {
+      // This is exactly what POST /:id/reject writes: status CANCELED with
+      // periodEnd stamped at the moment of rejection. Because the rejection is
+      // never ACTIVE, it must not be mistaken for a paid period that lapsed and
+      // must not earn the center seven free days.
+      await setSubscriptionState(new Date(now.getTime() - 2 * 24 * 60 * 60_000), 'CANCELED');
+      try {
+        const write = await createStudent(adminToken);
+        assert.equal(write.statusCode, 403, write.body);
+        assert.equal(json(write.body).error.code, 'TENANT_NOT_APPROVED');
+      } finally {
+        await restoreActiveSubscription();
+      }
+    });
+
+    test('LIFECYCLE: an active center can still write', async () => {
+      await restoreActiveSubscription();
+      const write = await createStudent(adminToken);
+      assert.equal(write.statusCode, 201, write.body);
+    });
+
+    test('LIFECYCLE: an expired center keeps writing through the full grace window', async () => {
+      // Expired 3 days ago: still inside the 7-day grace.
+      await setSubscriptionState(new Date(now.getTime() - 3 * 24 * 60 * 60_000));
+      try {
+        const write = await createStudent(adminToken);
+        assert.equal(write.statusCode, 201, write.body);
+      } finally {
+        await restoreActiveSubscription();
+      }
+    });
+
+    test('LIFECYCLE: past the grace window writes freeze but reads do not', async () => {
+      // Expired 10 days ago, so past period end + 7 grace days.
+      await setSubscriptionState(new Date(now.getTime() - 10 * 24 * 60 * 60_000));
+      try {
+        const write = await createStudent(adminToken);
+        assert.equal(write.statusCode, 403, write.body);
+        assert.equal(json(write.body).error.code, 'TENANT_FROZEN');
+
+        const read = await listStudents(adminToken);
+        assert.equal(read.statusCode, 200, read.body);
+      } finally {
+        await restoreActiveSubscription();
+      }
+    });
+
+    test('LIFECYCLE: a frozen center is restored by paying again', async () => {
+      await setSubscriptionState(new Date(now.getTime() - 10 * 24 * 60 * 60_000));
+      assert.equal((await createStudent(adminToken)).statusCode, 403);
+
+      await restoreActiveSubscription();
+      const write = await createStudent(adminToken);
+      assert.equal(write.statusCode, 201, write.body);
+    });
+
+    test('LIFECYCLE: a token with no tenant is rejected rather than trusted', async () => {
+      const write = await createStudent(tenantlessToken);
+      assert.equal(write.statusCode, 403, write.body);
+      assert.equal(json(write.body).error.code, 'TENANT_CONTEXT_MISSING');
+    });
+
+    test('LIFECYCLE: a frozen center cannot check a student in either', async () => {
+      await setSubscriptionState(new Date(now.getTime() - 10 * 24 * 60 * 60_000));
+      try {
+        const res = await checkin(receptionistToken, sessions.A, students.S1, { paymentMethod: 'CASH' });
+        assert.equal(res.statusCode, 403, res.body);
+        assert.equal(json(res.body).error.code, 'TENANT_FROZEN');
+      } finally {
+        await restoreActiveSubscription();
+      }
+    });
+
+    test('LIFECYCLE: the current-subscription endpoint reports the state to the client', async () => {
+      const endpoint = () => app.inject({ method: 'GET', url: '/api/subscriptions/current', headers: authHeaders(adminToken) });
+
+      await setSubscriptionState(new Date(now.getTime() + 25 * 24 * 60 * 60_000));
+      const active = await endpoint();
+      assert.equal(active.statusCode, 200, active.body);
+      assert.equal(json(active.body).data.lifecycle.state, 'ACTIVE');
+
+      await setSubscriptionState(new Date(now.getTime() - 10 * 24 * 60 * 60_000));
+      const frozen = await endpoint();
+      assert.equal(frozen.statusCode, 200, frozen.body);
+      assert.equal(json(frozen.body).data.lifecycle.state, 'FROZEN');
+
+      await restoreActiveSubscription();
     });
   },
 );
