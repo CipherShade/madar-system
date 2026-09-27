@@ -92,3 +92,11 @@ npm run test:integration
 ```
 
 `npm run test:db:reset` drops and recreates the test database. `scripts/test-db.ps1 url` prints the connection string, so it never has to be typed by hand and drift is impossible.
+
+### Before taking a real client
+
+- `NODE_ENV=production` **must** be set. With anything else, the required-variable check is skipped and the process generates throwaway signing secrets (safe from forgery, but every session dies on restart).
+- `JWT_SECRET` and `COOKIE_SECRET` must be strong random values, not generated. There is no hardcoded fallback secret in the source, and `tests/production-safety.test.ts` enforces that.
+- `SUPER_ADMIN_USERNAME` / `SUPER_ADMIN_PASSWORD` must be set on the first boot, or no platform admin exists and no center can ever be approved.
+- Demo seeding is disabled in production. It must stay that way: the demo center's passwords are public defaults, and usernames are globally unique, so a seeder that upserts by username can silently reset a real client's password and move their account. `tests/production-safety.test.ts` and `tests/integration/db/demo-seed.test.ts` pin this.
+- Take a database backup before storing real student records. There is no automated backup in this repo.

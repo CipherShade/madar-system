@@ -220,6 +220,47 @@ export async function ensureSuperAdmin(prisma: PrismaClient): Promise<void> {
 }
 
 // ── 1. MAIN CENTER (live demo tenant) ──────────────────────────────────────
+
+type DemoUserData = {
+  username: string;
+  email: string;
+  passwordHash: string;
+  fullName: string;
+  role: Role;
+  phoneNumber: string;
+  preferredLanguage: string;
+  isActive: boolean;
+};
+
+/**
+ * Return the demo user with this username, creating it only if the name is free.
+ *
+ * Two rules, both learned the hard way:
+ *  - an existing account is returned untouched, so a password someone changed is
+ *    never reverted;
+ *  - if the name is already held by a *different* center we abort loudly rather
+ *    than reassign it, because `username` is globally unique and stealing it
+ *    would hand this throwaway tenant someone else's manager account.
+ */
+async function claimDemoUser(prisma: PrismaClient, data: DemoUserData, tenantId: string) {
+  const existing = await prisma.user.findUnique({
+    where: { username: data.username },
+    select: { id: true, tenantId: true },
+  });
+
+  if (existing) {
+    if (existing.tenantId !== tenantId) {
+      throw new Error(
+        `[seed] Refusing to run the demo seed: the username "${data.username}" is already registered to another center. ` +
+          'Demo data is for local development only; do not run it against a database with real clients.',
+      );
+    }
+    return existing;
+  }
+
+  return prisma.user.create({ data: { ...data, tenantId } });
+}
+
 async function seedMainCenter(
   prisma: PrismaClient,
   passwords: { adminPassword: string; receptionistPassword: string },
@@ -242,39 +283,34 @@ async function seedMainCenter(
     },
   });
 
-  const adminHash = await hashPwd(passwords.adminPassword);
-  const admin = await prisma.user.upsert({
-    where: { username: 'admin' },
-    update: { passwordHash: adminHash, tenantId: tenant.id, isActive: true },
-    create: {
-      username: 'admin',
-      email: 'admin@alawael.local',
-      passwordHash: adminHash,
-      fullName: 'أ/ محمود الشريف',
-      role: Role.ADMIN,
-      phoneNumber: '01000000000',
-      preferredLanguage: 'ar',
-      isActive: true,
-      tenantId: tenant.id,
-    },
-  });
+  // The demo manager and receptionist are only ever CREATED, never reset.
+  //
+  // This used to upsert on `username` and overwrite `passwordHash` and
+  // `tenantId` on every boot. Because `username` is globally unique, a real
+  // client who happened to register "admin" had their password silently reset to
+  // the public demo default and their account moved into this throwaway tenant
+  // on every single deploy. Never touch credentials that already exist.
+  const admin = await claimDemoUser(prisma, {
+    username: 'admin',
+    email: 'admin@alawael.local',
+    passwordHash: await hashPwd(passwords.adminPassword),
+    fullName: 'أ/ محمود الشريف',
+    role: Role.ADMIN,
+    phoneNumber: '01000000000',
+    preferredLanguage: 'ar',
+    isActive: true,
+  }, tenant.id);
 
-  const recepHash = await hashPwd(passwords.receptionistPassword);
-  const receptionist = await prisma.user.upsert({
-    where: { username: 'reception1' },
-    update: { passwordHash: recepHash, tenantId: tenant.id, isActive: true },
-    create: {
-      username: 'reception1',
-      email: 'reception1@alawael.local',
-      passwordHash: recepHash,
-      fullName: 'سارة عبد الرحمن',
-      role: Role.RECEPTIONIST,
-      phoneNumber: '01012345678',
-      preferredLanguage: 'ar',
-      isActive: true,
-      tenantId: tenant.id,
-    },
-  });
+  const receptionist = await claimDemoUser(prisma, {
+    username: 'reception1',
+    email: 'reception1@alawael.local',
+    passwordHash: await hashPwd(passwords.receptionistPassword),
+    fullName: 'سارة عبد الرحمن',
+    role: Role.RECEPTIONIST,
+    phoneNumber: '01012345678',
+    preferredLanguage: 'ar',
+    isActive: true,
+  }, tenant.id);
 
   // One-time repair: a previous deploy wrote the seed data with mojibake
   // Arabic (double-encoded through a console codepage). Detect those rows

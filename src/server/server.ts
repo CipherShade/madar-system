@@ -32,12 +32,20 @@ async function ensureDatabaseReady(): Promise<void> {
   }
 
   try {
-    app.log.info('Ensuring demo users and seed data are ready...');
-    await seedDemoData(prisma);
+    // Demo tenants must never be created in production: the seeder's passwords
+    // are public defaults, and seeding writes rows into a live database on every
+    // restart. `ensureSuperAdmin` is different — it creates the platform owner
+    // from env vars and is required in production, so it always runs.
+    if (config.nodeEnv !== 'production') {
+      app.log.info('Ensuring demo seed data is ready...');
+      await seedDemoData(prisma);
+    } else {
+      app.log.info('Production: skipping demo seed data.');
+    }
     await ensureSuperAdmin(prisma);
-    app.log.info('Demo seed and credentials verification completed successfully.');
+    app.log.info('Database seed verification completed successfully.');
   } catch (seedErr) {
-    app.log.error({ err: seedErr }, 'Failed during seedDemoData');
+    app.log.error({ err: seedErr }, 'Failed during database seed');
   }
 }
 
