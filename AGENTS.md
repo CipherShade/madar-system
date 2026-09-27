@@ -99,4 +99,26 @@ npm run test:integration
 - `JWT_SECRET` and `COOKIE_SECRET` must be strong random values, not generated. There is no hardcoded fallback secret in the source, and `tests/production-safety.test.ts` enforces that.
 - `SUPER_ADMIN_USERNAME` / `SUPER_ADMIN_PASSWORD` must be set on the first boot, or no platform admin exists and no center can ever be approved.
 - Demo seeding is disabled in production. It must stay that way: the demo center's passwords are public defaults, and usernames are globally unique, so a seeder that upserts by username can silently reset a real client's password and move their account. `tests/production-safety.test.ts` and `tests/integration/db/demo-seed.test.ts` pin this.
-- Take a database backup before storing real student records. There is no automated backup in this repo.
+- A database backup must exist **and be known to restore** before storing real student records. `npm run db:backup` is the tool; see below.
+
+## Backups
+
+`scripts/backup-db.ps1` takes a logical dump of the `public` schema via `pg_dump`, and restores it anywhere. It reads `DATABASE_URL` from `.env` (live Supabase) unless told otherwise.
+
+```powershell
+npm run db:backup        # dump live Supabase into backups/, keep the newest 14
+npm run db:backups:list  # what exists, and when
+npm run db:restore       # restore the newest dump (destructive; needs -Confirm)
+```
+
+Rules the script enforces, and why they exist:
+
+- **Never hand-type the URL.** It is always `.env`'s, so a backup cannot silently hit the wrong database.
+- **Restore needs `-Confirm`, and needs `-AllowLive` as well** when the target is the `.env` database. The guards run before any network access.
+- **Only the `public` schema is dumped by default.** A whole-database dump of Supabase carries `auth`, `storage`, `vault` and a `supabase_vault` extension that exists nowhere else, so it restores into Supabase and nowhere else. `-AllSchemas` opts back in.
+- **The password goes through `PGPASSWORD`, never the command line**, so it is not visible in the process list.
+- **Port 6543 is rejected**: that is Supabase's transaction pooler, which `pg_dump` cannot use. `DATABASE_URL` must be the session pooler or direct connection.
+- **Extensions are captured beside the dump** in `*.extensions.sql`. The dump references `public.gin_trgm_ops` without creating the extension, so a restore that skipped this fails on the first index.
+- **Restore runs in passes** — schema, then extensions, then data, then indexes — because the dump creates `public` itself, the extensions must already be in `public` for the index pass, and `public` cannot exist before the schema pass. It finishes by asserting the target actually has tables, because a restore that quietly creates nothing is worse than one that fails.
+
+This is a supplement, not a substitute, for Supabase's own automated backups and point-in-time recovery, which run server-side. Keep both: those live with the database, these live off it. Nothing here runs on a schedule, and `backups/` is gitignored because a dump contains real student and payment records — **copy dumps off the machine**, or a stolen laptop is the backup's only copy and its loss is the outage.
