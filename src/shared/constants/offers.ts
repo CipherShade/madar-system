@@ -1,5 +1,14 @@
 import { PLANS } from './plans.js';
-import { TENANT_PLANS, TenantPlan } from './index.js';
+// Inline to break circular: index.ts re-exports plans.js, so importing from index.ts here
+// would create index → plans → index. Keeping constants local avoids the ESM TDZ crash.
+const TENANT_PLANS = {
+  FREE_TRIAL: 'FREE_TRIAL', BASIC: 'BASIC', GROWTH: 'GROWTH', PRO: 'PRO',
+  MULTI_BRANCH: 'MULTI_BRANCH', BUSINESS: 'BUSINESS', ENTERPRISE: 'ENTERPRISE',
+  ESSENTIAL: 'ESSENTIAL', CONTROL: 'CONTROL',
+} as const;
+type TenantPlan = (typeof TENANT_PLANS)[keyof typeof TENANT_PLANS];
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+const TenantPlan = TENANT_PLANS;
 
 /**
  * Landing-page offer configuration — the single source of truth for what the
