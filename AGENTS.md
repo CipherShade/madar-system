@@ -99,7 +99,7 @@ npm run test:integration
 - `JWT_SECRET` and `COOKIE_SECRET` must be strong random values, not generated. There is no hardcoded fallback secret in the source, and `tests/production-safety.test.ts` enforces that.
 - `SUPER_ADMIN_USERNAME` / `SUPER_ADMIN_PASSWORD` must be set on the first boot, or no platform admin exists and no center can ever be approved.
 - Demo seeding is disabled in production. It must stay that way: the demo center's passwords are public defaults, and usernames are globally unique, so a seeder that upserts by username can silently reset a real client's password and move their account. `tests/production-safety.test.ts` and `tests/integration/db/demo-seed.test.ts` pin this.
-- A database backup must exist **and be known to restore** before storing real student records. `npm run db:backup` is the tool; see below.
+- A database backup must exist **and be known to restore** before storing real student records. The Railway cron service runs one daily on its own; see below. Confirm its last run succeeded, and that the stored dump is restorable, before onboarding a client.
 
 ## Backups
 
@@ -121,4 +121,36 @@ Rules the script enforces, and why they exist:
 - **Extensions are captured beside the dump** in `*.extensions.sql`. The dump references `public.gin_trgm_ops` without creating the extension, so a restore that skipped this fails on the first index.
 - **Restore runs in passes** — schema, then extensions, then data, then indexes — because the dump creates `public` itself, the extensions must already be in `public` for the index pass, and `public` cannot exist before the schema pass. It finishes by asserting the target actually has tables, because a restore that quietly creates nothing is worse than one that fails.
 
-This is a supplement, not a substitute, for Supabase's own automated backups and point-in-time recovery, which run server-side. Keep both: those live with the database, these live off it. Nothing here runs on a schedule, and `backups/` is gitignored because a dump contains real student and payment records — **copy dumps off the machine**, or a stolen laptop is the backup's only copy and its loss is the outage.
+This is a supplement, not a substitute, for Supabase's own automated backups and point-in-time recovery, which run server-side. Keep both: those live with the database, these live off it. `backups/` is gitignored because a dump contains real student and payment records.
+
+## The unattended backup
+
+The PowerShell script above needs a human to run it. Someone who will not open a terminal every day needs the dump to happen on its own, so the same guarantees are implemented a second time in `scripts/backup/`, running on a Railway cron service.
+
+- `scripts/backup/backupCore.mjs` — the rules, as pure functions: URL parsing, `pg_dump` arguments, extension selection, retention, freshness, storage URLs, secret redaction.
+- `scripts/backup/runBackup.mjs` — the job. Dumps, uploads to Supabase Storage, prunes, checks its own freshness, exits non-zero on any failure.
+- `Dockerfile.backup` — `node:22-bookworm-slim` plus `postgresql-client-17`, and nothing else. No `npm ci`, because a change to application code must not be able to break the backup.
+- `npm run db:backup:remote` / `db:backups:remote:list` — the same job by hand.
+
+| Variable | Meaning |
+| --- | --- |
+| `DATABASE_URL` | Supabase session pooler or direct. Port 6543 is refused. |
+| `SUPABASE_URL` | e.g. `https://abcdefgh.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | The only secret. Never logged; every message is scrubbed before printing. |
+| `SUPABASE_BACKUP_BUCKET` | Defaults to `erp-backups`, created private on first run. |
+| `BACKUP_KEEP` | Dumps to keep, newest first. Default 14. Must be at least 1. |
+| `BACKUP_MAX_AGE_HOURS` | A run fails if the newest stored dump is older than this. Default 48, so one missed day still passes. |
+
+Why each rule exists, given nobody is watching the output:
+
+- **A dump under 1 KB is a failure, not a small success.** An empty database is legitimately small, but so is a dump that failed in a way that still exits zero. Storing it would look like a healthy backup for weeks.
+- **The uploaded object is read back and confirmed present** before the run is allowed to pass. An upload that reports success but stores nothing is the failure mode that hides longest.
+- **Freshness is asserted every run.** A job that stopped working silently is worse than one that never worked, because it looks fine. The check fails the run, which fails the Railway deployment, which is what sends the email.
+- **Retention can never empty the bucket.** A `BACKUP_KEEP` below 1 is refused rather than treated as "keep nothing", and the newest dump is never a deletion candidate. Sidecars travel with their dump, and a sidecar whose dump is gone is cleaned up.
+- **`pg_dump` must be at least as new as the server.** An older client refuses to connect, so the version is compared on every run and reported. This is why the image pins client 17.
+- **The temporary copy is deleted in a `finally`.** The dump is real student and payment data; it must not survive on the runner's disk.
+- **Storage lives in Supabase, the database does too.** That is one provider, so a deleted Supabase project takes both. It still survives the realistic failures — a bad migration, a dropped table, corruption, a wiped database — because Storage is a different subsystem from Postgres. It is not a substitute for a copy on a separate provider.
+
+Restoring from storage is deliberately manual: download the dump and its `.extensions.sql` from the Supabase dashboard, then `npm run db:restore -OutputDir <dir>`. An unattended restore is an unattended way to lose data to a bad cron run.
+
+The one manual step is adding `SUPABASE_SERVICE_ROLE_KEY` to the backup service in the Railway dashboard. It is never pasted into chat, never committed, and never logged.
