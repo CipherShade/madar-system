@@ -484,15 +484,24 @@ test('the backup image pins a client new enough for the server', () => {
   const dockerfile = read('Dockerfile.backup');
   assert.match(
     dockerfile,
-    /postgresql-client-17/,
-    'Supabase runs PostgreSQL 17; an older pg_dump refuses to connect at all',
+    /postgresql-client-18/,
+    'production is Railway Postgres 18; an older pg_dump refuses to connect at all',
   );
   assert.ok(
-    !/postgresql-client-(?!17\b)\d+/.test(dockerfile.replace(/postgresql-client-17/g, '')),
-    'only the 17 client should be installed, or apt would drag in an older pg_dump that shadows it',
+    !/postgresql-client-(?!18\b)\d+/.test(dockerfile.replace(/postgresql-client-18/g, '')),
+    'only the 18 client should be installed, or apt would drag in an older pg_dump that shadows it',
   );
   assert.match(dockerfile, /CMD \["node", "scripts\/backup\/runBackup\.mjs"\]/);
   assert.ok(!/npm (ci|install)/.test(dockerfile), 'the backup job needs no dependencies, and installing any would let an app change break it');
+});
+
+test('the pinned client matches the production database version', () => {
+  // The runner refuses to dump when the client is older than the server, so the
+  // image pin and the deployed Postgres version have to be kept in step. Railway
+  // runs the server image ghcr.io/railwayapp-templates/postgres-ssl:18.
+  const dockerfile = read('Dockerfile.backup');
+  const pinned = /postgresql-client-(\d+)/.exec(dockerfile)?.[1];
+  assert.equal(pinned, '18', 'bump this test when the Postgres service image is upgraded');
 });
 
 test('the remote backup is wired into package.json', () => {

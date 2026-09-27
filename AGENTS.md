@@ -129,7 +129,7 @@ The PowerShell script above needs a human to run it. Someone who will not open a
 
 - `scripts/backup/backupCore.mjs` — the rules, as pure functions: URL parsing, `pg_dump` arguments, extension selection, retention, freshness, AWS SigV4 signing, list-response parsing, secret redaction.
 - `scripts/backup/runBackup.mjs` — the job. Dumps, uploads to S3-compatible storage, prunes, checks its own freshness, exits non-zero on any failure.
-- `Dockerfile.backup` — `node:22-bookworm-slim` plus `postgresql-client-17`, and nothing else. No `npm ci`, because a change to application code must not be able to break the backup. That is also why the S3 client is hand-written against `node:crypto` rather than `@aws-sdk/client-s3`.
+- `Dockerfile.backup` — `node:22-bookworm-slim` plus `postgresql-client-18`, and nothing else. No `npm ci`, because a change to application code must not be able to break the backup. That is also why the S3 client is hand-written against `node:crypto` rather than `@aws-sdk/client-s3`.
 - `npm run db:backup:remote` / `db:backups:remote:list` — the same job by hand.
 
 The production database is **Railway Postgres**, and the dumps go to a Railway **object storage** bucket. `DATABASE_URL` is set to `${{er.DATABASE_URL}}` so the job always dumps exactly the database the app uses, and cannot drift onto another one if the connection string changes.
@@ -153,7 +153,7 @@ Why each rule exists, given nobody is watching the output:
 - **Freshness is asserted every run.** A job that stopped working silently is worse than one that never worked, because it looks fine. The check fails the run, which fails the Railway deployment, which is what sends the email.
 - **Retention can never empty the bucket.** A `BACKUP_KEEP` below 1 is refused rather than treated as "keep nothing", and the newest dump is never a deletion candidate. Sidecars travel with their dump, and a sidecar whose dump is gone is cleaned up.
 - **A truncated listing is followed to the end.** A paginated `ListObjectsV2` response that stops at the first page would hide old dumps, so they would never be pruned and the freshness check would pass on a partial view.
-- **`pg_dump` must be at least as new as the server.** An older client refuses to connect, so the version is compared on every run and reported. This is why the image pins client 17.
+- **`pg_dump` must be at least as new as the server.** An older client refuses to connect, so the version is compared on every run and reported. This is why the image pins client 18: production is Railway Postgres, running the server image `postgres-ssl:18`. Upgrading that service without bumping this pin would silently stop every dump, so `tests/backup-remote.test.ts` pins the two together.
 - **The temporary copy is deleted in a `finally`.** The dump is real student and payment data; it must not survive on the runner's disk.
 - **The bucket is private and the endpoint must be `https`.** There is no code path that creates a public bucket, and an `http` endpoint is rejected before any credential is read.
 
