@@ -4,27 +4,28 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  buildAuthHeaders,
-  buildBucketPayload,
-  buildBucketUrl,
-  buildDeletePayload,
+  buildListObjectsQuery,
+  buildS3Url,
   buildDumpName,
   buildExtensionSidecarName,
-  buildListUrl,
-  buildObjectUrl,
   buildPgDumpArgs,
   buildPortableExtensionsQuery,
   buildPsqlArgs,
-  describeStorageFailure,
+  describeS3Failure,
   describeUndumpablePort,
   evaluateFreshness,
   isSuspiciouslySmallDump,
   parseDatabaseUrl,
+  parseListObjectsResult,
   planRetention,
   redactSecrets,
   renderExtensionsSql,
+  resolvePathStyle,
   selectPortableExtensions,
+  sha256Hex,
+  signS3Request,
 } from './backupCore.mjs';
+import { normalizeS3Endpoint } from './backupCore.mjs';
 
 const secrets = [];
 const redact = (text) => redactSecrets(text, secrets);
@@ -52,6 +53,15 @@ function envNumber(name, fallback) {
     throw new Error(`${name} must be a number, got ${JSON.stringify(raw)}`);
   }
   return value;
+}
+
+function parseBooleanEnv(name) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null || raw.trim() === '') return undefined;
+  const value = raw.trim().toLowerCase();
+  if (value === 'true' || value === '1' || value === 'yes') return true;
+  if (value === 'false' || value === '0' || value === 'no') return false;
+  throw new Error(`${name} must be true or false, got ${JSON.stringify(raw)}`);
 }
 
 function stampFor(date) {
@@ -98,127 +108,154 @@ function assertClientSupportsServer(database) {
   console.log(`Connected to ${database.masked}. pg_dump ${dumpVersion}, server ${serverVersion}.`);
 }
 
-async function storageRequest(url, { action, method = 'GET', headers = {}, body, secretsToRedact = [] } = {}) {
+async function s3Request({ method, url, host, headers = {}, body, action, credentials, secretsToRedact = [] }) {
+  const payload = body ?? Buffer.alloc(0);
+  const payloadHash = sha256Hex(payload);
+  const signed = signS3Request({
+    method,
+    url,
+    headers,
+    payloadHash,
+    accessKeyId: credentials.accessKeyId,
+    secretAccessKey: credentials.secretAccessKey,
+    region: credentials.region,
+  });
   let response;
   try {
-    response = await fetch(url, { method, headers, body });
+    response = await fetch(url, { method, headers: signed, body: payload.byteLength > 0 ? payload : undefined });
   } catch (error) {
-    throw new Error(`${action} could not reach Supabase Storage: ${error.message}`);
+    throw new Error(`${action} could not reach ${host}: ${error.message}`);
   }
   const text = await response.text().catch(() => '');
   if (!response.ok) {
-    throw new Error(describeStorageFailure(action, response.status, text, secretsToRedact));
+    throw new Error(describeS3Failure(action, response.status, text, secretsToRedact));
   }
   return { response, text };
 }
 
-async function ensureBucket({ supabaseUrl, bucket, authHeaders, fileSizeLimitBytes }) {
-  const listUrl = buildListUrl({ supabaseUrl, bucket, limit: 1 });
-  let exists = false;
-  try {
-    const probe = await storageRequest(listUrl, {
-      action: `Probing the "${bucket}" bucket`,
-      headers: authHeaders,
-    });
-    JSON.parse(probe.text);
-    exists = true;
-  } catch {
-    exists = false;
-  }
-  if (exists) return;
-  try {
-    await storageRequest(buildBucketUrl({ supabaseUrl }), {
-      action: `Creating the "${bucket}" bucket`,
-      method: 'POST',
-      headers: { ...authHeaders, 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildBucketPayload({ bucket, fileSizeLimitBytes })),
-      secretsToRedact: secrets,
-    });
-    console.log(`Created private bucket "${bucket}".`);
-  } catch (error) {
-    const created = await storageRequest(buildListUrl({ supabaseUrl, bucket, limit: 1 }), {
-      action: `Confirming the "${bucket}" bucket exists`,
-      headers: authHeaders,
-    });
-    JSON.parse(created.text);
-    console.log(`Bucket "${bucket}" already exists.`);
-  }
+function storageTarget(storage, key) {
+  const built = buildS3Url({
+    endpoint: storage.endpoint,
+    bucket: storage.bucket,
+    key,
+    pathStyle: storage.pathStyle,
+  });
+  return { url: built.url, host: built.host };
 }
 
-async function listObjects({ supabaseUrl, bucket, authHeaders, pageSize = 1000 }) {
+async function listObjects(storage, { prefix = '', pageSize = 1000 } = {}) {
   const names = [];
-  for (let offset = 0; offset < 100000; offset += pageSize) {
-    const url = buildListUrl({ supabaseUrl, bucket, limit: pageSize, offset });
-    const { text } = await storageRequest(url, {
-      action: `Listing objects in "${bucket}"`,
-      headers: authHeaders,
+  let continuationToken = null;
+  for (let page = 0; page < 1000; page += 1) {
+    const { url, host } = storageTarget(storage, '');
+    const signedUrl = `${url}?${buildListObjectsQuery({ prefix, maxKeys: pageSize, continuationToken })}`;
+    const { text } = await s3Request({
+      method: 'GET',
+      url: signedUrl,
+      host,
+      action: `Listing objects in "${storage.bucket}"`,
+      credentials: storage,
+      secretsToRedact: secrets,
     });
-    let page;
-    try {
-      page = JSON.parse(text);
-    } catch {
-      throw new Error(`Listing objects in "${bucket}" returned a body that is not JSON.`);
-    }
-    if (!Array.isArray(page)) {
-      throw new Error(`Listing objects in "${bucket}" did not return an array.`);
-    }
-    for (const item of page) {
-      if (item && typeof item.name === 'string') names.push(item.name);
-    }
-    if (page.length < pageSize) break;
+    const result = parseListObjectsResult(text);
+    names.push(...result.names);
+    if (!result.isTruncated || !result.nextContinuationToken) break;
+    continuationToken = result.nextContinuationToken;
   }
   return names;
 }
 
-async function uploadFile({ supabaseUrl, bucket, authHeaders, name, filePath, byteLength }) {
+async function headObject(storage, key) {
+  const { url, host } = storageTarget(storage, key);
+  const signed = signS3Request({
+    method: 'HEAD',
+    url,
+    payloadHash: sha256Hex(''),
+    accessKeyId: storage.accessKeyId,
+    secretAccessKey: storage.secretAccessKey,
+    region: storage.region,
+  });
+  const response = await fetch(url, { method: 'HEAD', headers: signed });
+  if (!response.ok) {
+    throw new Error(`Uploaded ${key} but ${response.status === 404 ? 'it is not in the bucket' : `the bucket refused to confirm it (HTTP ${response.status})`}. The backup cannot be trusted.`);
+  }
+  return { contentLength: Number(response.headers.get('content-length') || 0) };
+}
+
+async function uploadFile(storage, { name, filePath, byteLength }) {
   const payload = readFileSync(filePath);
   if (payload.byteLength !== byteLength) {
     throw new Error(`Read ${payload.byteLength} bytes from ${name} but expected ${byteLength}.`);
   }
-  await storageRequest(buildObjectUrl({ supabaseUrl, bucket, path: name }), {
-    action: `Uploading ${name}`,
-    method: 'POST',
-    headers: { ...authHeaders, 'Content-Type': 'application/octet-stream', 'x-upsert': 'true' },
+  const { url, host } = storageTarget(storage, name);
+  await s3Request({
+    method: 'PUT',
+    url,
+    host,
+    headers: { 'content-type': 'application/octet-stream' },
     body: payload,
+    action: `Uploading ${name}`,
+    credentials: storage,
     secretsToRedact: secrets,
   });
-  console.log(`Uploaded ${name} (${Math.round(byteLength / 1024)} KB).`);
+  const confirmed = await headObject(storage, name);
+  if (confirmed.contentLength !== byteLength) {
+    throw new Error(`Stored ${name} as ${confirmed.contentLength} bytes but uploaded ${byteLength}. The dump may have been truncated.`);
+  }
+  console.log(`Uploaded ${name} (${Math.round(byteLength / 1024)} KB), confirmed present.`);
 }
 
-async function deleteObjects({ supabaseUrl, bucket, authHeaders, names }) {
-  if (names.length === 0) return;
-  await storageRequest(buildObjectUrl({ supabaseUrl, bucket, path: '' }), {
-    action: `Deleting ${names.length} old object(s) from "${bucket}"`,
-    method: 'DELETE',
-    headers: { ...authHeaders, 'Content-Type': 'application/json' },
-    body: JSON.stringify(buildDeletePayload(names)),
-    secretsToRedact: secrets,
-  });
-  console.log(`Pruned ${names.length} old object(s).`);
+async function deleteObjects(storage, names) {
+  for (const name of names) {
+    const { url, host } = storageTarget(storage, name);
+    await s3Request({
+      method: 'DELETE',
+      url,
+      host,
+      action: `Deleting ${name}`,
+      credentials: storage,
+      secretsToRedact: secrets,
+    });
+  }
+  if (names.length > 0) console.log(`Pruned ${names.length} old object(s).`);
 }
 
 async function main() {
   const database = parseDatabaseUrl(envValue('DATABASE_URL'));
   const undumpablePort = describeUndumpablePort(database.port);
   if (undumpablePort) throw new Error(undumpablePort);
-  const supabaseUrl = envValue('SUPABASE_URL');
-  const serviceRoleKey = envValue('SUPABASE_SERVICE_ROLE_KEY');
-  rememberSecret(serviceRoleKey);
+
+  const accessKeyId = envValue('BACKUP_S3_ACCESS_KEY_ID');
+  const secretAccessKey = envValue('BACKUP_S3_SECRET_ACCESS_KEY');
+  const region = envValue('BACKUP_S3_REGION');
+  const endpoint = normalizeS3Endpoint(envValue('BACKUP_S3_ENDPOINT'));
+  const bucket = envValue('BACKUP_S3_BUCKET', 'erp-backups');
+  const pathStyleOverride = parseBooleanEnv('BACKUP_S3_PATH_STYLE');
+  rememberSecret(secretAccessKey);
+  rememberSecret(accessKeyId);
   rememberSecret(database.password);
-  const bucket = envValue('SUPABASE_BACKUP_BUCKET', 'erp-backups');
+
+  const storage = {
+    endpoint,
+    bucket,
+    region,
+    accessKeyId,
+    secretAccessKey,
+    pathStyle: resolvePathStyle({ endpointHost: endpoint.host, bucket, override: pathStyleOverride }),
+  };
+
   const keep = envNumber('BACKUP_KEEP', 14);
   const maxAgeHours = envNumber('BACKUP_MAX_AGE_HOURS', 48);
-  const fileSizeLimitBytes = envNumber('SUPABASE_BACKUP_MAX_BYTES', 536870912);
-  const authHeaders = buildAuthHeaders(serviceRoleKey);
 
   if (process.argv.includes('--list')) {
-    const names = await listObjects({ supabaseUrl, bucket, authHeaders });
-    console.log(`${names.length} object(s) in "${bucket}":`);
+    const names = await listObjects(storage);
+    console.log(`${names.length} object(s) in "${bucket}" at ${endpoint.host}:`);
     for (const name of names.slice().sort().reverse()) console.log(`  ${name}`);
     return;
   }
 
-  await ensureBucket({ supabaseUrl, bucket, authHeaders, fileSizeLimitBytes });
+  const reachable = await listObjects(storage, { pageSize: 1 });
+  console.log(`Storage reachable: ${endpoint.host} (path-style: ${storage.pathStyle}), ${reachable.length} object(s) visible.`);
   assertClientSupportsServer(database);
 
   const workDir = mkdtempSync(join(tmpdir(), 'erp-backup-'));
@@ -245,23 +282,20 @@ async function main() {
     writeFileSync(sidecarPath, renderExtensionsSql(extensions), 'utf8');
     console.log(`Extensions recorded: ${extensions.length > 0 ? extensions.join(', ') : 'none'}`);
 
-    await uploadFile({ supabaseUrl, bucket, authHeaders, name: dumpName, filePath: dumpPath, byteLength: dumpBytes });
-    await uploadFile({
-      supabaseUrl,
-      bucket,
-      authHeaders,
+    await uploadFile(storage, { name: dumpName, filePath: dumpPath, byteLength: dumpBytes });
+    await uploadFile(storage, {
       name: sidecarName,
       filePath: sidecarPath,
       byteLength: statSync(sidecarPath).size,
     });
 
-    const stored = await listObjects({ supabaseUrl, bucket, authHeaders });
+    const stored = await listObjects(storage);
     if (!stored.includes(dumpName)) {
       throw new Error(`${dumpName} is not in the bucket after uploading it. The backup cannot be trusted.`);
     }
 
     const plan = planRetention(stored, keep);
-    await deleteObjects({ supabaseUrl, bucket, authHeaders, names: plan.toDelete });
+    await deleteObjects(storage, plan.toDelete);
 
     const freshness = evaluateFreshness({ dumpNames: plan.retained, now: Date.now(), maxAgeHours });
     if (!freshness.ok) {

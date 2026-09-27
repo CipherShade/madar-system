@@ -1,3 +1,5 @@
+import { createHash, createHmac } from 'node:crypto';
+
 const DUMP_PREFIX = 'erp-';
 const DUMP_SUFFIX = '.dump';
 const EXTENSION_SIDECAR_SUFFIX = '.extensions.sql';
@@ -5,6 +7,8 @@ const PORTABLE_EXTENSION_DENYLIST = /^(supabase_|pgsodium|pg_graphql|pg_stat_sta
 const SAFE_SQL_IDENTIFIER = /^[a-z_][a-z0-9_-]*$/;
 const DUMP_STAMP = /^erp-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\.dump$/;
 const MS_PER_HOUR = 3600000;
+const SIGV4_ALGORITHM = 'AWS4-HMAC-SHA256';
+const S3_SERVICE = 's3';
 
 export function buildDumpName(stamp) {
   return `${DUMP_PREFIX}${stamp}${DUMP_SUFFIX}`;
@@ -178,61 +182,207 @@ export function evaluateFreshness({ dumpNames, now, maxAgeHours }) {
   };
 }
 
-export function normalizeSupabaseUrl(rawUrl) {
-  if (!rawUrl || !rawUrl.trim()) {
-    throw new Error('SUPABASE_URL is empty. It is the project URL, for example https://abcdefgh.supabase.co');
+export function sha256Hex(data) {
+  return createHash('sha256').update(data).digest('hex');
+}
+
+function hmacSha256(key, data) {
+  return createHmac('sha256', key).update(data).digest();
+}
+
+export function encodeRfc3986(value) {
+  return encodeURIComponent(String(value)).replace(
+    /[!'()*]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
+export function buildCanonicalQueryString(entries) {
+  return entries
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([key, value]) => [encodeRfc3986(key), encodeRfc3986(value)])
+    .sort((a, b) => {
+      if (a[0] !== b[0]) return a[0] < b[0] ? -1 : 1;
+      if (a[1] !== b[1]) return a[1] < b[1] ? -1 : 1;
+      return 0;
+    })
+    .map(([key, value]) => `${key}=${value}`)
+    .join('&');
+}
+
+export function normalizeS3Endpoint(rawEndpoint) {
+  if (!rawEndpoint || !rawEndpoint.trim()) {
+    throw new Error('BACKUP_S3_ENDPOINT is empty. Copy the endpoint from the storage bucket page in Railway.');
   }
   let url;
   try {
-    url = new URL(rawUrl.trim());
+    url = new URL(rawEndpoint.trim());
   } catch {
-    throw new Error('SUPABASE_URL is not a valid URL. It should look like https://abcdefgh.supabase.co');
+    throw new Error('BACKUP_S3_ENDPOINT is not a valid URL.');
   }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    throw new Error(`SUPABASE_URL must be http or https, got ${url.protocol}`);
-  }
-  return url.origin;
-}
-
-function encodePath(path) {
-  return String(path).split('/').map((segment) => encodeURIComponent(segment)).join('/');
-}
-
-export function buildAuthHeaders(serviceRoleKey) {
-  if (!serviceRoleKey || !serviceRoleKey.trim()) {
-    throw new Error('SUPABASE_SERVICE_ROLE_KEY is empty. It is the service_role key from Supabase project settings.');
+  if (url.protocol !== 'https:') {
+    throw new Error(`BACKUP_S3_ENDPOINT must be https, got ${url.protocol.replace(':', '')}. Credentials must never cross an unencrypted connection.`);
   }
   return {
-    apikey: serviceRoleKey,
-    Authorization: `Bearer ${serviceRoleKey}`,
+    origin: url.origin,
+    host: url.host,
+    basePath: url.pathname.replace(/\/+$/, ''),
   };
 }
 
-export function buildBucketUrl({ supabaseUrl }) {
-  return `${normalizeSupabaseUrl(supabaseUrl)}/storage/v1/bucket`;
+export function resolvePathStyle({ endpointHost, bucket, override }) {
+  if (override === true || override === false) return override;
+  const firstLabel = String(endpointHost).split('.')[0];
+  return firstLabel === bucket;
 }
 
-export function buildBucketPayload({ bucket, fileSizeLimitBytes }) {
+export function buildS3Url({ endpoint, bucket, key = '', pathStyle }) {
+  const host = pathStyle ? endpoint.host : `${bucket}.${endpoint.host}`;
+  const prefix = pathStyle ? endpoint.basePath : '';
+  const path = key ? `${prefix}/${encodeRfc3986(key)}` : prefix || '/';
+  const scheme = endpoint.origin.slice(0, endpoint.origin.indexOf('://'));
+  return { url: `${scheme}://${host}${path === '' ? '/' : path}`, host };
+}
+
+export function buildListObjectsQuery({ prefix = '', maxKeys = 1000, continuationToken = null }) {
+  const entries = [
+    ['list-type', '2'],
+    ['max-keys', String(maxKeys)],
+  ];
+  if (prefix) entries.push(['prefix', prefix]);
+  if (continuationToken) entries.push(['continuation-token', continuationToken]);
+  return buildCanonicalQueryString(entries);
+}
+
+export function buildCanonicalRequest({ method, canonicalUri, canonicalQueryString, headers, signedHeaderNames, payloadHash }) {
+  const canonicalHeaders = signedHeaderNames.map((name) => `${name}:${String(headers[name]).trim()}\n`).join('');
+  return [
+    method,
+    canonicalUri,
+    canonicalQueryString,
+    canonicalHeaders,
+    signedHeaderNames.join(';'),
+    payloadHash,
+  ].join('\n');
+}
+
+export function buildStringToSign({ amzDate, scope, canonicalRequest }) {
+  return [SIGV4_ALGORITHM, amzDate, scope, sha256Hex(canonicalRequest)].join('\n');
+}
+
+export function deriveSigningKey({ secretAccessKey, dateStamp, region, service = S3_SERVICE }) {
+  const dateKey = hmacSha256(`AWS4${secretAccessKey}`, dateStamp);
+  const regionKey = hmacSha256(dateKey, region);
+  const serviceKey = hmacSha256(regionKey, service);
+  return hmacSha256(serviceKey, 'aws4_request');
+}
+
+export function formatAmzDate(date) {
+  return date.toISOString().replace(/[:-]/g, '').replace(/\.\d{3}/, '');
+}
+
+export function signS3Request({
+  method,
+  url,
+  headers = {},
+  payloadHash,
+  accessKeyId,
+  secretAccessKey,
+  region,
+  service = S3_SERVICE,
+  now = new Date(),
+}) {
+  if (!accessKeyId || !accessKeyId.trim()) {
+    throw new Error('BACKUP_S3_ACCESS_KEY_ID is empty. Copy the access key from the storage bucket page in Railway.');
+  }
+  if (!secretAccessKey || !secretAccessKey.trim()) {
+    throw new Error('BACKUP_S3_SECRET_ACCESS_KEY is empty. Copy the secret key from the storage bucket page in Railway.');
+  }
+  if (!region || !region.trim()) {
+    throw new Error('BACKUP_S3_REGION is empty. Copy the region from the storage bucket page in Railway.');
+  }
+  const target = new URL(url);
+  const amzDate = formatAmzDate(now);
+  const dateStamp = amzDate.slice(0, 8);
+  const scope = `${dateStamp}/${region.trim()}/${service}/aws4_request`;
+
+  const requestHeaders = {};
+  for (const [name, value] of Object.entries(headers)) {
+    if (value === undefined || value === null) continue;
+    requestHeaders[name.toLowerCase()] = String(value).trim();
+  }
+  requestHeaders.host = target.host;
+  requestHeaders['x-amz-content-sha256'] = payloadHash;
+  requestHeaders['x-amz-date'] = amzDate;
+
+  const signedHeaderNames = Object.keys(requestHeaders).sort();
+  const canonicalQueryString = buildCanonicalQueryString([...target.searchParams.entries()]);
+  const canonicalRequest = buildCanonicalRequest({
+    method,
+    canonicalUri: target.pathname || '/',
+    canonicalQueryString,
+    headers: requestHeaders,
+    signedHeaderNames,
+    payloadHash,
+  });
+  const stringToSign = buildStringToSign({ amzDate, scope, canonicalRequest });
+  const signingKey = deriveSigningKey({ secretAccessKey: secretAccessKey.trim(), dateStamp, region: region.trim(), service });
+  const signature = createHmac('sha256', signingKey).update(stringToSign, 'utf8').digest('hex');
+
   return {
-    id: bucket,
-    name: bucket,
-    public: false,
-    file_size_limit: fileSizeLimitBytes,
+    ...requestHeaders,
+    Authorization:
+      `${SIGV4_ALGORITHM} Credential=${accessKeyId.trim()}/${scope}, ` +
+      `SignedHeaders=${signedHeaderNames.join(';')}, Signature=${signature}`,
   };
 }
 
-export function buildObjectUrl({ supabaseUrl, bucket, path }) {
-  return `${normalizeSupabaseUrl(supabaseUrl)}/storage/v1/object/${encodeURIComponent(bucket)}/${encodePath(path)}`;
+const XML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+
+export function decodeXmlEntities(text) {
+  return String(text).replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (match, entity) => {
+    if (entity.startsWith('#x') || entity.startsWith('#X')) {
+      return String.fromCodePoint(parseInt(entity.slice(2), 16));
+    }
+    if (entity.startsWith('#')) {
+      return String.fromCodePoint(parseInt(entity.slice(1), 10));
+    }
+    return XML_ENTITIES[entity] ?? match;
+  });
 }
 
-export function buildListUrl({ supabaseUrl, bucket, prefix = '', limit = 1000, offset = 0 }) {
-  const base = `${normalizeSupabaseUrl(supabaseUrl)}/storage/v1/object/list/${encodeURIComponent(bucket)}`;
-  const query = new URLSearchParams({ prefix, limit: String(limit), offset: String(offset) });
-  return `${base}?${query.toString()}`;
+export function parseListObjectsResult(xml) {
+  const names = [];
+  const keyPattern = /<Key>([\s\S]*?)<\/Key>/g;
+  let match = keyPattern.exec(xml);
+  while (match !== null) {
+    names.push(decodeXmlEntities(match[1]));
+    match = keyPattern.exec(xml);
+  }
+  const truncated = /<IsTruncated>\s*true\s*<\/IsTruncated>/i.test(xml);
+  const tokenMatch = /<NextContinuationToken>([\s\S]*?)<\/NextContinuationToken>/.exec(xml);
+  return {
+    names,
+    isTruncated: truncated,
+    nextContinuationToken: tokenMatch ? decodeXmlEntities(tokenMatch[1]) : null,
+  };
 }
 
-export function buildDeletePayload(paths) {
-  return { prefixes: paths };
+const S3_ERROR_HINTS = {
+  SignatureDoesNotMatch:
+    'The signature was rejected. This is almost always BACKUP_S3_REGION: S3 signs each request against a region, and the wrong one produces exactly this error. Copy the region shown on the bucket page.',
+  AccessDenied: 'The access key was refused. Check that the key belongs to this bucket and has write access.',
+  NoSuchBucket: 'The bucket does not exist at that endpoint. Check BACKUP_S3_BUCKET and the endpoint.',
+  InvalidAccessKeyId: 'The access key id is not recognised. It is usually truncated when pasted.',
+};
+
+export function describeS3Failure(action, status, body, secrets = []) {
+  const raw = typeof body === 'string' ? body : JSON.stringify(body ?? '');
+  const code = /<Code>([^<]+)<\/Code>/.exec(raw)?.[1];
+  const hint = code ? S3_ERROR_HINTS[code] : null;
+  const trimmed = raw.length > 300 ? `${raw.slice(0, 300)}...` : raw;
+  const base = `${action} failed with HTTP ${status}${code ? ` (${code})` : ''}`;
+  return redactSecrets(`${base}${hint ? `: ${hint}` : ''}${trimmed ? ` [${trimmed}]` : ''}`, secrets);
 }
 
 export function redactSecrets(text, secrets) {

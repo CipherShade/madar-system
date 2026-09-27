@@ -222,55 +222,197 @@ test('a dump under 1 KB is treated as a failure, not a small success', () => {
   assert.equal(core.isSuspiciouslySmallDump(90_000), false);
 });
 
-test('storage URLs are built and encoded safely', () => {
-  const supabaseUrl = 'https://abcdefgh.supabase.co';
-  assert.equal(
-    core.buildObjectUrl({ supabaseUrl, bucket: 'erp-backups', path: 'erp-20260927-140000.dump' }),
-    'https://abcdefgh.supabase.co/storage/v1/object/erp-backups/erp-20260927-140000.dump',
+test('the S3 endpoint is normalized, and plain http is refused', () => {
+  const endpoint = core.normalizeS3Endpoint('https://iad1.railwayappstorage.com/');
+  assert.equal(endpoint.origin, 'https://iad1.railwayappstorage.com');
+  assert.equal(endpoint.host, 'iad1.railwayappstorage.com');
+  assert.equal(endpoint.basePath, '', 'a trailing slash must not become a path prefix');
+  assert.equal(core.normalizeS3Endpoint('https://s3.example.com/bucket/').basePath, '/bucket');
+
+  assert.throws(() => core.normalizeS3Endpoint(''), /empty/i);
+  assert.throws(() => core.normalizeS3Endpoint('not a url'), /valid URL/i);
+  assert.throws(
+    () => core.normalizeS3Endpoint('http://s3.example.com'),
+    /https/,
+    'storage credentials must never be sent unencrypted',
   );
-  assert.equal(
-    core.buildObjectUrl({ supabaseUrl, bucket: 'my bucket', path: 'a b.dump' }),
-    'https://abcdefgh.supabase.co/storage/v1/object/my%20bucket/a%20b.dump',
-  );
-  assert.equal(core.buildBucketUrl({ supabaseUrl }), 'https://abcdefgh.supabase.co/storage/v1/bucket');
-  assert.equal(
-    core.buildListUrl({ supabaseUrl, bucket: 'erp-backups', limit: 5, offset: 10 }),
-    'https://abcdefgh.supabase.co/storage/v1/object/list/erp-backups?prefix=&limit=5&offset=10',
-  );
-  assert.equal(core.normalizeSupabaseUrl('https://abcdefgh.supabase.co/'), 'https://abcdefgh.supabase.co');
-  assert.throws(() => core.normalizeSupabaseUrl('ftp://x'), /http or https/i);
-  assert.throws(() => core.normalizeSupabaseUrl(''), /empty/i);
 });
 
-test('the bucket is created private, with a size ceiling', () => {
-  const payload = core.buildBucketPayload({ bucket: 'erp-backups', fileSizeLimitBytes: 1024 });
-  assert.equal(payload.public, false, 'student and payment data must never be world-readable');
-  assert.equal(payload.id, 'erp-backups');
-  assert.equal(payload.file_size_limit, 1024);
+test('path-style is detected from the endpoint, and can be forced', () => {
+  assert.equal(
+    core.resolvePathStyle({ endpointHost: 'erp-backups.iad1.railwayappstorage.com', bucket: 'erp-backups' }),
+    true,
+    'an endpoint already scoped to the bucket must not get the bucket name prefixed twice',
+  );
+  assert.equal(
+    core.resolvePathStyle({ endpointHost: 'iad1.railwayappstorage.com', bucket: 'erp-backups' }),
+    false,
+    'a bare regional endpoint needs the bucket in the hostname',
+  );
+  assert.equal(core.resolvePathStyle({ endpointHost: 'iad1.example.com', bucket: 'erp-backups', override: true }), true);
+  assert.equal(core.resolvePathStyle({ endpointHost: 'erp-backups.iad1.example.com', bucket: 'erp-backups', override: false }), false);
 });
 
-test('the service role key is sent as auth headers and is never accepted empty', () => {
-  const headers = core.buildAuthHeaders('sk-supabase-secret-value');
-  assert.equal(headers.apikey, 'sk-supabase-secret-value');
-  assert.equal(headers.Authorization, 'Bearer sk-supabase-secret-value');
-  assert.throws(() => core.buildAuthHeaders(''), /service_role/i);
-  assert.throws(() => core.buildAuthHeaders('   '), /service_role/i);
+test('object URLs are built for both addressing styles', () => {
+  const endpoint = core.normalizeS3Endpoint('https://iad1.railwayappstorage.com');
+
+  const virtual = core.buildS3Url({ endpoint, bucket: 'erp-backups', key: 'erp-20260927-140000.dump', pathStyle: false });
+  assert.equal(virtual.url, 'https://erp-backups.iad1.railwayappstorage.com/erp-20260927-140000.dump');
+  assert.equal(virtual.host, 'erp-backups.iad1.railwayappstorage.com', 'the signed host must be the host actually dialled');
+
+  const pathStyle = core.buildS3Url({ endpoint, bucket: 'erp-backups', key: 'erp-20260927-140000.dump', pathStyle: true });
+  assert.equal(pathStyle.url, 'https://iad1.railwayappstorage.com/erp-20260927-140000.dump');
+
+  const root = core.buildS3Url({ endpoint, bucket: 'erp-backups', key: '', pathStyle: true });
+  assert.equal(root.url, 'https://iad1.railwayappstorage.com/', 'listing must hit the bucket root');
+
+  const scoped = core.normalizeS3Endpoint('https://s3.example.com/erp-backups');
+  assert.equal(
+    core.buildS3Url({ endpoint: scoped, bucket: 'erp-backups', key: 'a.dump', pathStyle: true }).url,
+    'https://s3.example.com/erp-backups/a.dump',
+  );
+});
+
+test('object keys are RFC 3986 encoded, not left to the URL class', () => {
+  assert.equal(core.encodeRfc3986('a b'), 'a%20b');
+  assert.equal(core.encodeRfc3986("a!b'c(d)e*f"), 'a%21b%27c%28d%29e%2Af', 'encodeURIComponent leaves these five unescaped');
+  const endpoint = core.normalizeS3Endpoint('https://s3.example.com');
+  assert.equal(
+    core.buildS3Url({ endpoint, bucket: 'erp-backups', key: 'a b&c=d.dump', pathStyle: true }).url,
+    'https://s3.example.com/a%20b%26c%3Dd.dump',
+  );
+});
+
+test('the canonical query string is sorted and encoded, because S3 signs the order', () => {
+  assert.equal(
+    core.buildCanonicalQueryString([
+      ['prefix', 'erp-'],
+      ['list-type', '2'],
+      ['max-keys', '1000'],
+    ]),
+    'list-type=2&max-keys=1000&prefix=erp-',
+  );
+  assert.equal(core.buildListObjectsQuery({ prefix: '', maxKeys: 1000 }), 'list-type=2&max-keys=1000');
+  assert.equal(
+    core.buildListObjectsQuery({ prefix: 'erp-', maxKeys: 5, continuationToken: 'abc/def+ghi==' }),
+    'continuation-token=abc%2Fdef%2Bghi%3D%3D&list-type=2&max-keys=5&prefix=erp-',
+    'a continuation token carries characters that must be encoded, or the signature will not match',
+  );
+  assert.equal(core.buildListObjectsQuery({ prefix: '' }), 'list-type=2&max-keys=1000', 'an empty prefix is dropped, not sent blank');
+});
+
+test('the SigV4 signature is deterministic and changes when anything signed changes', () => {
+  const request = {
+    method: 'PUT',
+    url: 'https://erp-backups.s3.example.com/erp-20260927-140000.dump',
+    payloadHash: core.sha256Hex('payload'),
+    accessKeyId: 'AKIDEXAMPLE',
+    secretAccessKey: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY',
+    region: 'us-east-1',
+    now: new Date('2026-09-27T03:00:00.000Z'),
+  };
+  assert.deepEqual(core.signS3Request(request), core.signS3Request(request), 'the same request must sign identically');
+
+  const signatureOf = (overrides: Record<string, unknown>) =>
+    /Signature=([0-9a-f]{64})/.exec(core.signS3Request({ ...request, ...overrides }).Authorization)?.[1];
+  const base = signatureOf({});
+
+  for (const [label, overrides] of [
+    ['region', { region: 'iad' }],
+    ['payload', { payloadHash: core.sha256Hex('different') }],
+    ['method', { method: 'DELETE' }],
+    ['time', { now: new Date('2026-09-27T03:00:01.000Z') }],
+    ['key', { url: 'https://erp-backups.s3.example.com/other.dump' }],
+    ['secret', { secretAccessKey: 'a-different-secret' }],
+  ] as const) {
+    assert.notEqual(signatureOf(overrides), base, `changing the ${label} must change the signature`);
+  }
+});
+
+test('the signed headers and credential scope are exactly what S3 requires', () => {
+  const signed = core.signS3Request({
+    method: 'PUT',
+    url: 'https://erp-backups.s3.example.com/erp-20260927-140000.dump',
+    headers: { 'content-type': 'application/octet-stream' },
+    payloadHash: core.sha256Hex('payload'),
+    accessKeyId: 'AKIDEXAMPLE',
+    secretAccessKey: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY',
+    region: 'iad',
+    now: new Date('2026-09-27T03:00:00.000Z'),
+  });
+
+  assert.equal(signed.host, 'erp-backups.s3.example.com');
+  assert.equal(signed['x-amz-date'], '20260927T030000Z');
+  assert.equal(signed['x-amz-content-sha256'], core.sha256Hex('payload'));
+  assert.equal(signed['content-type'], 'application/octet-stream');
+  assert.match(
+    signed.Authorization,
+    /^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE\/20260927\/iad\/s3\/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date, Signature=[0-9a-f]{64}$/,
+    'every x-amz-* header sent must be inside SignedHeaders, or S3 rejects the request',
+  );
+});
+
+test('missing storage credentials stop the run with a name the operator can act on', () => {
+  const base = { method: 'PUT', url: 'https://s3.example.com/a.dump', payloadHash: core.sha256Hex('') };
+  assert.throws(() => core.signS3Request({ ...base, secretAccessKey: 's', region: 'iad' }), /BACKUP_S3_ACCESS_KEY_ID/);
+  assert.throws(() => core.signS3Request({ ...base, accessKeyId: 'a', region: 'iad' }), /BACKUP_S3_SECRET_ACCESS_KEY/);
+  assert.throws(() => core.signS3Request({ ...base, accessKeyId: 'a', secretAccessKey: 's' }), /BACKUP_S3_REGION/);
+  assert.throws(() => core.signS3Request({ ...base, accessKeyId: ' ', secretAccessKey: 's', region: 'iad' }), /ACCESS_KEY_ID/);
+});
+
+test('the list response is parsed into names, including entity escapes', () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<ListBucketResult>
+  <Name>erp-backups</Name>
+  <IsTruncated>false</IsTruncated>
+  <Contents><Key>erp-20260926-030000.dump</Key></Contents>
+  <Contents><Key>erp-20260927-030000.dump</Key></Contents>
+  <Contents><Key>erp-20260927-030000.dump.extensions.sql</Key></Contents>
+</ListBucketResult>`;
+  const result = core.parseListObjectsResult(xml);
+  assert.deepEqual(result.names, [
+    'erp-20260926-030000.dump',
+    'erp-20260927-030000.dump',
+    'erp-20260927-030000.dump.extensions.sql',
+  ]);
+  assert.equal(result.isTruncated, false);
+  assert.equal(result.nextContinuationToken, null);
+
+  const paged = core.parseListObjectsResult(
+    '<ListBucketResult><IsTruncated>true</IsTruncated><NextContinuationToken>1uGawbD4x</NextContinuationToken><Contents><Key>a.dump</Key></Contents></ListBucketResult>',
+  );
+  assert.equal(paged.isTruncated, true);
+  assert.equal(paged.nextContinuationToken, '1uGawbD4x', 'a truncated listing must be followed or old dumps are never seen, and so never pruned or aged');
+
+  assert.equal(core.decodeXmlEntities('a&amp;b&lt;c&gt;d&quot;e&apos;f'), `a&b<c>d"e'f`);
+  assert.deepEqual(core.parseListObjectsResult('<ListBucketResult></ListBucketResult>').names, []);
+});
+
+test('an S3 error names the likely cause, because the usual one is a wrong region', () => {
+  const mismatch = core.describeS3Failure('Uploading erp-20260927-030000.dump', 403,
+    '<Error><Code>SignatureDoesNotMatch</Code><Message>The request signature we calculated does not match.</Message></Error>', []);
+  assert.match(mismatch, /SignatureDoesNotMatch/);
+  assert.match(mismatch, /BACKUP_S3_REGION/, 'a wrong region is the most likely cause and the hardest to guess');
+
+  const denied = core.describeS3Failure('Listing objects', 403, '<Error><Code>AccessDenied</Code></Error>', []);
+  assert.match(denied, /AccessDenied/);
+  assert.match(denied, /write access/);
 });
 
 test('secrets are scrubbed from any text that gets logged', () => {
-  const key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.super-secret-service-role';
+  const key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.super-secret-access-key';
   const scrubbed = core.redactSecrets(`failed with key ${key} and pass s3cr3t-password`, [key, 's3cr3t-password']);
   assert.ok(!scrubbed.includes(key));
   assert.ok(!scrubbed.includes('s3cr3t-password'));
   assert.ok(scrubbed.includes('***'));
 
-  const failure = core.describeStorageFailure('Uploading erp-20260927-140000.dump', 500, `boom ${key}`, [key]);
+  const failure = core.describeS3Failure('Uploading erp-20260927-030000.dump', 500, `boom ${key}`, [key]);
   assert.match(failure, /HTTP 500/);
-  assert.ok(!failure.includes(key));
+  assert.ok(!failure.includes(key), 'the secret access key must never reach the cron log');
 });
 
 test('a long storage error body is truncated before it is logged', () => {
-  const failure = core.describeStorageFailure('Uploading', 400, 'x'.repeat(5000));
+  const failure = core.describeS3Failure('Uploading', 400, 'x'.repeat(5000));
   assert.ok(failure.length < 500, 'an unbounded error body would flood the cron log');
 });
 
@@ -304,6 +446,37 @@ test('the automated and local backups agree on which extensions are portable', (
   }
   for (const name of ['supabase_vault', 'supabase_pg_etleap', 'plpgsql', 'pgsodium', 'pg_graphql', 'pg_stat_statements']) {
     assert.equal(core.isPortableExtension(name), !localPattern.test(name), `${name} disagrees between the two scripts`);
+  }
+});
+
+test('an upload is confirmed by reading the object back, not assumed from a 200', () => {
+  const runner = read('scripts/backup/runBackup.mjs');
+  assert.match(runner, /method: 'HEAD'/, 'a PUT that returns 200 is not proof the bytes arrived');
+  assert.match(runner, /confirmed\.contentLength !== byteLength/, 'a truncated dump that stored cleanly is the failure this catches');
+  assert.match(runner, /await headObject\(storage, name\)/);
+  assert.match(runner, /confirmed present/);
+});
+
+test('the runner reads the database from the app, so it cannot drift onto another one', () => {
+  const runner = read('scripts/backup/runBackup.mjs');
+  assert.match(runner, /envValue\('DATABASE_URL'\)/);
+  const dockerfile = read('Dockerfile.backup');
+  assert.ok(
+    !/postgres\.railway\.internal|pooler\.supabase\.com/.test(`${runner}${dockerfile}`),
+    'the job must follow the app\'s DATABASE_URL rather than naming a host that could change',
+  );
+});
+
+test('the runner no longer depends on Supabase, so a Supabase outage cannot stop the backup', () => {
+  const runner = read('scripts/backup/runBackup.mjs');
+  assert.ok(!/SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY|storage\/v\/1/.test(runner), 'the storage backend is S3 now');
+  for (const name of [
+    'BACKUP_S3_ENDPOINT',
+    'BACKUP_S3_REGION',
+    'BACKUP_S3_ACCESS_KEY_ID',
+    'BACKUP_S3_SECRET_ACCESS_KEY',
+  ]) {
+    assert.ok(runner.includes(name), `${name} must be read from the environment`);
   }
 });
 
