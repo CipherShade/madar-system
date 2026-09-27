@@ -1,4 +1,24 @@
-import { TenantPlan } from './index.js';
+/**
+ * Inline the plan-key constants to break the circular import:
+ *   index.ts  →  export * from './plans.js'
+ *   plans.ts  →  import { TenantPlan } from './index.js'   ← caused the crash
+ *
+ * TenantPlan / TENANT_PLANS is also exported from index.ts, so all existing
+ * consumers keep working unchanged.
+ */
+const TENANT_PLANS_LOCAL = {
+  FREE_TRIAL: 'FREE_TRIAL',
+  BASIC: 'BASIC',
+  GROWTH: 'GROWTH',
+  PRO: 'PRO',
+  MULTI_BRANCH: 'MULTI_BRANCH',
+  BUSINESS: 'BUSINESS',
+  ENTERPRISE: 'ENTERPRISE',
+  ESSENTIAL: 'ESSENTIAL',
+  CONTROL: 'CONTROL',
+} as const;
+type TenantPlan = (typeof TENANT_PLANS_LOCAL)[keyof typeof TENANT_PLANS_LOCAL];
+const TenantPlan = TENANT_PLANS_LOCAL;
 
 /**
  * Single source of truth for the pricing architecture.
