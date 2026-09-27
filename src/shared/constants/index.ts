@@ -14,6 +14,8 @@ export const TENANT_PLANS = {
   MULTI_BRANCH: 'MULTI_BRANCH',
   BUSINESS: 'BUSINESS',
   ENTERPRISE: 'ENTERPRISE',
+  ESSENTIAL: 'ESSENTIAL',
+  CONTROL: 'CONTROL',
 } as const;
 export const TenantPlan = TENANT_PLANS;
 export type TenantPlan = (typeof TENANT_PLANS)[keyof typeof TENANT_PLANS];
@@ -21,6 +23,7 @@ export type TenantPlan = (typeof TENANT_PLANS)[keyof typeof TENANT_PLANS];
 export * from './plans.js';
 
 export const SUBSCRIPTION_STATUSES = {
+  PENDING: 'PENDING',
   TRIALING: 'TRIALING',
   ACTIVE: 'ACTIVE',
   PAST_DUE: 'PAST_DUE',

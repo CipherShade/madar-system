@@ -1,392 +1,232 @@
+import { TenantPlan } from './index.js';
+
 /**
- * Centralized Plan Configuration & Usage Rules for Madar SaaS
- * Single source of truth for all plan definitions, pricing, limits, and helper calculations.
+ * Single source of truth for the pricing architecture.
+ *
+ * Public launch tiers: ESSENTIAL (499 EGP/mo) and CONTROL (1199 EGP/mo).
+ * MULTI_BRANCH is NOT sold or activated yet (internal/future) — it is kept
+ * out of every public surface (pricing pages, /api/plans, signup, billing).
+ * Legacy plan values (GROWTH/BUSINESS/ENTERPRISE) are retained as aliases so
+ * unmigrated rows behave under the new rules; the migration backfills them.
+ *
+ * Founding-customer pricing is NOT part of this catalogue and must never
+ * change what a customer is billed. It lives in `constants/offers.ts` for the
+ * marketing page only. The prices below are the real, billed list prices —
+ * the public API, signup, and billing all read them from here.
  */
 
-export const PLAN_IDS = {
-  BASIC: 'BASIC',
-  GROWTH: 'GROWTH',
-  PRO: 'PRO',
-  MULTI_BRANCH: 'MULTI_BRANCH',
-  // Backward compatibility alias keys if encountered in legacy databases
-  FREE_TRIAL: 'FREE_TRIAL',
-  BUSINESS: 'BUSINESS',
-  ENTERPRISE: 'ENTERPRISE',
-} as const;
-
-export type PlanId = (typeof PLAN_IDS)[keyof typeof PLAN_IDS];
-
-export interface PlanDefinition {
-  id: PlanId;
-  name: string;
-  nameAr: string;
-  priceEgp: number;
-  monthlyVisitLimit: number;
-  maxReceptionists: number | null; // null = unlimited
-  maxBranches: number | null;      // null = multiple / unlimited
-  positioningAr: string;
-  positioningEn: string;
-  badgeAr?: string;
-  badgeEn?: string;
-  isPopular?: boolean;
-  highlightColor?: string;
-  featuresAr: string[];
-  featuresEn: string[];
-  featureBreakdown: {
-    operations: {
-      students: boolean | string;
-      teachers: boolean | string;
-      sessions: boolean | string;
-      checkIn: boolean | string;
-      liveLobby: boolean | string;
-      payments: boolean | string;
-      teacherSettlements: boolean | string;
-    };
-    capacity: {
-      monthlyVisits: number | string;
-      receptionists: number | string;
-      branches: number | string;
-    };
-    management: {
-      reports: boolean | string;
-      advancedReports: boolean | string;
-      analytics: boolean | string;
-      permissions: boolean | string;
-    };
-    multiBranch: {
-      multiBranchSupport: boolean | string;
-      crossBranchManagement: boolean | string;
-      centralDashboard: boolean | string;
-    };
-  };
-}
-
-export const MADAR_PLANS: Record<'BASIC' | 'GROWTH' | 'PRO' | 'MULTI_BRANCH', PlanDefinition> = {
-  BASIC: {
-    id: 'BASIC',
-    name: 'Basic',
-    nameAr: 'بيسك',
-    priceEgp: 499,
-    monthlyVisitLimit: 3000,
-    maxReceptionists: 1,
-    maxBranches: 1,
-    positioningAr: 'للسناتر الصغيرة',
-    positioningEn: 'For small educational centers',
-    featuresAr: [
-      'فرع واحد',
-      'حساب استقبال واحد',
-      'حتى 3,000 زيارة طالب شهرياً',
-      'نظام الاستقبال والـ POS السريع',
-      'إدارة الطلاب والمدرسين والحصص',
-      'تصفية المدرسين وخزينة الوردية',
-      'التقارير اليومية والمالية الأساسية',
-    ],
-    featuresEn: [
-      '1 branch',
-      '1 receptionist account',
-      'Up to 3,000 student visits per month',
-      'Fast lobby check-in & POS',
-      'Student, teacher & session management',
-      'Shift cash register & teacher settlements',
-      'Daily & basic financial reports',
-    ],
-    featureBreakdown: {
-      operations: {
-        students: true,
-        teachers: true,
-        sessions: true,
-        checkIn: true,
-        liveLobby: true,
-        payments: true,
-        teacherSettlements: true,
-      },
-      capacity: {
-        monthlyVisits: '3,000',
-        receptionists: '1',
-        branches: '1',
-      },
-      management: {
-        reports: true,
-        advancedReports: false,
-        analytics: 'أساسية',
-        permissions: 'أساسية',
-      },
-      multiBranch: {
-        multiBranchSupport: false,
-        crossBranchManagement: false,
-        centralDashboard: false,
-      },
-    },
-  },
-  GROWTH: {
-    id: 'GROWTH',
-    name: 'Growth',
-    nameAr: 'جروث',
-    priceEgp: 1499,
-    monthlyVisitLimit: 10000,
-    maxReceptionists: 3,
-    maxBranches: 1,
-    positioningAr: 'للسناتر التي بدأت في النمو',
-    positioningEn: 'For growing centers',
-    badgeAr: 'الأكثر شيوعاً',
-    badgeEn: 'Most Popular',
-    isPopular: true,
-    highlightColor: '#0e7c56',
-    featuresAr: [
-      'فرع واحد',
-      '3 حسابات استقبال متزامنة',
-      'حتى 10,000 زيارة طالب شهرياً',
-      'كل ميزات باقة Basic',
-      'تقارير تفصيلية وتصدير البيانات',
-      'تحليلات حضور وإيرادات متقدمة',
-      'دعم فني سريع',
-    ],
-    featuresEn: [
-      '1 branch',
-      '3 concurrent receptionist accounts',
-      'Up to 10,000 student visits per month',
-      'All Basic plan features',
-      'Detailed reports & data export',
-      'Advanced attendance & revenue analytics',
-      'Priority technical support',
-    ],
-    featureBreakdown: {
-      operations: {
-        students: true,
-        teachers: true,
-        sessions: true,
-        checkIn: true,
-        liveLobby: true,
-        payments: true,
-        teacherSettlements: true,
-      },
-      capacity: {
-        monthlyVisits: '10,000',
-        receptionists: '3',
-        branches: '1',
-      },
-      management: {
-        reports: true,
-        advancedReports: true,
-        analytics: 'متقدمة',
-        permissions: 'متعددة الأدوار',
-      },
-      multiBranch: {
-        multiBranchSupport: false,
-        crossBranchManagement: false,
-        centralDashboard: false,
-      },
-    },
-  },
-  PRO: {
-    id: 'PRO',
-    name: 'Pro',
-    nameAr: 'برو',
-    priceEgp: 1999,
-    monthlyVisitLimit: 20000,
-    maxReceptionists: null, // Unlimited
-    maxBranches: 1,
-    positioningAr: 'للسناتر ذات التشغيل العالي',
-    positioningEn: 'For high-capacity centers',
-    featuresAr: [
-      'فرع واحد',
-      'حسابات استقبال غير محدودة',
-      'حتى 20,000 زيارة طالب شهرياً',
-      'كل ميزات باقة Growth',
-      'أعلى كفاءة تشغيل ومزامنة فورية',
-      'إدارة صلاحيات موظفين متقدمة',
-      'تدريب طاقم العمل ومتابعة دورية',
-    ],
-    featuresEn: [
-      '1 branch',
-      'Unlimited receptionist accounts',
-      'Up to 20,000 student visits per month',
-      'All Growth plan features',
-      'High-throughput real-time sync',
-      'Advanced staff permissions management',
-      'Staff onboarding & dedicated support',
-    ],
-    featureBreakdown: {
-      operations: {
-        students: true,
-        teachers: true,
-        sessions: true,
-        checkIn: true,
-        liveLobby: true,
-        payments: true,
-        teacherSettlements: true,
-      },
-      capacity: {
-        monthlyVisits: '20,000',
-        receptionists: 'غير محدود',
-        branches: '1',
-      },
-      management: {
-        reports: true,
-        advancedReports: true,
-        analytics: 'شاملة وتفصيلية',
-        permissions: 'متقدمة ومخصصة',
-      },
-      multiBranch: {
-        multiBranchSupport: false,
-        crossBranchManagement: false,
-        centralDashboard: false,
-      },
-    },
-  },
-  MULTI_BRANCH: {
-    id: 'MULTI_BRANCH',
-    name: 'Multi-Branch',
-    nameAr: 'متعدد الفروع',
-    priceEgp: 4999,
-    monthlyVisitLimit: 50000,
-    maxReceptionists: null, // Unlimited
-    maxBranches: null,      // Unlimited branches
-    positioningAr: 'لأصحاب أكثر من فرع',
-    positioningEn: 'For multi-branch centers',
-    badgeAr: 'للمؤسسات والشبكات',
-    badgeEn: 'Enterprise Network',
-    highlightColor: '#1e3a8a',
-    featuresAr: [
-      'فروع متعددة غير محدودة',
-      'حسابات استقبال غير محدودة',
-      '50,000+ زيارة طالب شهرياً',
-      'لوحة قيادة مركزية لجميع الفروع',
-      'إدارة موظفين وقاعات وحصص خاصة بكل فرع',
-      'تقارير مجمعة ومقارنة بين الفروع',
-      'مدير حساب مخصص ودعم هاتفي 24/7',
-    ],
-    featuresEn: [
-      'Unlimited multiple branches',
-      'Unlimited receptionist accounts',
-      '50,000+ student visits per month',
-      'Centralized multi-branch dashboard',
-      'Branch-specific staff, rooms & schedules',
-      'Consolidated cross-branch reporting & comparison',
-      'Dedicated account manager & 24/7 support',
-    ],
-    featureBreakdown: {
-      operations: {
-        students: true,
-        teachers: true,
-        sessions: true,
-        checkIn: true,
-        liveLobby: true,
-        payments: true,
-        teacherSettlements: true,
-      },
-      capacity: {
-        monthlyVisits: '50,000+',
-        receptionists: 'غير محدود',
-        branches: 'متعدد الفروع',
-      },
-      management: {
-        reports: true,
-        advancedReports: true,
-        analytics: 'مركزية ومقارنة فروع',
-        permissions: 'تحكم على مستوى الفروع',
-      },
-      multiBranch: {
-        multiBranchSupport: true,
-        crossBranchManagement: true,
-        centralDashboard: true,
-      },
-    },
-  },
+export type PlanLimits = {
+  maxDesks: number;
+  maxBranches: number;
+  maxUsers: number;
+  /**
+   * Visits allowed per billing month; null = unlimited.
+   *
+   * Always advisory: this drives the warning meter and never blocks a check-in.
+   * Whether a center may write at all is decided by the tenant lifecycle, not
+   * by a plan number (see server/lib/tenantLifecycle.ts).
+   */
+  visitLimit: number | null;
 };
 
+export type PlanConfig = {
+  id: TenantPlan;
+  nameAr: string;
+  nameEn: string;
+  /** Appears in public pricing / signup / /api/plans. */
+  isPublic: boolean;
+  /** Can be purchased/upgraded to right now. */
+  purchasable: boolean;
+  featured: boolean;
+  priceEgp: number | null;
+  taglineAr: string;
+  taglineEn: string;
+  featuresAr: string[];
+  featuresEn: string[];
+  limits: PlanLimits;
+  /** Backward-compatible accessors for existing consumers. */
+  monthlyVisitLimit: number | null;
+  maxReceptionists: number | null;
+  maxBranches: number | null;
+};
+
+export const FREE_TRIAL_LIMITS: PlanLimits = { maxDesks: 1, maxBranches: 1, maxUsers: 3, visitLimit: null };
+const ESSENTIAL_LIMITS: PlanLimits = { maxDesks: 2, maxBranches: 1, maxUsers: 3, visitLimit: null };
+const CONTROL_LIMITS: PlanLimits = { maxDesks: 8, maxBranches: 1, maxUsers: 10, visitLimit: 10_000 };
+const MULTI_BRANCH_LIMITS: PlanLimits = { maxDesks: 8, maxBranches: 3, maxUsers: 20, visitLimit: 30_000 };
+
 /**
- * Maps any raw database plan key (including legacy/trial values) to its official PlanDefinition.
+ * Caps a tenant sits under while its payment is still unverified.
+ *
+ * `maxDesks` blocks opening a shift and `maxUsers` blocks adding a receptionist,
+ * so these are hard caps, and they stay below every purchasable plan so an
+ * unapproved center can never hold a paid plan's limits. `maxBranches` has no
+ * Branch model to measure against yet.
+ *
+ * These are a second line of defence only. The primary gate is the tenant
+ * lifecycle: an unapproved or frozen center has every business write refused
+ * before a handler runs, so in practice it never gets far enough to hit a
+ * limit. `visitLimit` stays null because usage is advisory — the lifecycle
+ * guard is what stops an unpaid center recording anything at all.
  */
-export function getPlanConfig(planKey?: string | null): PlanDefinition {
-  if (!planKey) return MADAR_PLANS.BASIC;
-  const key = planKey.toUpperCase();
-  if (key in MADAR_PLANS) {
-    return MADAR_PLANS[key as keyof typeof MADAR_PLANS];
-  }
-  // Legacy / fallback mappings
-  if (key === 'BUSINESS' || key === 'PRO') return MADAR_PLANS.PRO;
-  if (key === 'ENTERPRISE' || key === 'MULTI_BRANCH') return MADAR_PLANS.MULTI_BRANCH;
-  if (key === 'GROWTH') return MADAR_PLANS.GROWTH;
-  return MADAR_PLANS.BASIC;
+export const PENDING_PAYMENT_LIMITS: PlanLimits = { maxDesks: 1, maxBranches: 1, maxUsers: 2, visitLimit: null };
+
+const TRIAL_CONFIG: PlanConfig = {
+  id: TenantPlan.FREE_TRIAL,
+  nameAr: 'تجربة مجانية',
+  nameEn: 'Free Trial',
+  isPublic: false, purchasable: false, featured: false, priceEgp: 0,
+  taglineAr: 'جرب مدار بالكامل لمدة ١٤ يومًا بدون أي دفع.',
+  taglineEn: 'Try all of Madar for 14 days, free.',
+  featuresAr: ['كل ميزات النظام', '14 يوم كاملة', 'بدون بطاقة بنكية'],
+  featuresEn: ['All features enabled', 'Full 14 days', 'No credit card required'],
+  limits: FREE_TRIAL_LIMITS, monthlyVisitLimit: null, maxReceptionists: null, maxBranches: null,
+};
+
+const ESSENTIAL_CONFIG: PlanConfig = {
+  id: TenantPlan.ESSENTIAL,
+  nameAr: 'الأساس',
+  nameEn: 'Essential',
+  isPublic: true, purchasable: true, featured: false, priceEgp: 499,
+  taglineAr: 'الإدارة اليومية الكاملة للاستقبال والطلاب والمدرسين والحسابات.',
+  taglineEn: 'Complete daily management for reception, students, teachers and accounts.',
+  featuresAr: ['النظام التشغيلي الكامل', 'مكتبان للاستقبال يعملان معاً', 'إدارة الطلاب والمدرسين والحصص', 'خزينة الوردية وتسويات المدرسين', 'التقارير اليومية والمالية'],
+  featuresEn: ['Full operational system', 'Up to 2 reception desks', 'Students, teachers & sessions management', 'Shift cash drawer & teacher settlements', 'Daily and financial reports'],
+  limits: ESSENTIAL_LIMITS, monthlyVisitLimit: null, maxReceptionists: null, maxBranches: null,
+};
+
+const CONTROL_CONFIG: PlanConfig = {
+  id: TenantPlan.CONTROL,
+  nameAr: 'السيطرة',
+  nameEn: 'Control',
+  isPublic: true, purchasable: true, featured: true, priceEgp: 1199,
+  taglineAr: 'السيطرة الكاملة على التشغيل والمالية للسناتر متعددة المكاتب.',
+  taglineEn: 'Full control over operations and finances for multi-desk centers.',
+  featuresAr: ['كل ميزات باقة الأساس', 'مكاتب استقبال متزامنة غير محدودة', 'لوحة تحكم مالية لمالك السنتر', 'تنبيهات فوارق الكاش ومستحقات المدرسين', 'دعم فني أولوية وتدريب الموظفين'],
+  featuresEn: ['Everything in Essential', 'Unlimited synchronized reception desks', 'Owner financial control dashboard', 'Cash-variance & teacher-payout alerts', 'Priority support and staff training'],
+  limits: CONTROL_LIMITS, monthlyVisitLimit: 10_000, maxReceptionists: null, maxBranches: null,
+};
+
+const MULTI_BRANCH_CONFIG: PlanConfig = {
+  id: TenantPlan.MULTI_BRANCH,
+  nameAr: 'متعدد الفروع',
+  nameEn: 'Multi-Branch',
+  isPublic: false, purchasable: false, featured: false, priceEgp: 2999,
+  taglineAr: 'إدارة فروع متعددة بحساب مركزي (قريباً).',
+  taglineEn: 'Manage multiple branches from one hub (coming soon).',
+  featuresAr: ['كل ميزات باقة السيطرة', 'فروع متعددة بحساب مركزي', 'تقارير مالية مجمعة'],
+  featuresEn: ['Everything in Control', 'Multiple branches, one account', 'Consolidated financial reporting'],
+  limits: MULTI_BRANCH_LIMITS, monthlyVisitLimit: 30_000, maxReceptionists: null, maxBranches: null,
+};
+
+const GROWTH_CONFIG: PlanConfig = {
+  ...ESSENTIAL_CONFIG, id: TenantPlan.GROWTH, nameAr: 'جروث', nameEn: 'Growth',
+  monthlyVisitLimit: null, maxReceptionists: null, maxBranches: null,
+};
+
+const BUSINESS_CONFIG: PlanConfig = {
+  ...CONTROL_CONFIG, id: TenantPlan.BUSINESS, nameAr: 'بزنس', nameEn: 'Business',
+  monthlyVisitLimit: 10_000, maxReceptionists: null, maxBranches: null,
+};
+
+const ESSENTIAL_BASIC: PlanConfig = {
+  ...ESSENTIAL_CONFIG, id: TenantPlan.BASIC, nameAr: 'بيسك', nameEn: 'Basic', priceEgp: 499,
+  monthlyVisitLimit: null, maxReceptionists: null, maxBranches: null,
+};
+
+const ESSENTIAL_PRO: PlanConfig = {
+  ...ESSENTIAL_CONFIG, id: TenantPlan.PRO, nameAr: 'برو', nameEn: 'Pro', priceEgp: 1999,
+  monthlyVisitLimit: null, maxReceptionists: null, maxBranches: null,
+};
+
+export const PLANS: Record<TenantPlan, PlanConfig> = {
+  [TenantPlan.FREE_TRIAL]: TRIAL_CONFIG,
+  [TenantPlan.ESSENTIAL]: ESSENTIAL_CONFIG,
+  [TenantPlan.CONTROL]: CONTROL_CONFIG,
+  [TenantPlan.MULTI_BRANCH]: MULTI_BRANCH_CONFIG,
+  [TenantPlan.GROWTH]: GROWTH_CONFIG,
+  [TenantPlan.BUSINESS]: BUSINESS_CONFIG,
+  [TenantPlan.ENTERPRISE]: MULTI_BRANCH_CONFIG,
+  [TenantPlan.BASIC]: ESSENTIAL_BASIC,
+  [TenantPlan.PRO]: ESSENTIAL_PRO,
+};
+
+export const PUBLIC_PLAN_IDS: TenantPlan[] = [TenantPlan.ESSENTIAL, TenantPlan.CONTROL];
+export const PURCHASABLE_PLAN_IDS: TenantPlan[] = [TenantPlan.ESSENTIAL, TenantPlan.CONTROL];
+
+export const TRIAL_DAYS = 14;
+
+export function isKnownPlan(plan: string | null | undefined): boolean {
+  return plan !== null && plan !== undefined && plan in PLANS;
+}
+
+export function getPlanConfig(plan: string | null | undefined): PlanConfig {
+  if (plan && plan in PLANS) return PLANS[plan as TenantPlan];
+  return ESSENTIAL_CONFIG;
+}
+
+export function isPurchasablePlan(plan: string | null | undefined): boolean {
+  return PURCHASABLE_PLAN_IDS.includes(plan as TenantPlan);
+}
+
+export function isPublicPlan(plan: string | null | undefined): boolean {
+  return PUBLIC_PLAN_IDS.includes(plan as TenantPlan);
 }
 
 export type WarningLevel = 'NONE' | 'WARNING_80' | 'WARNING_90' | 'LIMIT_REACHED';
 
-export interface UsageCalculationResult {
-  used: number;
-  limit: number;
-  remaining: number;
-  percentage: number;
-  warningLevel: WarningLevel;
-  messageAr: string | null;
-  messageEn: string | null;
-  isBlocked: boolean;
-}
+export type PlanDefinition = PlanConfig;
 
-/**
- * Calculates visit usage progress, remaining visits, warning levels, and localized messages.
- */
-export function calculateUsageWarning(usedVisits: number, monthlyLimit: number): UsageCalculationResult {
-  const safeUsed = Math.max(0, usedVisits);
-  const safeLimit = Math.max(1, monthlyLimit);
-  const remaining = Math.max(0, safeLimit - safeUsed);
-  const percentage = Math.min(100, Math.round((safeUsed / safeLimit) * 100));
-
-  let warningLevel: WarningLevel = 'NONE';
-  let messageAr: string | null = null;
-  let messageEn: string | null = null;
-  let isBlocked = false;
-
-  if (safeUsed >= safeLimit) {
-    warningLevel = 'LIMIT_REACHED';
-    isBlocked = true;
-    messageAr = `وصلت للحد الشهري للزيارات (${safeUsed.toLocaleString('ar-EG')} / ${safeLimit.toLocaleString('ar-EG')}). قم بترقية باقتك للاستمرار في تسجيل زيارات جديدة.`;
-    messageEn = `You have reached your monthly visit limit (${safeUsed.toLocaleString('en-US')} / ${safeLimit.toLocaleString('en-US')}). Please upgrade your plan to continue recording new visits.`;
-  } else if (percentage >= 90) {
-    warningLevel = 'WARNING_90';
-    messageAr = `تنبيه: تبقى لديك ${remaining.toLocaleString('ar-EG')} زيارة فقط هذا الشهر (${percentage}٪ مستخدم).`;
-    messageEn = `Warning: You have only ${remaining.toLocaleString('en-US')} visits remaining this month (${percentage}% used).`;
-  } else if (percentage >= 80) {
-    warningLevel = 'WARNING_80';
-    messageAr = `اقتربت من حد الاستخدام الشهري: استخدمت ${safeUsed.toLocaleString('ar-EG')} من ${safeLimit.toLocaleString('ar-EG')} زيارة. لديك ${remaining.toLocaleString('ar-EG')} زيارة متبقية هذا الشهر.`;
-    messageEn = `Approaching monthly visit limit: Used ${safeUsed.toLocaleString('en-US')} of ${safeLimit.toLocaleString('en-US')} visits. You have ${remaining.toLocaleString('en-US')} visits remaining.`;
-  }
-
+export function calculateUsageWarning(usedVisits: number, monthlyLimit: number): { level: WarningLevel; remaining: number; percentage: number; warningLevel: WarningLevel; messageAr: string; messageEn: string; isBlocked: boolean } {
+  const result = computeVisitUsage(usedVisits, monthlyLimit);
   return {
-    used: safeUsed,
-    limit: safeLimit,
-    remaining,
-    percentage,
-    warningLevel,
-    messageAr,
-    messageEn,
-    isBlocked,
+    level: result.level as WarningLevel, remaining: result.remaining ?? 0,
+    percentage: result.percent ?? 0, warningLevel: result.level as WarningLevel,
+    messageAr: result.level === 'over' ? 'وصلت للحد الشهري للزيارات' : result.level === 'strong' ? 'تنبيه: تبقى لديك زيارات محدودة' : result.level === 'warning' ? 'اقتربت من حد الاستخدام الشهري' : '',
+    messageEn: result.level === 'over' ? 'You have reached your monthly visit limit' : result.level === 'strong' ? 'Warning: visits remaining' : result.level === 'warning' ? 'Approaching monthly visit limit' : '',
+    isBlocked: result.overLimit,
   };
 }
 
-/**
- * Checks if a tenant can add another active receptionist under their plan.
- */
 export function canAddReceptionist(currentActiveCount: number, planKey?: string | null): boolean {
   const config = getPlanConfig(planKey);
-  if (config.maxReceptionists === null) return true; // unlimited
-  return currentActiveCount < config.maxReceptionists;
+  return config.limits.maxUsers > currentActiveCount;
 }
 
-/**
- * Checks if a tenant can add another branch under their plan.
- */
 export function canAddBranch(currentBranchCount: number, planKey?: string | null): boolean {
   const config = getPlanConfig(planKey);
-  if (config.maxBranches === null) return true; // multiple branches allowed
-  return currentBranchCount < config.maxBranches;
+  return config.limits.maxBranches > currentBranchCount;
 }
 
-/**
- * Checks if a tenant can record a new student check-in visit under their monthly limit.
- */
 export function canCheckIn(currentMonthlyVisits: number, planKey?: string | null): boolean {
   const config = getPlanConfig(planKey);
-  return currentMonthlyVisits < config.monthlyVisitLimit;
+  return config.limits.visitLimit === null || currentMonthlyVisits < config.limits.visitLimit;
+}
+
+export const VISIT_USAGE_WARNING_PERCENT = 80;
+export const VISIT_USAGE_STRONG_PERCENT = 90;
+export const VISIT_USAGE_LIMIT_PERCENT = 100;
+
+export type VisitUsageLevel = 'none' | 'ok' | 'warning' | 'strong' | 'over';
+
+export type VisitUsage = {
+  limit: number | null;
+  used: number;
+  percent: number | null;
+  remaining: number | null;
+  level: VisitUsageLevel;
+  overLimit: boolean;
+};
+
+export function computeVisitUsage(used: number, limit: number | null | undefined): VisitUsage {
+  const safeUsed = Math.max(0, Math.floor(Number.isFinite(used) ? used : 0));
+  if (limit === null || limit === undefined || limit <= 0) {
+    return { limit: null, used: safeUsed, percent: null, remaining: null, level: 'none', overLimit: false };
+  }
+  const percent = Math.round((safeUsed / limit) * 100);
+  const level: VisitUsageLevel =
+    safeUsed >= limit ? 'over'
+    : percent >= VISIT_USAGE_STRONG_PERCENT ? 'strong'
+    : percent >= VISIT_USAGE_WARNING_PERCENT ? 'warning' : 'ok';
+  return { limit, used: safeUsed, percent, remaining: Math.max(0, limit - safeUsed), level, overLimit: safeUsed > limit };
 }

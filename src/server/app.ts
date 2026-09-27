@@ -22,7 +22,12 @@ import reportRoutes from './modules/reports/reports.js';
 import userRoutes from './modules/users/users.js';
 import branchRoutes from './modules/management/branches.js';
 import subscriptionRoutes from './modules/subscriptions/subscriptions.js';
+import publicPlanRoutes from './modules/subscriptions/publicPlans.js';
 import adminRoutes from './modules/admin/admin.js';
+import platformOpsRoutes from './modules/admin/platformOps.js';
+import platformUsersRoutes from './modules/admin/platformUsers.js';
+import platformUsageRoutes from './modules/admin/platformUsage.js';
+import platformBillingRoutes from './modules/admin/platformBilling.js';
 
 const REDACT_PATHS = [
   'req.headers.cookie',
@@ -113,7 +118,12 @@ export function buildApp(options?: BuildAppOptions): FastifyInstance {
   app.register(userRoutes, { prefix: '/api/users' });
   app.register(branchRoutes, { prefix: '/api/branches' });
   app.register(subscriptionRoutes, { prefix: '/api/subscriptions' });
+  app.register(publicPlanRoutes, { prefix: '/api' });
   app.register(adminRoutes, { prefix: '/api/admin' });
+  app.register(platformOpsRoutes, { prefix: '/api/admin' });
+  app.register(platformUsersRoutes, { prefix: '/api/admin' });
+  app.register(platformUsageRoutes, { prefix: '/api/admin' });
+  app.register(platformBillingRoutes, { prefix: '/api/admin' });
 
   if (config.nodeEnv === 'production') {
     app.register(fastifyStatic, { root: path.join(process.cwd(), 'dist'), wildcard: false });
@@ -160,7 +170,7 @@ export function buildApp(options?: BuildAppOptions): FastifyInstance {
     return reply.code(404).send(NOT_FOUND_BODY);
   });
 
-  app.setErrorHandler((error, request, reply) => {
+  app.setErrorHandler(async (error, request, reply) => {
     // Fastify schema validation failures
     if (error.validation) {
       const fields = (error.validation as { instancePath: string }[])
@@ -211,6 +221,21 @@ export function buildApp(options?: BuildAppOptions): FastifyInstance {
 
     request.log.error({ err: error }, 'unhandled error');
     const statusCode = Number.isInteger(error.statusCode) && error.statusCode && error.statusCode >= 400 && error.statusCode < 600 ? error.statusCode : 500;
+
+    if (statusCode >= 500) {
+      try {
+        await prisma.systemHealthEvent.create({
+          data: {
+            level: 'CRITICAL',
+            category: 'api.error',
+            message: `${request.method} ${request.url} — ${error.message}`.slice(0, 1000),
+            meta: { statusCode, method: request.method, url: request.url, requestId: request.id },
+          },
+        });
+      } catch (healthError) {
+        request.log.error({ err: healthError }, 'failed to record system health event');
+      }
+    }
 
     reply.status(statusCode).send({
       success: false,

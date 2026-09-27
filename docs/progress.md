@@ -2,8 +2,8 @@
 
 ## Current Phase
 
-**Phase 2 — Implementation (complete) / Phase 3 — Product Completion (core + hardening done) / Phase 4 — Online Launch (production configuration prepared)**  
-*Core workflows, UX screens, security hardening, the documentation audit, and the PROMPT 9 production configuration (env-driven API/socket URLs, fail-fast prod config, graceful shutdown, startup logging, deployment guide, clean-checkout build verified) are implemented. Remaining work: live DB verification, a few open hardening/release items below, and connecting the system to hosted services for launch.*
+**Phase 2 — Implementation (complete) / Phase 3 — Product Completion (core + hardening + the 16-section Super Admin platform console done) / Phase 4 — Online Launch (production configuration prepared)**  
+*Core workflows, UX screens, security hardening, the documentation audit, the PROMPT 9 production configuration (env-driven API/socket URLs, fail-fast prod config, graceful shutdown, startup logging, deployment guide, clean-checkout build verified), and the Madar platform-operations console (centers, users, subscriptions & billing, usage, revenue, health, audit, data, security, support, account) are implemented, with all 6 migrations applied to the connected database. Remaining work: live DB acceptance, a few open hardening/release items below, and connecting the system to hosted services for launch.*
 
 ---
 
@@ -153,7 +153,26 @@
 
 ### Step 18: Automated Test Coverage
 
-> Coverage status: `npm test` → **133 backend tests / 17 files green** (Node `node:test` via `tsx` + `fastify.inject`, DB-less fake-Prisma helpers); `npm run test:frontend` → **25 Vitest + Testing Library tests green** (7 files); `npm run test:db` → full-lifecycle DB-backed suite (skipped unless `TEST_DATABASE_URL` is set to a disposable PostgreSQL).
+#### Database Platform Schema — Deployed
+
+- [x] Authored and applied the additive 20260924000000_platform_models migration (9 CREATE TABLE: platform_notifications, support_notes, system_settings, usage_overrides, system_health_events, super_admin_permissions, super_admin_sessions, super_admin_user_permissions, super_admin_audit_logs; 4 enums: SupportNoteStatus, SystemHealthLevel, PlatformNotificationAudience, PlatformNotificationStatus). Verified: 9/9 platform tables + 4/4 enums present in Supabase.
+- [x] Authored and applied the additive 20260925000000_platform_billing_and_users migration (`Tenant.discountBalance`, `Tenant.creditBalance`, `User.lastLoginAt`, `User.searchName`, and the `SubscriptionAdjustment` table with `DISCOUNT / CREDIT / REFUND` rows). Verified: `db:migrate:status` reports all 6 migrations applied and every platform read route executes without a missing-column error.
+
+- [x] Super-admin server console endpoints (Phase 2) — `GET /console-stats` (platform KPIs v2), `POST /tenants/:id/view-as`, `POST /view-as/return`, plus `SuperAdminAuditLog` capture on extend-trial, suspend/reactivate, and both view-as actions
+- [x] Super-admin console UI (Phase 3) — Platform tab (MRR / centers / support / usage-override / view-as counters + system-health events) and View-as-Center (mandatory audit reason, 30-minute tenant-scoped `ADMIN` impersonation token, active-session banner with expiry countdown + auto-clear, end-session action, center data preview through the scoped token). New strings localized in the `superAdmin` section of `src/client/locales/{ar,en}/common.json`
+- [x] Platform-operations backend (Phase 4) — `src/server/modules/admin/platformOps.ts` registered at `/api/admin`: 18 read routes + 10 mutations, every mutation and its `SuperAdminAuditLog` row committed in one `prisma.$transaction` (audit helper receives the transaction client, fail-closed). Adds support notes (`GET|POST /support-notes`, `PATCH /support-notes/:id`), usage overrides (`GET|POST /usage-overrides`, `DELETE /usage-overrides/:id`), settings, feature flags, notifications, payments verify/reject, health checks, data status + JSON exports, sessions, and own-account reads/updates. The app-level async error handler records 5xx responses as `SystemHealthEvent` (`category: 'api.error'`), so the health surface reports measured events only.
+- [x] Platform-operations console UI (Phase 4) — `SuperAdminPage.tsx` rewritten as a 16-section grouped sidebar shell with `sessionStorage` section memory, `refreshToken`-keyed remount, the view-as banner + scoped center preview, and shared `registry.ts` / `primitives.tsx` / `hooks.ts` / `format.ts` / `plan.ts` / `types.ts` helpers under `features/admin/sections/`. Plan pricing is read-only from `src/shared/constants/plans.ts`; unmeasurable signals are omitted rather than invented. All strings localized in `superAdmin.*` (plus a root `common` object) in `src/client/locales/{ar,en}/common.json`, with the two dictionaries verified key-identical.
+- [x] Center management (Phase 5) — center creation with its owner `ADMIN`, per-center limit overrides (`maxUsers` / `maxDesks` / `maxBranches` / `visitLimit`) with an audit reason, and a Center 360° drill-down (usage counts, subscription timeline, recent platform audit, owner contact). `POST /tenants` and `PATCH /tenants/:id/limits` added to `src/server/modules/admin/admin.ts`.
+- [x] User directory (Phase 5) — `src/server/modules/admin/platformUsers.ts`: cross-center paginated/searchable directory (`GET /users`, `GET /users/:id`), user creation with a one-time temporary password, role/active-state editing, password reset, and session revocation via `sessionVersion`. A suspended center or one at its user cap is refused server-side (`409 CENTER_SUSPENDED` / `409 CENTER_USER_LIMIT_REACHED`). Passwords are never persisted in plaintext or written to the audit log.
+- [x] Usage & limits (Phase 5) — `src/server/modules/admin/platformUsage.ts`: per-center `USERS / RECEPTIONISTS / STUDENTS / VISITS / BRANCHES` against plan limits, including active `UsageOverride` extras and the 80% warning level; grants and revocations from the console.
+- [x] Subscriptions, billing & revenue (Phase 5) — `src/server/modules/admin/platformBilling.ts` plus the pure domain function module `billingMath.ts`: subscription list with status totals and stale-`PENDING` flag, record subscription, cancel (period-end or immediate), reactivate, discount, credit, refund, adjustment history with per-type totals (`GET /billing/adjustments`), and monthly collected revenue (`GET /revenue`). All money math lives in the backend domain layer — no client or controller formulas.
+- [x] Account password change (Phase 5) — `PATCH /admin/account/password` verifies the current password, enforces an 8-character minimum, and revokes every other session. Two-factor authentication is deliberately not supported by the console.
+- [x] Platform-ops test coverage — `tests/platform-ops.test.ts` enumerates the **complete** read/write route lists (401 on every read/write without a token, malformed-token rejection, center `ADMIN`/`RECEPTIONIST`/impersonation-token separation at 403, forged-role rejection, `SUPER_ADMIN` passes every read route, pre-DB input validation, feature-flag catalog integrity) and `tests/billing-math.test.ts` adds 32 tests over the pure billing domain functions; `tests/integration/db/platform-audit-atomicity.test.ts` holds 3 DB-gated mutation↔audit atomicity tests (skipped unless `TEST_DATABASE_URL` is set). `npx tsc -b` and `npx tsc -p tsconfig.server.json --noEmit` clean; `npm run build` green; `npm run test:unit` → **223/223 passing**.
+
+
+
+
+> Coverage status: `npm test` → **223 backend tests / 23 files green** (Node `node:test` via `tsx` + `fastify.inject`, DB-less fake-Prisma helpers); `npm run test:frontend` → **cannot run in this checkout**: `vitest` is declared in `devDependencies` but missing from the installed `node_modules` (the 25 frontend tests need `npm ci` to be installed; pre-existing gap, not caused by the platform work); `npm run test:db` → full-lifecycle DB-backed suite (skipped unless `TEST_DATABASE_URL` is set to a disposable PostgreSQL).
 >
 > Notes: `test:unit` (`tests/unit/*.test.ts`) and `test:integration` (`tests/integration/*.test.ts`) scripts currently match **no files** — the backend suites live flat in `tests/`. Frontend suites live in `tests/frontend/` (excluded from `tsconfig.json`/`tsconfig.server.json` type-checking).
 >
@@ -215,7 +234,7 @@
 - [ ] An administrator can manage rooms, teachers, students, sessions, staff access, reports, and audit history from the UI
 - [ ] All financial values are calculated server-side, stored as two-decimal decimals, and protected by transaction and immutability rules
 - [ ] Duplicate check-ins, closed-shift mutations, completed-session mutations, and unauthorized audit access are rejected with tested error responses
-- [x] The client and server production builds pass from a clean checkout (verified with `npm ci --include=dev` -> `npm run build:production`; 133 backend + 25 frontend tests green)
+- [x] The client and server production builds pass from a clean checkout (verified with `npm ci --include=dev` -> `npm run build:production`; backend suite re-verified at **223/223**, frontend suite pending `npm ci` to install the missing `vitest` binary)
 - [ ] Database migrations, seed, backup, restore, deployment, and rollback procedures are documented and verified
 - [ ] Automated tests and manual acceptance checks pass for the complete operational lifecycle
 

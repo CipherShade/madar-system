@@ -1,39 +1,59 @@
 /* ==========================================================================
-   مدار — Landing Page Styles
-   Tokens align directly with the Madar ERP design system (Cairo font, brand scale)
+   مَدار — Landing page
+   --------------------------------------------------------------------------
+   Design intent: operational, not decorative. Tight radii, 1px borders,
+   restrained shadow, and a single deep brand tone (#1C5223) reserved for the
+   surfaces that matter (hero accents, the Operations plan, the final CTA).
+
+   Neutrals are intentionally aligned with the product's own theme tokens
+   (--bg #f6f5f2 / --border #e2e0dc / --text #20242a) so the marketing page
+   and the app read as one product.
+
+   Everything is written with logical properties (inline-start/end) so the
+   page mirrors correctly in both Arabic (RTL) and English (LTR).
    ========================================================================== */
 
 .madar-landing {
+  /* Brand scale — mirrors tailwind brand-* (existing design system) */
   --lp-brand-50: #e8f5ef;
   --lp-brand-100: #c9e8db;
   --lp-brand-200: #a3d9c1;
   --lp-brand-300: #6ec4a0;
   --lp-brand-400: #3aa87f;
-  --lp-brand-500: #0e7c56;
+  --lp-brand-500: #0e7c56; /* action green — existing primary */
   --lp-brand-600: #0b6a4a;
   --lp-brand-700: #085640;
-  --lp-brand-800: #064334;
-  --lp-brand-900: #043128;
 
-  --lp-ink: #1b2224;
-  --lp-ink-2: #4a5560;
-  --lp-ink-3: #66707a;
-  --lp-bg: #f5f7f6;
-  --lp-tint: #edf2ef;
+  /* Deep brand tone — the product's primary brand colour */
+  --lp-deep: #1c5223;
+  --lp-deep-2: #163f1c;
+  --lp-deep-3: #103016;
+
+  /* Warm neutrals — aligned with the app theme */
+  --lp-ink: #20242a;
+  --lp-ink-2: #6b7280;
+  --lp-ink-3: #9ca3af;
+  --lp-bg: #f6f5f2;
+  --lp-tint: #faf9f7;
   --lp-surface: #ffffff;
-  --lp-line: #e0e6e2;
-  --lp-line-2: #cbd4ce;
+  --lp-line: #e2e0dc;
+  --lp-line-2: #d0cdc8;
 
   --lp-amber: #b45309;
-  --lp-amber-live: #f59e0b;
   --lp-amber-soft: #fef3cd;
   --lp-danger: #c8362c;
 
-  --lp-radius: 14px;
-  --lp-radius-lg: 22px;
-  --lp-shadow-sm: 0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04);
-  --lp-shadow-md: 0 8px 20px -6px rgba(16, 24, 40, 0.10), 0 2px 6px -2px rgba(16, 24, 40, 0.06);
-  --lp-shadow-lg: 0 24px 48px -16px rgba(4, 49, 40, 0.22), 0 6px 14px -6px rgba(4, 49, 40, 0.10);
+  /* Accent for value-for-money selling points, legible on deep green and white. */
+  --lp-gold: #f0c26a;
+
+  --lp-radius-sm: 8px;
+  --lp-radius: 12px;
+  --lp-radius-lg: 16px;
+
+  --lp-shadow-sm: 0 1px 2px rgba(32, 36, 42, 0.04);
+  --lp-shadow-md: 0 4px 12px -4px rgba(32, 36, 42, 0.08), 0 1px 3px rgba(32, 36, 42, 0.04);
+  --lp-shadow-lg: 0 24px 48px -20px rgba(16, 48, 22, 0.22), 0 8px 20px -12px rgba(16, 48, 22, 0.12);
+  --lp-shadow-deep: 0 32px 64px -28px rgba(16, 48, 22, 0.5);
 
   --lp-font: 'Cairo', system-ui, -apple-system, sans-serif;
   --lp-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
@@ -44,12 +64,12 @@
   color: var(--lp-ink);
   font-family: var(--lp-font);
   font-size: 1.0625rem;
-  line-height: 1.85;
+  line-height: 1.8;
   text-rendering: optimizeLegibility;
   overflow-x: hidden;
-  direction: rtl;
 }
 
+/* ---------------------------------------------------------------- reset -- */
 .madar-landing *,
 .madar-landing *::before,
 .madar-landing *::after {
@@ -62,7 +82,8 @@
 .madar-landing h4,
 .madar-landing p,
 .madar-landing ul,
-.madar-landing ol {
+.madar-landing ol,
+.madar-landing figure {
   margin: 0;
 }
 
@@ -82,42 +103,35 @@
   color: inherit;
 }
 
-.madar-landing input {
-  font: inherit;
+.madar-landing svg {
+  flex: none;
 }
 
+.madar-landing :focus-visible {
+  outline: 2px solid var(--lp-brand-500);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* ------------------------------------------------------------ structure -- */
 .madar-landing .lp-wrap {
-  width: min(1200px, 100% - 2 * var(--lp-gutter));
+  width: min(1160px, 100% - 2 * var(--lp-gutter));
   margin-inline: auto;
 }
 
-/* Typography */
-.madar-landing h1,
-.madar-landing h2,
-.madar-landing h3 {
-  font-weight: 800;
-  text-wrap: balance;
+.madar-landing .lp-section {
+  padding-block: clamp(64px, 7.5vw, 108px);
+  scroll-margin-top: 92px;
 }
 
-.madar-landing h2 {
-  font-size: clamp(1.75rem, 1rem + 2.6vw, 2.75rem);
-  line-height: 1.4;
-}
-
-.madar-landing h3 {
-  line-height: 1.5;
+.madar-landing .lp-section--tint {
+  background: var(--lp-tint);
+  border-block: 1px solid var(--lp-line);
 }
 
 .madar-landing .lp-sec-head {
-  max-width: 740px;
-  margin-bottom: clamp(32px, 5vw, 56px);
-}
-
-.madar-landing .lp-sec-head p {
-  margin-top: 14px;
-  font-size: 1.125rem;
-  color: var(--lp-ink-2);
-  max-width: 62ch;
+  max-width: 720px;
+  margin-bottom: clamp(32px, 4.5vw, 52px);
 }
 
 .madar-landing .lp-sec-head--center {
@@ -129,21 +143,36 @@
   margin-inline: auto;
 }
 
-/* Sections */
-.madar-landing .lp-section {
-  padding-block: clamp(64px, 9vw, 112px);
+.madar-landing .lp-kicker {
+  display: block;
+  margin-bottom: 14px;
+  color: var(--lp-brand-600);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
 }
 
-.madar-landing .lp-section--tint {
-  background: var(--lp-tint);
+.madar-landing h2 {
+  font-size: clamp(1.65rem, 1rem + 2.3vw, 2.5rem);
+  font-weight: 800;
+  line-height: 1.42;
+  text-wrap: balance;
 }
 
-.madar-landing .lp-section--dark {
-  background: var(--lp-brand-900);
-  color: #fff;
+.madar-landing .lp-sec-head p {
+  margin-top: 14px;
+  color: var(--lp-ink-2);
+  font-size: 1.08rem;
+  max-width: 62ch;
 }
 
-/* Buttons */
+.madar-landing h3 {
+  font-weight: 800;
+  line-height: 1.5;
+  text-wrap: balance;
+}
+
+/* -------------------------------------------------------------- buttons -- */
 .madar-landing .lp-btn {
   display: inline-flex;
   align-items: center;
@@ -151,14 +180,16 @@
   gap: 8px;
   min-height: 48px;
   padding: 10px 24px;
-  border-radius: 12px;
   border: 1px solid transparent;
+  border-radius: var(--lp-radius);
+  background: none;
   font-weight: 700;
   font-size: 1rem;
   line-height: 1.4;
   text-align: center;
   cursor: pointer;
-  transition: transform 0.18s var(--lp-ease), background-color 0.18s, box-shadow 0.18s, border-color 0.18s, color 0.18s;
+  transition: background-color 0.18s var(--lp-ease), border-color 0.18s var(--lp-ease),
+    color 0.18s var(--lp-ease), transform 0.18s var(--lp-ease), box-shadow 0.18s var(--lp-ease);
 }
 
 .madar-landing .lp-btn:active {
@@ -167,17 +198,14 @@
 
 .madar-landing .lp-btn-sm {
   min-height: 40px;
-  padding: 6px 18px;
-  font-size: 0.95rem;
-  border-radius: 999px;
-  white-space: nowrap;
+  padding: 6px 16px;
+  font-size: 0.92rem;
 }
 
 .madar-landing .lp-btn-lg {
   min-height: 56px;
-  padding: 12px 30px;
-  font-size: 1.0625rem;
-  border-radius: 14px;
+  padding: 14px 30px;
+  font-size: 1.05rem;
 }
 
 .madar-landing .lp-btn-block {
@@ -187,13 +215,12 @@
 .madar-landing .lp-btn-primary {
   background: var(--lp-brand-500);
   color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 8px 18px -8px rgba(14, 124, 86, 0.6);
+  box-shadow: 0 1px 2px rgba(14, 124, 86, 0.24), 0 8px 20px -10px rgba(14, 124, 86, 0.5);
 }
 
 .madar-landing .lp-btn-primary:hover {
   background: var(--lp-brand-600);
   transform: translateY(-1px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 12px 24px -8px rgba(14, 124, 86, 0.6);
 }
 
 .madar-landing .lp-btn-ghost {
@@ -203,709 +230,1541 @@
 }
 
 .madar-landing .lp-btn-ghost:hover {
-  border-color: var(--lp-ink);
+  border-color: var(--lp-ink-2);
   transform: translateY(-1px);
 }
 
-.madar-landing .lp-btn-light {
-  background: #fff;
-  color: var(--lp-brand-800);
+.madar-landing .lp-btn-quiet {
+  padding-inline: 12px;
+  color: var(--lp-ink-2);
+  font-weight: 700;
 }
 
-.madar-landing .lp-btn-light:hover {
+.madar-landing .lp-btn-quiet:hover {
+  color: var(--lp-ink);
+  background: var(--lp-brand-50);
+}
+
+.madar-landing .lp-btn-white {
+  background: #fff;
+  color: var(--lp-deep);
+}
+
+.madar-landing .lp-btn-white:hover {
   background: var(--lp-brand-50);
   transform: translateY(-1px);
 }
 
-.madar-landing .lp-btn-outline-light {
+.madar-landing .lp-btn-outline-white {
   color: #fff;
-  border-color: rgba(255, 255, 255, 0.4);
+  border-color: rgba(255, 255, 255, 0.32);
 }
 
-.madar-landing .lp-btn-outline-light:hover {
-  background: rgba(255, 255, 255, 0.1);
+.madar-landing .lp-btn-outline-white:hover {
   border-color: #fff;
+  background: rgba(255, 255, 255, 0.08);
 }
 
-/* Brand items */
-.madar-landing .lp-logo-sq {
-  width: 38px;
-  height: 38px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border-radius: 11px;
-  background: var(--lp-brand-500);
-  color: #fff;
-  font-weight: 800;
-  font-size: 20px;
-  line-height: 1;
-  box-shadow: 0 2px 6px rgba(14, 124, 86, 0.28);
+.madar-landing .lp-btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
 }
 
-.madar-landing .lp-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.madar-landing .lp-brand-name {
-  font-size: 1.35rem;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.madar-landing .lp-ico {
-  width: 46px;
-  height: 46px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border-radius: 13px;
-  background: var(--lp-brand-50);
-  color: var(--lp-brand-600);
-}
-
-.madar-landing .lp-card {
-  background: #fff;
-  border: 1px solid var(--lp-line);
-  border-radius: var(--lp-radius-lg);
-  padding: 26px;
-  transition: transform 0.25s var(--lp-ease), box-shadow 0.25s var(--lp-ease), border-color 0.25s;
-}
-
-/* ==========================================================================
-   NAVBAR
-   ========================================================================== */
+/* ------------------------------------------------------------------ nav -- */
 .madar-landing .lp-nav {
   position: sticky;
   top: 0;
-  z-index: 50;
+  z-index: 60;
   padding-top: 12px;
-  pointer-events: none;
+  background: linear-gradient(var(--lp-bg) 40%, transparent);
 }
 
-.madar-landing .lp-nav-pill {
-  position: relative;
-  pointer-events: auto;
+.madar-landing .lp-nav-inner {
   display: flex;
   align-items: center;
   gap: 16px;
-  height: 66px;
-  padding-inline: 16px 14px;
-  background: rgba(255, 255, 255, 0.88);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
-  backdrop-filter: blur(14px) saturate(1.3);
-  border: 1px solid rgba(203, 212, 206, 0.7);
+  height: 62px;
+  padding-inline: 14px 10px;
+  background: rgba(255, 255, 255, 0.86);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid var(--lp-line);
   border-radius: 999px;
-  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05);
-  transition: height 0.25s var(--lp-ease), background-color 0.25s, box-shadow 0.25s;
+  box-shadow: var(--lp-shadow-sm);
+  transition: box-shadow 0.25s var(--lp-ease), background-color 0.25s var(--lp-ease);
 }
 
-.madar-landing .lp-nav.is-scrolled .lp-nav-pill {
-  height: 56px;
-  background: rgba(255, 255, 255, 0.96);
+.madar-landing .lp-nav.is-scrolled .lp-nav-inner {
+  background: rgba(255, 255, 255, 0.95);
   box-shadow: var(--lp-shadow-md);
+}
+
+.madar-landing .lp-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+}
+
+.madar-landing .lp-logo-mark {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--lp-deep);
+  color: #fff;
+  font-size: 19px;
+  line-height: 1;
+}
+
+.madar-landing .lp-logo-name {
+  font-size: 1.2rem;
+  line-height: 1;
+  letter-spacing: -0.01em;
 }
 
 .madar-landing .lp-nav-links {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   margin-inline: auto;
 }
 
-.madar-landing .lp-nav-links > a {
-  padding: 8px 16px;
-  border-radius: 999px;
-  font-weight: 600;
+.madar-landing .lp-nav-links a {
+  padding: 8px 14px;
+  border-radius: 8px;
   color: var(--lp-ink-2);
+  font-size: 0.96rem;
+  font-weight: 600;
   transition: background-color 0.18s, color 0.18s;
 }
 
-.madar-landing .lp-nav-links > a:hover {
-  background: var(--lp-tint);
-  color: var(--lp-ink);
+.madar-landing .lp-nav-links a:hover {
+  background: var(--lp-brand-50);
+  color: var(--lp-deep);
 }
 
 .madar-landing .lp-nav-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
-.madar-landing .lp-nav-login {
-  padding: 8px 16px;
-  border-radius: 999px;
+.madar-landing .lp-nav-lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid var(--lp-line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--lp-ink-2);
+  font-size: 0.88rem;
   font-weight: 700;
-  color: var(--lp-ink);
-  transition: background-color 0.18s;
+  cursor: pointer;
+  transition: border-color 0.18s, color 0.18s;
 }
 
-.madar-landing .lp-nav-login:hover {
-  background: var(--lp-tint);
+.madar-landing .lp-nav-lang:hover {
+  border-color: var(--lp-line-2);
+  color: var(--lp-ink);
 }
 
 .madar-landing .lp-nav-toggle {
   display: none;
-  margin-inline-start: auto;
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   place-items: center;
-  border: 1px solid var(--lp-line-2);
-  border-radius: 999px;
+  border: 1px solid var(--lp-line);
+  border-radius: 10px;
   background: #fff;
   cursor: pointer;
 }
 
-/* ==========================================================================
-   HERO
-   ========================================================================== */
+.madar-landing .lp-nav-toggle[aria-expanded='true'] {
+  border-color: var(--lp-brand-200);
+  background: var(--lp-brand-50);
+}
+
+/* ----------------------------------------------------------------- hero -- */
 .madar-landing .lp-hero {
   position: relative;
-  padding-block: clamp(32px, 5vw, 64px) clamp(64px, 9vw, 112px);
+  padding-block: clamp(24px, 3vw, 44px) clamp(56px, 7vw, 96px);
   overflow: clip;
 }
 
-.madar-landing .lp-hero-rings {
+/* Fine grid — structure, not decoration. */
+.madar-landing .lp-hero::before {
+  content: '';
   position: absolute;
-  top: 50%;
-  inset-inline-end: -4%;
-  width: min(760px, 90vw);
-  transform: translateY(-50%);
-  fill: none;
-  stroke: var(--lp-brand-100);
-  stroke-width: 1.5;
+  inset: 0;
+  background-image: linear-gradient(var(--lp-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--lp-line) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 20%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 20%, transparent 75%);
+  opacity: 0.55;
   pointer-events: none;
-  opacity: 0.9;
+}
+
+.madar-landing .lp-hero > * {
+  position: relative;
 }
 
 .madar-landing .lp-hero-grid {
-  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.18fr);
-  gap: clamp(28px, 4vw, 64px);
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  gap: clamp(28px, 4vw, 56px);
   align-items: center;
 }
 
-.madar-landing .lp-hero-kicker {
+.madar-landing .lp-badge {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 5px 14px;
+  gap: 8px;
+  padding: 5px 13px 5px 11px;
   border: 1px solid var(--lp-brand-100);
-  background: var(--lp-brand-50);
-  color: var(--lp-brand-700);
   border-radius: 999px;
-  font-size: 0.9rem;
+  background: #fff;
+  color: var(--lp-deep);
+  font-size: 0.86rem;
   font-weight: 700;
-  line-height: 1.6;
+  line-height: 1.7;
+}
+
+.madar-landing .lp-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lp-brand-500);
 }
 
 .madar-landing .lp-hero h1 {
-  margin-top: 22px;
-  font-size: clamp(2.2rem, 0.9rem + 3.6vw, 3.6rem);
-  line-height: 1.3;
+  margin-top: 20px;
+  font-size: clamp(1.95rem, 0.9rem + 3.1vw, 3.15rem);
+  font-weight: 800;
+  line-height: 1.34;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
 }
 
-.madar-landing .lp-hero-lead {
-  margin-top: 22px;
-  font-size: clamp(1.05rem, 1rem + 0.3vw, 1.2rem);
+.madar-landing .lp-hero h1 em {
+  display: block;
+  font-style: normal;
+  color: var(--lp-deep);
+  position: relative;
+}
+
+.madar-landing .lp-hero h1 em::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  bottom: -0.1em;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--lp-brand-200);
+  opacity: 0.7;
+}
+
+.madar-landing .lp-hero-sub {
+  margin-top: 20px;
+  max-width: 36em;
   color: var(--lp-ink-2);
-  max-width: 34em;
+  font-size: 1.12rem;
 }
 
 .madar-landing .lp-hero-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 32px;
+  gap: 10px;
+  margin-top: 28px;
 }
 
 .madar-landing .lp-hero-assure {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 18px;
-  font-weight: 700;
+  margin-top: 16px;
   color: var(--lp-brand-700);
+  font-size: 0.95rem;
+  font-weight: 700;
 }
 
-/* Floating chips */
-.madar-landing .lp-floats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: center;
-  margin-top: 14px;
+/* --------------------------------------------------------- product frame -- */
+.madar-landing .lp-frame {
+  position: relative;
+  border: 1px solid var(--lp-line);
+  border-radius: var(--lp-radius-lg);
+  background: #fff;
+  box-shadow: var(--lp-shadow-lg);
+  overflow: hidden;
 }
 
-.madar-landing .lp-float {
+/* Chrome bar */
+.madar-landing .lp-frame-bar {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 14px 9px 16px;
-  background: #fff;
-  border: 1px solid var(--lp-line);
-  border-radius: 16px;
-  box-shadow: var(--lp-shadow-md);
-  line-height: 1.35;
+  padding: 10px 14px;
+  background: var(--lp-tint);
+  border-bottom: 1px solid var(--lp-line);
 }
 
-.madar-landing .lp-float b {
+.madar-landing .lp-frame-dots {
+  display: flex;
+  gap: 5px;
+}
+
+.madar-landing .lp-frame-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lp-line-2);
+}
+
+.madar-landing .lp-frame-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--lp-ink-2);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.madar-landing .lp-frame-tag {
+  padding: 2px 9px;
+  border: 1px solid var(--lp-brand-100);
+  border-radius: 999px;
+  background: var(--lp-brand-50);
+  color: var(--lp-brand-700);
+  font-size: 0.7rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* The mock reproduces the real lobby fields: session title, teacher, subject,
+   room, live headcount vs capacity, plus the check-in panel. */
+.madar-landing .lp-app {
+  --app-line: #e2e0dc;
+  --app-text: #20242a;
+  --app-muted: #6b7280;
+  --app-primary: #0e7c56;
+  --app-soft: #e8f5ef;
+  container-type: inline-size;
+  padding: 14px;
+  background: #f6f5f2;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--app-text);
+}
+
+.madar-landing .lp-app-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.madar-landing .lp-app-head b {
   display: block;
-  font-size: 0.95rem;
+  font-size: 13.5px;
   font-weight: 800;
 }
 
-.madar-landing .lp-float small {
+.madar-landing .lp-app-head small {
   display: block;
-  font-size: 0.78rem;
+  font-size: 10.5px;
+  color: var(--app-muted);
+}
+
+.madar-landing .lp-app-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+/* session cards — mirrors the app's session-card */
+.madar-landing .lp-session {
+  display: block;
+  width: 100%;
+  text-align: start;
+  padding: 10px;
+  margin-bottom: 8px;
+  background: #fff;
+  border: 1px solid var(--app-line);
+  border-radius: 10px;
+}
+
+.madar-landing .lp-session.is-active {
+  border-color: var(--app-primary);
+  box-shadow: 0 0 0 3px rgba(14, 124, 86, 0.12);
+}
+
+.madar-landing .lp-session.is-soon {
+  background: #fbfaf8;
+}
+
+.madar-landing .lp-session-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.madar-landing .lp-session-title {
+  font-size: 12px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.madar-landing .lp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--app-soft);
+  color: var(--app-primary);
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.madar-landing .lp-pill--muted {
+  background: #eeede9;
+  color: var(--app-muted);
+}
+
+.madar-landing .lp-pill--live {
+  background: var(--app-primary);
+  color: #fff;
+}
+
+.madar-landing .lp-pill--amber {
+  background: #fef3cd;
+  color: #b45309;
+}
+
+.madar-landing .lp-session-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: var(--app-muted);
+}
+
+.madar-landing .lp-session-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.madar-landing .lp-session-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 7px;
+  font-size: 10.5px;
+  color: var(--app-muted);
+}
+
+.madar-landing .lp-session-foot b {
+  color: var(--app-text);
+  font-size: 11.5px;
+}
+
+.madar-landing .lp-bar {
+  height: 5px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: #eeede9;
+  overflow: hidden;
+}
+
+.madar-landing .lp-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--app-primary);
+}
+
+/* check-in panel */
+.madar-landing .lp-panel {
+  padding: 10px;
+  background: #fff;
+  border: 1px solid var(--app-line);
+  border-radius: 10px;
+}
+
+.madar-landing .lp-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 8px;
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+.madar-landing .lp-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  color: var(--app-muted);
+  font-size: 10.5px;
+}
+
+.madar-landing .lp-student {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.madar-landing .lp-avatar {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--app-soft);
+  color: var(--app-primary);
+  font-size: 10.5px;
+  font-weight: 800;
+  flex: none;
+}
+
+.madar-landing .lp-student-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.madar-landing .lp-student-meta b {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.madar-landing .lp-student-meta small {
+  font-size: 9.5px;
+  color: var(--app-muted);
+}
+
+.madar-landing .lp-checkin-btn {
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--app-primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  flex: none;
+}
+
+.madar-landing .lp-methods {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 9px;
+}
+
+.madar-landing .lp-method {
+  padding: 4px 2px;
+  border: 1px solid var(--app-line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--app-muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.madar-landing .lp-method.is-active {
+  border-color: var(--app-primary);
+  background: var(--app-soft);
+  color: var(--app-primary);
+}
+
+/* activity feed */
+.madar-landing .lp-feed {
+  margin-top: 10px;
+  padding: 10px;
+  background: #fff;
+  border: 1px solid var(--app-line);
+  border-radius: 10px;
+}
+
+.madar-landing .lp-feed-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-block: 5px;
+  font-size: 10.5px;
+  color: var(--app-muted);
+  border-bottom: 1px dashed var(--app-line);
+}
+
+.madar-landing .lp-feed-item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.madar-landing .lp-feed-item b {
+  color: var(--app-text);
+  font-weight: 700;
+}
+
+.madar-landing .lp-feed-item time {
+  margin-inline-start: auto;
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+
+.madar-landing .lp-caption {
+  margin-top: 12px;
+  text-align: center;
   color: var(--lp-ink-3);
+  font-size: 0.82rem;
   font-weight: 600;
 }
 
-.madar-landing .lp-float-ico {
-  width: 34px;
-  height: 34px;
+/* ------------------------------------------------------- transformation -- */
+.madar-landing .lp-transform {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: clamp(16px, 2.5vw, 28px);
+  align-items: stretch;
+}
+
+.madar-landing .lp-transform-col {
+  padding: clamp(20px, 2.6vw, 30px);
+  border-radius: var(--lp-radius-lg);
+}
+
+.madar-landing .lp-transform-col--ask {
+  background: #fff;
+  border: 1px solid var(--lp-line);
+}
+
+.madar-landing .lp-transform-col--see {
+  background: var(--lp-deep);
+  color: #fff;
+  box-shadow: var(--lp-shadow-deep);
+}
+
+.madar-landing .lp-transform-col h3 {
+  font-size: 1.2rem;
+}
+
+.madar-landing .lp-transform-col--see h3 {
+  color: #fff;
+}
+
+.madar-landing .lp-qlist {
+  display: grid;
+  gap: 2px;
+  margin-top: 16px;
+}
+
+.madar-landing .lp-qlist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
   border-radius: 10px;
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.65;
+}
+
+.madar-landing .lp-qlist--ask li {
+  color: var(--lp-ink-2);
+  background: var(--lp-tint);
+  border: 1px dashed var(--lp-line-2);
+}
+
+.madar-landing .lp-qlist--see li {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.madar-landing .lp-qlist li svg {
+  margin-top: 0.45em;
+}
+
+.madar-landing .lp-transform-arrow {
   display: grid;
   place-items: center;
+  width: 44px;
+  height: 44px;
+  align-self: center;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid var(--lp-line);
+  color: var(--lp-deep);
+  box-shadow: var(--lp-shadow-md);
+}
+
+/* ----------------------------------------------------------- visibility -- */
+.madar-landing .lp-vis-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: clamp(28px, 4vw, 52px);
+  align-items: center;
+}
+
+.madar-landing .lp-vis-points {
+  display: grid;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.madar-landing .lp-vis-point {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid var(--lp-line);
+  border-radius: var(--lp-radius);
+}
+
+.madar-landing .lp-vis-point b {
+  display: block;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.madar-landing .lp-vis-point small {
+  display: block;
+  color: var(--lp-ink-2);
+  font-size: 0.92rem;
+  line-height: 1.65;
+}
+
+.madar-landing .lp-vis-ico {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
   background: var(--lp-brand-50);
   color: var(--lp-brand-600);
   flex: none;
 }
 
-.madar-landing .lp-float-ico--amber {
-  background: var(--lp-amber-soft);
-  color: var(--lp-amber);
-}
-
-/* UI Mockup Window */
-.madar-landing .lp-win {
-  container-type: inline-size;
-  background: #fff;
-  border: 1px solid var(--lp-line);
-  border-radius: 18px;
-  box-shadow: var(--lp-shadow-lg);
-  overflow: hidden;
-  font-size: 12px;
-  line-height: 1.5;
-  color: #20242a;
-}
-
-.madar-landing .lp-win-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 14px;
-  background: #fbfcfb;
-  border-bottom: 1px solid #e2e0dc;
-}
-
-.madar-landing .lp-win-dots {
-  display: flex;
-  gap: 5px;
-}
-
-.madar-landing .lp-win-dots i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #d6dcd8;
-}
-
-.madar-landing .lp-win-title {
-  flex: 1;
-  text-align: center;
-  font-size: 11px;
-  color: #6b7280;
-  font-weight: 600;
-}
-
-.madar-landing .lp-win-note {
-  font-size: 10px;
-  color: #6b7280;
-  background: #eeede9;
-  padding: 1px 9px;
-  border-radius: 99px;
-  font-weight: 600;
-}
-
-/* Feature Tabs */
-.madar-landing .lp-features {
-  background: #fff;
-  border: 1px solid var(--lp-line);
-  border-radius: 26px;
-  overflow: hidden;
-  box-shadow: var(--lp-shadow-sm);
-}
-
-.madar-landing .lp-tablist {
-  display: flex;
-  gap: 4px;
-  padding: 10px;
-  background: #f1f5f3;
-  border-bottom: 1px solid var(--lp-line);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.madar-landing .lp-tablist::-webkit-scrollbar {
-  display: none;
-}
-
-.madar-landing .lp-tab {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  border: 0;
-  border-radius: 12px;
-  background: transparent;
-  font-weight: 700;
-  font-size: 0.98rem;
-  color: var(--lp-ink-2);
-  cursor: pointer;
-  transition: background-color 0.2s, color 0.2s, box-shadow 0.2s;
-}
-
-.madar-landing .lp-tab:hover {
-  background: #e6ede9;
-  color: var(--lp-ink);
-}
-
-.madar-landing .lp-tab.is-active {
-  background: #fff;
-  color: var(--lp-brand-700);
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08), 0 0 0 1px var(--lp-line);
-}
-
-.madar-landing .lp-tag {
-  padding: 0 9px;
-  border-radius: 99px;
-  background: var(--lp-brand-500);
-  color: #fff;
-  font-size: 0.72rem;
-  font-weight: 800;
-  line-height: 1.7;
-}
-
-.madar-landing .lp-tabpanels {
-  padding: clamp(20px, 3.6vw, 48px);
-}
-
-.madar-landing .lp-tabpanel {
+/* --------------------------------------------------------------- system -- */
+.madar-landing .lp-modules {
   display: grid;
-  grid-template-columns: minmax(0, 4.2fr) minmax(0, 7.8fr);
-  gap: clamp(24px, 4vw, 56px);
-  align-items: center;
-}
-
-.madar-landing .lp-checks {
-  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 
-.madar-landing .lp-checks li {
-  position: relative;
-  padding-inline-start: 32px;
-  color: var(--lp-ink-2);
-  line-height: 1.7;
-}
-
-.madar-landing .lp-checks li::before {
-  content: "✓";
-  position: absolute;
-  inset-inline-start: 0;
-  top: 0.2em;
-  width: 21px;
-  height: 21px;
-  border-radius: 50%;
-  background: var(--lp-brand-50);
-  color: var(--lp-brand-700);
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  font-size: 12px;
-}
-
-/* Steps */
-.madar-landing .lp-steps {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
-}
-
-.madar-landing .lp-step-n {
-  display: block;
-  margin-bottom: 12px;
-  font-size: 3.6rem;
-  font-weight: 800;
-  line-height: 1.1;
-  color: var(--lp-brand-200);
-}
-
-/* Before / After */
-.madar-landing .lp-compare {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-  max-width: 980px;
-  margin-inline: auto;
-}
-
-.madar-landing .lp-compare-col {
-  padding: clamp(24px, 3.2vw, 40px);
-  border-radius: 26px;
-}
-
-.madar-landing .lp-compare-col--before {
+.madar-landing .lp-module {
+  padding: 18px;
   background: #fff;
   border: 1px solid var(--lp-line);
-  color: var(--lp-ink-2);
+  border-radius: var(--lp-radius);
+  transition: border-color 0.2s var(--lp-ease), transform 0.2s var(--lp-ease), box-shadow 0.2s var(--lp-ease);
 }
 
-.madar-landing .lp-compare-col--after {
-  background: var(--lp-brand-900);
-  color: #fff;
-  box-shadow: var(--lp-shadow-lg);
-}
-
-/* Pricing */
-.madar-landing .lp-trial {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px 28px;
-  max-width: 1000px;
-  margin: 0 auto 24px;
-  padding: 22px clamp(20px, 3vw, 32px);
-  background: var(--lp-brand-50);
-  border: 1px solid var(--lp-brand-100);
-  border-radius: 24px;
-}
-
-.madar-landing .lp-trial-days {
-  width: 74px;
-  height: 74px;
-  flex: none;
-  display: grid;
-  align-content: center;
-  justify-items: center;
-  border-radius: 20px;
-  background: var(--lp-brand-500);
-  color: #fff;
-}
-
-.madar-landing .lp-trial-days b {
-  font-size: 2rem;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.madar-landing .lp-trial-days small {
-  font-size: 0.8rem;
-  font-weight: 700;
-  margin-top: 2px;
-}
-
-.madar-landing .lp-plans {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
-  max-width: 1000px;
-  margin-inline: auto;
-}
-
-.madar-landing .lp-plan {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  padding: clamp(26px, 3.2vw, 40px);
-  background: #fff;
-  border: 1px solid var(--lp-line);
-  border-radius: 28px;
-  transition: transform 0.25s var(--lp-ease), box-shadow 0.25s var(--lp-ease);
-}
-
-.madar-landing .lp-plan:hover {
-  transform: translateY(-3px);
+.madar-landing .lp-module:hover {
+  border-color: var(--lp-brand-200);
+  transform: translateY(-2px);
   box-shadow: var(--lp-shadow-md);
 }
 
-.madar-landing .lp-plan--featured {
-  background: var(--lp-brand-900);
-  border-color: var(--lp-brand-900);
-  color: #fff;
-  box-shadow: 0 32px 60px -26px rgba(4, 49, 40, 0.6);
+.madar-landing .lp-module b {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 1rem;
+  font-weight: 800;
 }
 
-.madar-landing .lp-price {
+.madar-landing .lp-module small {
+  color: var(--lp-ink-2);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.madar-landing .lp-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 32px;
+  padding: 18px 20px;
+  background: #fff;
+  border: 1px solid var(--lp-line);
+  border-radius: var(--lp-radius);
+}
+
+.madar-landing .lp-flow-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: var(--lp-brand-50);
+  color: var(--lp-deep);
+  font-size: 0.94rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.madar-landing .lp-flow-arrow {
+  color: var(--lp-ink-3);
+  flex: none;
+}
+
+/* ---------------------------------------------------------- value stack -- */
+.madar-landing .lp-value-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: clamp(28px, 4vw, 56px);
+  align-items: start;
+}
+
+.madar-landing .lp-value-list {
+  display: grid;
+  gap: 10px;
+}
+
+.madar-landing .lp-value-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 18px;
+  background: #fff;
+  border: 1px solid var(--lp-line);
+  border-radius: var(--lp-radius);
+}
+
+.madar-landing .lp-value-item b {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 1.02rem;
+  font-weight: 800;
+}
+
+.madar-landing .lp-value-item p {
+  color: var(--lp-ink-2);
+  font-size: 0.94rem;
+  line-height: 1.7;
+}
+
+.madar-landing .lp-value-n {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--lp-deep);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 800;
+  flex: none;
+}
+
+.madar-landing .lp-placeholder {
+  margin-top: 10px;
+  padding: 10px 13px;
+  border: 1px dashed var(--lp-line-2);
+  border-radius: 9px;
+  background: var(--lp-tint);
+  color: var(--lp-ink-3);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+/* -------------------------------------------------------------- pricing -- */
+.madar-landing .lp-price-lead {
+  max-width: 680px;
+  margin: 0 auto clamp(28px, 3.5vw, 40px);
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  text-align: center;
+  background: #fff;
+  border: 1px solid var(--lp-brand-100);
+  border-radius: var(--lp-radius);
+  color: var(--lp-deep);
+  font-weight: 700;
+}
+
+.madar-landing .lp-price-lead b {
+  color: var(--lp-brand-600);
+}
+
+/* The Operations plan is deliberately the largest object on the page. */
+.madar-landing .lp-plan-main {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: clamp(24px, 3.5vw, 48px);
+  padding: clamp(26px, 3.4vw, 44px);
+  background: var(--lp-deep);
+  color: #fff;
+  border-radius: 20px;
+  box-shadow: var(--lp-shadow-deep);
+  overflow: hidden;
+}
+
+/* Subtle brand texture on the deep surface. */
+.madar-landing .lp-plan-main::after {
+  content: '';
+  position: absolute;
+  inset-inline-end: -80px;
+  bottom: -120px;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(110, 196, 160, 0.22), transparent 70%);
+  pointer-events: none;
+}
+
+.madar-landing .lp-plan-main > * {
+  position: relative;
+  z-index: 1;
+}
+
+
+.madar-landing .lp-plan-main h3 {
+  font-size: clamp(1.6rem, 1.2rem + 1.2vw, 2.1rem);
+  color: #fff;
+}
+
+.madar-landing .lp-plan-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.madar-landing .lp-plan-badge {
+  padding: 4px 12px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.madar-landing .lp-plan-highlight {
+  margin-top: 10px;
+  color: var(--lp-gold);
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.madar-landing .lp-plan-tagline {
+  margin-top: 10px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 1.02rem;
+}
+
+.madar-landing .lp-plan-eyebrow {
+  display: block;
+  margin-bottom: 6px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.madar-landing .lp-plan-price {
   display: flex;
   align-items: baseline;
+  flex-wrap: wrap;
   gap: 10px;
-  margin-bottom: 24px;
 }
 
-.madar-landing .lp-price b {
-  font-size: 3.6rem;
+.madar-landing .lp-plan-price b {
+  font-size: clamp(3rem, 2rem + 3vw, 4.25rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.madar-landing .lp-plan-price span {
+  color: rgba(255, 255, 255, 0.75);
+  font-weight: 700;
+}
+
+.madar-landing .lp-plan-was {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.madar-landing .lp-plan-was del {
+  text-decoration-thickness: 2px;
+}
+
+.madar-landing .lp-plan-period {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--lp-brand-300);
+  color: var(--lp-deep-3);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.madar-landing .lp-plan-cta {
+  margin-top: 26px;
+}
+
+.madar-landing .lp-plan-features {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  align-content: start;
+}
+
+.madar-landing .lp-plan-features li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.madar-landing .lp-plan-features li svg {
+  margin-top: 0.4em;
+  color: var(--lp-brand-300);
+}
+
+/* secondary plans — clearly quieter */
+.madar-landing .lp-plans-secondary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 22px;
+}
+
+.madar-landing .lp-plan-sub {
+  display: flex;
+  flex-direction: column;
+  padding: 22px;
+  background: #fff;
+  border: 1px solid var(--lp-line);
+  border-radius: var(--lp-radius);
+}
+
+.madar-landing .lp-plan-sub h3 {
+  font-size: 1.25rem;
+}
+
+.madar-landing .lp-plan-sub .lp-plan-badge {
+  border-color: var(--lp-brand-500);
+  color: var(--lp-brand-600);
+}
+
+.madar-landing .lp-plan-sub .lp-plan-highlight {
+  color: var(--lp-amber);
+}
+
+.madar-landing .lp-plan-sub .lp-plan-tagline {
+  color: var(--lp-ink-2);
+  font-size: 0.94rem;
+}
+
+.madar-landing .lp-plan-sub .lp-plan-price b {
+  color: var(--lp-deep);
+}
+
+.madar-landing .lp-plan-sub .lp-plan-price span {
+  color: var(--lp-ink-2);
+}
+
+.madar-landing .lp-plan-sub .lp-plan-was {
+  color: var(--lp-ink-3);
+}
+
+.madar-landing .lp-plan-sub .lp-plan-period {
+  background: var(--lp-brand-50);
+  color: var(--lp-brand-700);
+  align-self: flex-start;
+}
+
+.madar-landing .lp-plan-sub .lp-plan-features {
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 16px;
+}
+
+.madar-landing .lp-plan-sub .lp-plan-features li {
+  background: var(--lp-tint);
+  border-color: var(--lp-line);
+  color: var(--lp-ink-2);
+  font-size: 0.9rem;
+}
+
+.madar-landing .lp-plan-sub .lp-plan-features li svg {
+  color: var(--lp-brand-500);
+}
+
+.madar-landing .lp-plan-sub .lp-btn {
+  margin-top: auto;
+  margin-block-start: 20px;
+}
+
+.madar-landing .lp-soon {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  margin-top: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--lp-amber-soft);
+  color: var(--lp-amber);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.madar-landing .lp-plan-sub small {
+  display: block;
+  margin-top: 8px;
+  color: var(--lp-ink-3);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+/* ------------------------------------------------------------ guarantee -- */
+.madar-landing .lp-guarantee {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: clamp(18px, 2.5vw, 28px);
+  align-items: start;
+  padding: clamp(24px, 3vw, 38px);
+  background: #fff;
+  border: 1px solid var(--lp-line);
+  border-radius: 18px;
+  box-shadow: var(--lp-shadow-md);
+}
+
+.madar-landing .lp-guarantee-badge {
+  width: 84px;
+  height: 84px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 1px;
+  border-radius: 16px;
+  background: var(--lp-brand-50);
+  border: 1px solid var(--lp-brand-100);
+  color: var(--lp-deep);
+}
+
+.madar-landing .lp-guarantee-badge b {
+  font-size: 1.7rem;
   font-weight: 800;
   line-height: 1;
 }
 
-.madar-landing .lp-plan-flag {
-  position: absolute;
-  top: -15px;
-  inset-inline-start: 30px;
-  padding: 2px 16px;
-  border-radius: 99px;
-  background: var(--lp-amber-live);
-  color: #3b2400;
-  font-size: 0.88rem;
-  font-weight: 800;
-  line-height: 1.9;
+.madar-landing .lp-guarantee-badge small {
+  font-size: 0.75rem;
+  font-weight: 700;
 }
 
-/* Interactive Calculator */
-.madar-landing .lp-calc {
-  padding: clamp(22px, 3vw, 34px);
+.madar-landing .lp-guarantee h3 {
+  font-size: 1.35rem;
+}
+
+.madar-landing .lp-guarantee p {
+  margin-top: 10px;
+  color: var(--lp-ink-2);
+  font-size: 1.05rem;
+  line-height: 1.8;
+}
+
+.madar-landing .lp-terms {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  color: var(--lp-ink-3);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.madar-landing .lp-terms a {
+  color: var(--lp-brand-600);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ---------------------------------------------------------- how it works -- */
+.madar-landing .lp-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  max-width: 880px;
+  margin-inline: auto;
+  counter-reset: lp-step;
+}
+
+.madar-landing .lp-step {
+  position: relative;
+  padding: 22px 20px 20px;
   background: #fff;
   border: 1px solid var(--lp-line);
-  border-radius: 26px;
-  box-shadow: var(--lp-shadow-sm);
+  border-radius: var(--lp-radius);
 }
 
-.madar-landing .lp-calc-tag {
-  margin: 14px 0 22px;
-  padding: 8px 14px;
-  border-radius: 12px;
-  background: var(--lp-amber-soft);
-  color: #7a3d06;
+.madar-landing .lp-step-n {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-bottom: 12px;
+  border-radius: 9px;
+  background: var(--lp-deep);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.madar-landing .lp-step b {
+  display: block;
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.madar-landing .lp-step p {
+  margin-top: 6px;
+  color: var(--lp-ink-2);
+  font-size: 0.94rem;
+  line-height: 1.7;
+}
+
+/* ------------------------------------------------------------ final CTA -- */
+.madar-landing .lp-final {
+  position: relative;
+  padding-block: clamp(64px, 8vw, 104px);
+  background: var(--lp-deep);
+  color: #fff;
+  text-align: center;
+  overflow: hidden;
+}
+
+.madar-landing .lp-final::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 60% 70% at 50% 50%, #000, transparent 78%);
+  -webkit-mask-image: radial-gradient(ellipse 60% 70% at 50% 50%, #000, transparent 78%);
+}
+
+.madar-landing .lp-final > * {
+  position: relative;
+}
+
+.madar-landing .lp-final h2 {
+  color: #fff;
+  font-size: clamp(1.7rem, 1.1rem + 2.4vw, 2.6rem);
+}
+
+.madar-landing .lp-final p {
+  max-width: 46ch;
+  margin: 16px auto 0;
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 1.1rem;
+}
+
+.madar-landing .lp-final-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 30px;
+}
+
+.madar-landing .lp-final-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 20px;
+  color: rgba(255, 255, 255, 0.68);
   font-size: 0.9rem;
   font-weight: 600;
 }
 
-.madar-landing .lp-calc-fields {
-  display: grid;
-  gap: 14px;
-}
-
-.madar-landing .lp-calc-fields input {
-  width: 100%;
-  min-height: 50px;
-  padding: 0 16px;
-  background: #fff;
-  border: 1px solid var(--lp-line-2);
-  border-radius: 12px;
-  color: var(--lp-ink);
-  font-size: 1.1rem;
-  font-weight: 700;
-}
-
-.madar-landing .lp-calc-out {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 22px;
-}
-
-.madar-landing .lp-calc-out > div {
-  padding: 14px 16px;
-  background: var(--lp-brand-50);
-  border-radius: 16px;
-}
-
-.madar-landing .lp-calc-out b {
-  font-size: 1.6rem;
-  font-weight: 800;
-  color: var(--lp-brand-800);
-}
-
-/* FAQ */
-.madar-landing .lp-faq {
-  display: grid;
-  gap: 10px;
-  max-width: 840px;
-  margin-inline: auto;
-}
-
-.madar-landing .lp-faq-item {
-  background: #fff;
-  border: 1px solid var(--lp-line);
-  border-radius: 18px;
-  overflow: hidden;
-}
-
-.madar-landing .lp-faq-q {
-  width: 100%;
-  min-height: 60px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 22px;
-  background: none;
-  border: 0;
-  font-size: 1.06rem;
-  font-weight: 700;
-  text-align: start;
-  cursor: pointer;
-}
-
-.madar-landing .lp-faq-a {
-  padding: 0 22px 20px;
-  color: var(--lp-ink-2);
-}
-
-/* Final CTA */
-.madar-landing .lp-final {
-  position: relative;
-  padding-block: clamp(72px, 10vw, 128px);
-  background: var(--lp-brand-900);
-  color: #fff;
-  text-align: center;
-  overflow: hidden;
-}
-
-/* Footer */
+/* ---------------------------------------------------------------- footer -- */
 .madar-landing .lp-footer {
-  padding-top: 56px;
+  padding-top: clamp(40px, 5vw, 60px);
+  padding-bottom: 28px;
   background: #fff;
   border-top: 1px solid var(--lp-line);
 }
 
 .madar-landing .lp-footer-grid {
   display: grid;
-  grid-template-columns: 1.5fr 1fr 1fr;
-  gap: 32px;
+  grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(0, 1fr));
+  gap: clamp(24px, 3vw, 40px);
 }
 
-/* Responsive */
-@media (max-width: 960px) {
+.madar-landing .lp-footer p {
+  margin-top: 12px;
+  max-width: 34ch;
+  color: var(--lp-ink-2);
+  font-size: 0.92rem;
+}
+
+.madar-landing .lp-footer-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.madar-landing .lp-footer-col b {
+  margin-bottom: 2px;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.madar-landing .lp-footer-col a,
+.madar-landing .lp-footer-col button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--lp-ink-2);
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+  transition: color 0.18s;
+}
+
+.madar-landing .lp-footer-col a:hover,
+.madar-landing .lp-footer-col button:hover {
+  color: var(--lp-deep);
+}
+
+.madar-landing .lp-footer-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: clamp(28px, 3.5vw, 40px);
+  padding-top: 20px;
+  border-top: 1px solid var(--lp-line);
+  color: var(--lp-ink-3);
+  font-size: 0.85rem;
+}
+
+.madar-landing .lp-support-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--lp-ink-2);
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------------- reveal -- */
+/* Sections fade up once on first scroll into view. Disabled entirely when the
+   user prefers reduced motion, and hidden from crawlers is not a concern since
+   opacity only animates via JS-added class. */
+.madar-landing .lp-reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.55s var(--lp-ease), transform 0.55s var(--lp-ease);
+}
+
+.madar-landing .lp-reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .madar-landing *,
+  .madar-landing *::before,
+  .madar-landing *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .madar-landing .lp-reveal {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ------------------------------------------------------------ responsive -- */
+@media (max-width: 1024px) {
   .madar-landing .lp-hero-grid,
-  .madar-landing .lp-tabpanel,
-  .madar-landing .lp-footer-grid {
+  .madar-landing .lp-vis-grid,
+  .madar-landing .lp-value-grid,
+  .madar-landing .lp-plan-main,
+  .madar-landing .lp-transform {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .madar-landing .lp-modules {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .madar-landing .lp-transform-arrow {
+    justify-self: center;
+    transform: rotate(90deg);
+  }
+
+  .madar-landing [dir='rtl'] .lp-transform-arrow {
+    transform: rotate(-90deg);
+  }
+}
+
+@media (max-width: 860px) {
   .madar-landing .lp-nav-actions {
     display: none;
   }
+
   .madar-landing .lp-nav-toggle {
     display: grid;
+    margin-inline-start: auto;
+  }
+
+  .madar-landing .lp-nav-links {
+    display: none;
+  }
+
+  .madar-landing .lp-nav.is-open .lp-nav-links {
+    position: absolute;
+    inset-inline: var(--lp-gutter);
+    top: calc(100% + 8px);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    padding: 8px;
+    background: #fff;
+    border: 1px solid var(--lp-line);
+    border-radius: 14px;
+    box-shadow: var(--lp-shadow-md);
+  }
+
+  .madar-landing .lp-nav-inner {
+    position: relative;
+  }
+
+  .madar-landing .lp-nav.is-open .lp-nav-links a {
+    padding: 12px 14px;
+    text-align: start;
+  }
+
+  .madar-landing .lp-nav.is-open .lp-nav-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid var(--lp-line);
+  }
+
+  .madar-landing .lp-nav.is-open .lp-nav-actions .lp-btn {
+    width: 100%;
+  }
+
+  .madar-landing .lp-plans-secondary,
+  .madar-landing .lp-steps,
+  .madar-landing .lp-footer-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .madar-landing .lp-guarantee {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
-@media (max-width: 760px) {
-  .madar-landing .lp-steps,
-  .madar-landing .lp-compare,
-  .madar-landing .lp-plans,
-  .madar-landing .lp-calc-out {
-    grid-template-columns: minmax(0, 1fr);
+@media (max-width: 620px) {
+  .madar-landing .lp-hero-actions {
+    flex-direction: column;
+    align-items: stretch;
   }
+
   .madar-landing .lp-hero-actions .lp-btn {
     width: 100%;
+  }
+
+  .madar-landing .lp-modules,
+  .madar-landing .lp-plan-features {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .madar-landing .lp-app {
+    padding: 10px;
+  }
+
+  .madar-landing .lp-app-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .madar-landing .lp-flow {
+    gap: 6px;
+    padding: 14px;
+  }
+
+  .madar-landing .lp-flow-arrow {
+    display: none;
+  }
+
+  .madar-landing .lp-final-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .madar-landing .lp-footer-bottom {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

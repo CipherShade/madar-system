@@ -1,8 +1,10 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { PaymentMethod, Role, ShiftStatus } from '../../../shared/constants/index.js';
+import { getPlanConfig } from '../../../shared/constants/plans.js';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
+import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
 import { recordAuditEntry } from '../reports/audit.js';
 import { isValidMoneyAmount, parsePagination } from '../../lib/http.js';
 
@@ -157,7 +159,7 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post<{ Body: OpenShiftBody }>('/open', {
-    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST)],
+    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), requireTenantWritable],
     schema: {
       body: {
         type: 'object',
@@ -189,12 +191,13 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
         prisma.tenant.findUnique({ where: { id: request.user.tenantId }, select: { maxDesks: true, plan: true } }),
       ]);
       if (tenant && activeShiftsCount >= tenant.maxDesks) {
+        const planConfig = getPlanConfig(tenant.plan);
         return reply.code(403).send({
           success: false,
           error: {
             code: 'PLAN_DESK_LIMIT_REACHED',
-            message: `لقد بلغت الحد الأقصى لعدد مكاتب الاستقبال المفتوحة معاً (${tenant.maxDesks} مكتب) لباقة ${tenant.plan}. يرجى الترقية إلى باقة Business لتشغيل عدة مكاتب متزامنة.`,
-            messageEn: `Active desk limit (${tenant.maxDesks}) reached for plan ${tenant.plan}. Upgrade to Business for unlimited desks.`,
+            message: `لقد بلغت الحد الأقصى لعدد مكاتب الاستقبال المفتوحة معاً (${tenant.maxDesks} مكتب) لباقة ${planConfig.nameAr}. يمكنك إغلاق وردية أولاً أو الترقية لفتح مكاتب أكثر.`,
+            messageEn: `Active desk limit (${tenant.maxDesks}) reached for plan ${planConfig.nameEn}. Close a shift first or upgrade to open more desks.`,
           },
         });
       }
@@ -233,7 +236,7 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post<{ Body: CloseShiftBody }>('/close', {
-    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST)],
+    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), requireTenantWritable],
     schema: {
       body: {
         type: 'object',
@@ -330,7 +333,7 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post<{ Body: ExpenseBody }>('/expenses', {
-    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), app.rateLimit.financial],
+    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), app.rateLimit.financial, requireTenantWritable],
     schema: {
       body: {
         type: 'object',

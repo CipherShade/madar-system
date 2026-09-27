@@ -2,9 +2,10 @@ import type { FastifyPluginAsync } from 'fastify';
 import { Prisma } from '@prisma/client';
 import argon2 from 'argon2';
 import { Role } from '../../../shared/constants/index.js';
-import { canAddReceptionist } from '../../../shared/constants/plans.js';
+import { getPlanConfig } from '../../../shared/constants/plans.js';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
+import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
 import { recordAuditEntry } from '../reports/audit.js';
 import { isValidUUID } from '../../lib/http.js';
 
@@ -62,6 +63,14 @@ function invalid(message: string, messageEn: string, code = 'VALIDATION_ERROR') 
   return { success: false, error: { code, message, messageEn } };
 }
 
+/**
+ * Plan gate for receptionist accounts (warning-only enforcement of maxUsers).
+ * Pure + exported for unit testing. Guards short-circuit before any DB access.
+ */
+export function receptionistLimitReached(activeReceptionistCount: number, maxUsers: number): boolean {
+  return activeReceptionistCount >= Math.max(0, maxUsers);
+}
+
 function serializeUser(user: { id: string; username: string; fullName: string; role: string; phoneNumber: string | null; preferredLanguage: string; isActive: boolean; createdAt: Date }) {
   return {
     id: user.id,
@@ -87,13 +96,12 @@ const publicUserSelect = {
 } as const;
 
 const userRoutes: FastifyPluginAsync = async (app) => {
-  app.get('/', { preHandler: [authenticate, requireRoles(Role.ADMIN)] }, async (request, reply) => {
-    const where = request.user.tenantId ? { tenantId: request.user.tenantId } : {};
-    const users = await prisma.user.findMany({ where, select: publicUserSelect, orderBy: { createdAt: 'asc' } });
+  app.get('/', { preHandler: [authenticate, requireRoles(Role.ADMIN)] }, async (_request, reply) => {
+    const users = await prisma.user.findMany({ select: publicUserSelect, orderBy: { createdAt: 'asc' } });
     return reply.send({ success: true, data: { users: users.map(serializeUser) } });
   });
 
-  app.post<{ Body: CreateUserBody }>('/', { preHandler: [authenticate, requireRoles(Role.ADMIN)], schema: { body: createSchema } }, async (request, reply) => {
+  app.post<{ Body: CreateUserBody }>('/', { preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable], schema: { body: createSchema } }, async (request, reply) => {
     const username = request.body.username.trim();
     if (!USERNAME_RE.test(username)) {
       return reply.code(400).send(invalid('اسم المستخدم يجب أن يكون من 3 إلى 50 حرفاً (أحرف/أرقام/_.-).', 'Username must be 3-50 characters (letters, digits, _ . -).'));
@@ -105,26 +113,21 @@ const userRoutes: FastifyPluginAsync = async (app) => {
     if (request.body.phoneNumber && !egyptianPhone.test(request.body.phoneNumber)) {
       return reply.code(400).send(invalid('رقم الهاتف يجب أن يكون رقم محمول مصري صحيح.', 'Use a valid Egyptian mobile number.'));
     }
-
     const tenantId = request.user.tenantId;
-    if (tenantId && request.body.role === Role.RECEPTIONIST) {
-      const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { plan: true } });
-      const currentActiveReceptionists = await prisma.user.count({
-        where: { tenantId, role: Role.RECEPTIONIST, isActive: true },
-      });
-      if (!canAddReceptionist(currentActiveReceptionists, tenant?.plan)) {
-        return reply.code(403).send({
-          success: false,
-          error: {
-            code: 'RECEPTIONIST_LIMIT_REACHED',
-            message: 'لقد وصلت إلى الحد الأقصى لعدد حسابات الاستقبال في باقتك.',
-            messageEn: 'You have reached the maximum number of receptionist accounts allowed in your plan.',
-            cta: 'UPGRADE_PLAN',
-          },
-        });
+    if (request.body.role === Role.RECEPTIONIST && tenantId) {
+      const [tenant, activeReceptionists] = await Promise.all([
+        prisma.tenant.findUnique({ where: { id: tenantId }, select: { maxUsers: true, plan: true } }),
+        prisma.user.count({ where: { tenantId, role: Role.RECEPTIONIST, isActive: true } }),
+      ]);
+      if (tenant && receptionistLimitReached(activeReceptionists, tenant.maxUsers)) {
+        const planConfig = getPlanConfig(tenant.plan);
+        return reply.code(403).send(invalid(
+          `لقد بلغت الحد الأقصى لعدد موظفي الاستقبال الفعّالين لباقة ${planConfig.nameAr} (${tenant.maxUsers} موظف). يمكنك الترقية لإضافة المزيد.`,
+          `Active receptionist limit (${tenant.maxUsers}) reached for plan ${planConfig.nameEn}. Upgrade to add more.`,
+          'PLAN_USER_LIMIT_REACHED',
+        ));
       }
     }
-
     const passwordHash = await argon2.hash(request.body.password, { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 4 });
     const user = await prisma.$transaction(async (transaction) => {
       const created = await transaction.user.create({
@@ -146,7 +149,7 @@ const userRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(201).send({ success: true, data: { user: serializeUser(user) } });
   });
 
-  app.patch<{ Params: { id: string }; Body: UpdateUserBody }>('/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN)], schema: { body: updateSchema } }, async (request, reply) => {
+  app.patch<{ Params: { id: string }; Body: UpdateUserBody }>('/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable], schema: { body: updateSchema } }, async (request, reply) => {
     if (!isValidUUID(request.params.id)) return reply.code(400).send(invalid('معرّف المستخدم غير صالح.', 'The user id is invalid.'));
     if (request.params.id === request.user.sub && request.body.isActive === false) {
       return reply.code(400).send(invalid('لا يمكنك تعطيل حسابك الخاص.', 'You cannot deactivate your own account.', 'SELF_DEACTIVATE'));
@@ -157,35 +160,6 @@ const userRoutes: FastifyPluginAsync = async (app) => {
     if (request.body.phoneNumber && !egyptianPhone.test(request.body.phoneNumber)) {
       return reply.code(400).send(invalid('رقم الهاتف يجب أن يكون رقم محمول مصري صحيح.', 'Use a valid Egyptian mobile number.'));
     }
-
-    const tenantId = request.user.tenantId;
-    if (tenantId && (request.body.role === Role.RECEPTIONIST || request.body.isActive === true)) {
-      const existingUser = await prisma.user.findUnique({ where: { id: request.params.id }, select: { role: true, isActive: true, tenantId: true } });
-      const willBeActiveReceptionist =
-        (request.body.role === Role.RECEPTIONIST || (request.body.role === undefined && existingUser?.role === Role.RECEPTIONIST)) &&
-        (request.body.isActive === true || (request.body.isActive === undefined && existingUser?.isActive === true));
-      
-      const wasActiveReceptionist = existingUser?.role === Role.RECEPTIONIST && existingUser?.isActive === true;
-
-      if (willBeActiveReceptionist && !wasActiveReceptionist) {
-        const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { plan: true } });
-        const currentActiveReceptionists = await prisma.user.count({
-          where: { tenantId, role: Role.RECEPTIONIST, isActive: true },
-        });
-        if (!canAddReceptionist(currentActiveReceptionists, tenant?.plan)) {
-          return reply.code(403).send({
-            success: false,
-            error: {
-              code: 'RECEPTIONIST_LIMIT_REACHED',
-              message: 'لقد وصلت إلى الحد الأقصى لعدد حسابات الاستقبال في باقتك.',
-              messageEn: 'You have reached the maximum number of receptionist accounts allowed in your plan.',
-              cta: 'UPGRADE_PLAN',
-            },
-          });
-        }
-      }
-    }
-
     try {
       const user = await prisma.$transaction(async (transaction) => {
         const passwordHash = request.body.password ? await argon2.hash(request.body.password, { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 4 }) : undefined;
@@ -213,7 +187,7 @@ const userRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
-  app.delete<{ Params: { id: string } }>('/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN)] }, async (request, reply) => {
+  app.delete<{ Params: { id: string } }>('/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable] }, async (request, reply) => {
     if (!isValidUUID(request.params.id)) return reply.code(400).send(invalid('معرّف المستخدم غير صالح.', 'The user id is invalid.'));
     if (request.params.id === request.user.sub) {
       return reply.code(400).send(invalid('لا يمكنك حذف حسابك الخاص.', 'You cannot delete your own account.', 'SELF_DELETE'));

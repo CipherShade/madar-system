@@ -1,0 +1,167 @@
+{
+  "meta": {
+    "title": "Madar — the operating system for your tutoring center",
+    "description": "Madar runs your tutoring center end to end — reception, check-in, attendance, payments, teacher settlements and reports, all in one place."
+  },
+  "nav": {
+    "features": "The system",
+    "how": "How it works",
+    "pricing": "Pricing",
+    "questions": "Questions",
+    "login": "Log in",
+    "cta": "Start now",
+    "menu": "Menu"
+  },
+  "cta": {
+    "primary": "Start now at the founding price",
+    "secondary": "See how Madar works",
+    "toLogin": "Log in to your account"
+  },
+  "hero": {
+    "kicker": "The operating system for your center",
+    "headlineLead": "See exactly what is happening inside your center,",
+    "headlineAccent": "as it happens",
+    "sub": "From reception to check-in, attendance, payments and teacher settlements — everything in one place, without chasing anyone for an answer.",
+    "assure": "Starts at {{price}} EGP/month — no credit card needed",
+    "visualCaption": "The same lobby screen you use inside Madar"
+  },
+  "problem": {
+    "kicker": "The problem",
+    "title": "You do not need more work. You need to know what is happening.",
+    "sub": "Today, answering any question about the center means finding someone to ask: the receptionist, the accountant, or the teacher themselves. And every answer comes from memory, not from a system.",
+    "askTitle": "Instead of asking:",
+    "seeTitle": "Madar shows you the answer from the system itself:",
+    "questions": [
+      "Who attended today?",
+      "How many students are in the center right now?",
+      "Who paid, and how much was collected?",
+      "What is the teacher owed?",
+      "What did the shift close at?"
+    ],
+    "answers": [
+      "A complete attendance record per session, in real time.",
+      "A live headcount per session, visible from the lobby.",
+      "Every payment recorded with its method and reference.",
+      "Settlements computed from real headcount, not guesswork.",
+      "Any gap between expected and counted cash shows up instantly."
+    ]
+  },
+  "visibility": {
+    "kicker": "Operational visibility",
+    "title": "From the lobby, you see the whole center running.",
+    "sub": "The lobby is not just a screen — it is the first thing you open every day. It tells you what is running now and what is coming next, without walking around to ask anyone.",
+    "points": [
+      { "title": "Active sessions", "body": "Every session running right now, with its teacher, subject and room." },
+      { "title": "Sessions starting soon", "body": "What is coming up, so you know which room is needed." },
+      { "title": "Headcount per session", "body": "A live counter that updates on every check-in." },
+      { "title": "Attendance and payments", "body": "The student checked in, paid, or was added — all in the record." }
+    ],
+    "featuresLabel": "Real fields from the lobby screen",
+    "exampleLabel": "Illustrative example"
+  },
+  "system": {
+    "kicker": "The system",
+    "title": "Every part of the center works together",
+    "sub": "What happens at reception flows straight into reports and teacher settlements. These are not separate tools — it is one operating system.",
+    "modules": [
+      { "key": "lobby", "title": "Lobby", "body": "The live picture of the whole center." },
+      { "key": "checkin", "title": "Fast check-in", "body": "Register the student and take payment in one step." },
+      { "key": "students", "title": "Students", "body": "A record per student, with code and guardian number." },
+      { "key": "sessions", "title": "Sessions", "body": "Schedule, teachers, subjects and rooms." },
+      { "key": "attendance", "title": "Attendance", "body": "Capture and reconcile against room headcount." },
+      { "key": "payments", "title": "Payments", "body": "Cash, Vodafone Cash and InstaPay." },
+      { "key": "settlements", "title": "Teacher settlements", "body": "What each teacher is owed, from real attendance." },
+      { "key": "reports", "title": "Reports", "body": "Daily and financial, in one click." }
+    ],
+    "flow": ["Reception", "Attendance", "Payments", "Teacher settlements", "Reports"]
+  },
+  "value": {
+    "kicker": "What you get",
+    "title": "All of it, at one clear price",
+    "items": [
+      {
+        "title": "A complete operating system for the center",
+        "body": "A live lobby showing what is happening right now, fast student check-in, attendance, payments, teacher settlements and reports."
+      },
+      {
+        "title": "A 10-minute walkthrough",
+        "body": "Shows you how to use the system from day one, without complexity."
+      },
+      {
+        "title": "Direct support",
+        "body": "If you need help, you talk to the support team directly."
+      },
+      {
+        "title": "Easy data entry",
+        "body": "Simple steps to add your students, teachers and subjects."
+      }
+    ],
+    "supportUnconfigured": "No support number is configured yet — set one in the product settings.",
+    "videoUnconfigured": "No video URL is configured yet — set one in the product settings."
+  },
+  "pricing": {
+    "kicker": "Pricing",
+    "title": "One plan runs the whole center",
+    "sub": "Pay for one plan and see everything it does together. The founding price is below the standard price.",
+    "foundingNote": "Current founding price {{price}} EGP/month {{period}}",
+    "perMonth": "EGP / month",
+    "listPriceLabel": "Standard price",
+    "foundingPriceLabel": "Founding price",
+    "choose": "Start on {{name}}",
+    "comingSoon": "Coming soon",
+    "comingSoonBody": "Not open for subscription yet. It includes everything in Operations.",
+    "otherTitle": "Other plans",
+    "otherSub": "If your center is smaller, or runs more than one branch.",
+    "perMonthShort": "/month",
+    "guaranteeTitle": "Two-week guarantee",
+    "included": "Included in the plan"
+  },
+  "guarantee": {
+    "kicker": "The guarantee",
+    "title": "Try it first, decide later",
+    "sub": "If Madar cannot give you a clear picture of your center, you should not be paying for it.",
+    "termsLink": "Read the refund terms",
+    "termsMissing": "Refund terms are not published yet — ask support for them."
+  },
+  "how": {
+    "kicker": "Getting started",
+    "title": "Up and running in 3 steps",
+    "steps": [
+      { "title": "Register your center", "body": "Create the account and pick a plan." },
+      { "title": "Add students, teachers and sessions", "body": "Enter your data in a few simple steps." },
+      { "title": "Run the center from Madar", "body": "Open the shift, start checking students in." }
+    ]
+  },
+  "final": {
+    "title": "Start now at the founding price",
+    "sub": "Let Madar hold the operations, and you stay on top of what happens in your center.",
+    "note": "No credit card needed"
+  },
+  "footer": {
+    "about": "The operating system for tutoring and education centers in Egypt.",
+    "links": "Links",
+    "account": "Account",
+    "support": "Support",
+    "copyright": "© {{year}} Madar. All rights reserved."
+  },
+  "product": {
+    "sessions": "Active sessions",
+    "live": "Running now",
+    "upcoming": "Starting soon",
+    "teacher": "Teacher",
+    "subject": "Subject",
+    "room": "Room",
+    "attended": "Attended",
+    "capacity": "Capacity",
+    "search": "Search for a student",
+    "checkIn": "Check in",
+    "payment": "Payment method",
+    "cash": "Cash",
+    "vodafoneCash": "Vodafone Cash",
+    "instapay": "InstaPay",
+    "reference": "Reference",
+    "activity": "Live activity",
+    "drawer": "Expected cash in drawer",
+    "collected": "Collected today"
+  }
+}

@@ -57,7 +57,7 @@ export function LoginPage({ onNavigateLanding, onNavigateSignup }: LoginPageProp
 
         <div style={{ marginTop: 14, padding: '10px 12px', background: 'var(--surface, #f8fafc)', borderRadius: 8, border: '1px dashed var(--border)', fontSize: 12 }}>
           <div style={{ fontWeight: 600, marginBottom: 8, color: 'var(--text-secondary)' }}>بيانات الدخول للتجربة (Demo):</div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
               type="button"
               className="btn btn--outline"
@@ -74,10 +74,18 @@ export function LoginPage({ onNavigateLanding, onNavigateSignup }: LoginPageProp
             >
               استقبال (reception1)
             </button>
+            <button
+              type="button"
+              className="btn btn--outline"
+              style={{ flex: 1, fontSize: 12, paddingBlock: 6 }}
+              onClick={() => { setUsername('superadmin'); setPassword('Platform@12345!'); }}
+            >
+              مدير المنصة (superadmin)
+            </button>
           </div>
         </div>
 
-        <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+        <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', fontSize: 13, gap: 8, flexWrap: 'wrap' }}>
           {onNavigateLanding && (
             <button type="button" onClick={onNavigateLanding} className="btn-link" style={{ color: 'var(--text-secondary)' }}>
               ← العودة للرئيسية
@@ -85,7 +93,7 @@ export function LoginPage({ onNavigateLanding, onNavigateSignup }: LoginPageProp
           )}
           {onNavigateSignup && (
             <button type="button" onClick={onNavigateSignup} className="btn-link" style={{ color: 'var(--primary)', fontWeight: 700 }}>
-              إنشاء سنتر جديد (تجربة مجانية)
+              إنشاء سنتر جديد وتفعيل الاشتراك
             </button>
           )}
         </div>

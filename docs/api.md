@@ -220,20 +220,111 @@ DB unreachable → `503 DATABASE_UNAVAILABLE`.
 
 ---
 
-## 12. WebSocket Real-Time Specification
+## 12. Platform Super-Admin Console (`/api/admin`)
 
-### 12.1. Connection & Authentication
+Every route below is mounted at `/api/admin` and gated by `SUPER_ADMIN_GATE`
+(`authenticate` + `requireRoles(Role.SUPER_ADMIN)`). A center `ADMIN`, a `RECEPTIONIST`, or an
+impersonation token (`ADMIN` + `tenantId`) receives `403 FORBIDDEN`; no token receives `401
+UNAUTHORIZED`. The default response envelope is the global `{ success, data }` / `{ success, error }`
+shape, except the data exports and support-note reads which also stream plain text/CSV.
+
+### 12.1. Platform & centers — `admin.ts`
+
+| Route | Notes |
+| :--- | :--- |
+| `GET /api/admin/stats` | Platform KPIs: center counts by plan/status, total students, MRR. |
+| `GET /api/admin/console-stats` | Everything the Overview section needs in one call (KPIs, open support notes, pending notifications, active usage overrides, open view-as sessions, recent health events). |
+| `GET /api/admin/tenants?page=&limit=&search=&plan=&isActive=` | Paginated center list with usage counts; `search` is Arabic-normalized. |
+| `POST /api/admin/tenants` | Creates a center and its owner `ADMIN`. Requires `name`, `ownerName`, `ownerPhone` (Egyptian mobile pattern), `username`; optional `plan` (default `FREE_TRIAL`) and `password`. `409 USERNAME_TAKEN` on collision. |
+| `GET /api/admin/tenants/:id` | Center 360°: usage counts, subscription timeline, recent platform audit, `ownerName` / `ownerPhone`. |
+| `PATCH /api/admin/tenants/:id/limits` | Overrides `maxUsers` / `maxDesks` / `maxBranches` / `visitLimit`; a `reason` is recorded in the audit trail. |
+| `PATCH /api/admin/tenants/:id/extend-trial` | Body `{ days }` (1-365). |
+| `PATCH /api/admin/tenants/:id/suspend` | Body `{ isActive }` — suspend or reactivate a center. |
+| `GET /api/admin/audit-logs?page=&limit=&action=&tenantId=` | Platform audit trail reads. |
+| `POST /api/admin/tenants/:id/view-as` | Starts a 30-minute, tenant-scoped impersonation session. `reason` required. |
+| `POST /api/admin/view-as/return` | Body `{ sessionId }` — ends the impersonation session. |
+
+### 12.2. User directory — `platformUsers.ts`
+
+| Route | Notes |
+| :--- | :--- |
+| `GET /api/admin/users?page=&limit=&search=&centerId=&role=&isActive=` | Paginated cross-center user directory; `search` matches username/full-name/phone through the Arabic-normalized column. |
+| `GET /api/admin/users/:id` | User detail: center, role, active state, last login, recent audit. |
+| `POST /api/admin/users` | Creates a user in any center. Required `centerId`, `username`, `fullName`; optional `role` (`ADMIN` / `RECEPTIONIST`), `phoneNumber`, `email`, `password`. Refuses a suspended center or one at its user cap (`409 CENTER_SUSPENDED` / `409 CENTER_USER_LIMIT_REACHED`). When no `password` is supplied a temporary one is generated and returned **once** (`data.temporaryPassword`); it is never stored in plaintext or audited. |
+| `PATCH /api/admin/users/:id` | Edits `fullName`, `email`, `phoneNumber`, `role`, `isActive`; `reason` optional. |
+| `POST /api/admin/users/:id/reset-password` | `reason` required. Returns a one-time temporary password. |
+| `POST /api/admin/users/:id/revoke-sessions` | `reason` required. Bumps `sessionVersion` so the user's live cookies stop working. |
+
+### 12.3. Subscriptions, billing & revenue — `platformBilling.ts`
+
+| Route | Notes |
+| :--- | :--- |
+| `GET /api/admin/subscriptions?page=&limit=&status=&plan=&tenantId=&stale=` | Subscription list plus status totals. `stale=true` returns `PENDING` records older than `STALE_PENDING_DAYS` (3). |
+| `POST /api/admin/subscriptions` | Records a subscription. Required `tenantId`, `plan` (`ESSENTIAL`, `CONTROL`, or internal `FREE_TRIAL`); optional `paymentMethod`, `paymentReference`, `startImmediately` (activate now vs. `PENDING`). Discount and credit balances are applied by the shared domain function `applyBillingBalances`. |
+| `POST /api/admin/subscriptions/:id/cancel` | Body `{ reason?, immediate? }` — cancels at period end unless `immediate`. |
+| `POST /api/admin/subscriptions/:id/reactivate` | `reason` required. Restores a canceled/expired subscription. |
+| `POST /api/admin/subscriptions/:id/discount` | Body `{ kind: 'PERCENT' \| 'FIXED', value, reason }` — writes a `SubscriptionAdjustment` and credits the center's discount balance. |
+| `POST /api/admin/subscriptions/:id/credit` | Body `{ amount, reason }` — adds EGP credit. |
+| `POST /api/admin/subscriptions/:id/refund` | Body `{ amount?, reason }` — partial (default: full remaining) refund. |
+| `GET /api/admin/billing/adjustments?page=&limit=&type=&tenantId=` | Returns `{ adjustments, totals }` — discount/credit/refund history with per-type totals. |
+| `GET /api/admin/revenue?months=6` | Monthly collected revenue: new subscriptions, renewals, cancellations, refunds, discounts, credits, and net. `months` is clamped. |
+
+### 12.4. Usage & limits — `platformUsage.ts`
+
+| Route | Notes |
+| :--- | :--- |
+| `GET /api/admin/usage` | Per-center usage vs. limits for `USERS`, `RECEPTIONISTS`, `STUDENTS`, `VISITS`, `BRANCHES`, including active `UsageOverride` extras and the 80% warning level. |
+
+### 12.5. Platform operations — `platformOps.ts`
+
+- **Notifications** — `GET /api/admin/notifications`, `POST /api/admin/notifications`,
+  `POST /api/admin/notifications/:id/send`, `POST /api/admin/notifications/:id/archive`.
+  Targeted audiences require `audienceIds` (`400 AUDIENCE_IDS_REQUIRED`).
+- **Feature flags** — `GET /api/admin/feature-flags`, `PUT /api/admin/feature-flags/:key`
+  (targets), `DELETE /api/admin/feature-flags/:key` (removes targeting). Unknown keys →
+  `404 UNKNOWN_FEATURE_FLAG`. The catalog in `FEATURE_FLAG_CATALOG` is the single source of truth.
+- **System health** — `GET|POST /api/admin/system-health/checks`,
+  `GET /api/admin/system-health/events`, `POST /api/admin/system-health/events/:id/resolve`.
+  Unhandled 5xx responses are recorded automatically as `SystemHealthEvent`s.
+- **Settings** — `GET /api/admin/settings`, `PUT /api/admin/settings`. Unknown keys and
+  wrong-typed values fail with `400 INVALID_SETTING_VALUE` before any DB access.
+- **Platform audit** — `GET /api/admin/super-audit` (action counts + recent rows).
+- **Data** — `GET /api/admin/data/status` (migration state, table counts, database size),
+  `GET /api/admin/data/export/tenants`, `GET /api/admin/data/export/users` (`?format=csv|json`).
+  Backup status is reported as the database provider's responsibility — never fabricated.
+- **Security** — `GET /api/admin/security/sessions`, `POST /api/admin/security/sessions/:id/revoke`,
+  `GET /api/admin/security/history` (logins, failed logins, password resets, account changes).
+- **Support notes** — `GET /api/admin/support-notes`, `POST /api/admin/support-notes`
+  (`tenantId` + `text`), `PATCH /api/admin/support-notes/:id`
+  (`status`: `OPEN` / `IN_PROGRESS` / `RESOLVED` / `CLOSED`, or edited `text`).
+- **Usage overrides** — `GET|POST /api/admin/usage-overrides`,
+  `DELETE /api/admin/usage-overrides/:id`. `metric` ∈ `USERS | RECEPTIONISTS | STUDENTS | VISITS |
+  BRANCHES`; `reason` is mandatory for the audit trail (`400 REASON_REQUIRED`).
+- **Account** — `GET /api/admin/account`, `PATCH /api/admin/account`,
+  `PATCH /api/admin/account/password` (`currentPassword` + `newPassword` ≥ 8 chars; all other
+  sessions are revoked). Two-factor authentication is **not** supported by the platform console.
+
+> **Audit guarantee:** every platform mutation and its `SuperAdminAuditLog` row commit inside a
+> single `prisma.$transaction` (the audit helper receives the transaction client), so a change can
+> never land without its audit record. No plaintext password, temporary password, or impersonation
+> token is ever written to the audit log.
+
+---
+
+## 13. WebSocket Real-Time Specification
+
+### 13.1. Connection & Authentication
 - **URL:** same-origin `/socket.io/` (proxy in dev).
 - **Auth:** the handshake must supply a JWT either via `socket.handshake.auth.token` or via the signed `access_token` cookie. Only staff roles (`ADMIN`, `RECEPTIONIST`) are admitted; otherwise the connection is rejected (`unauthorized` / `forbidden`).
 - Clients call `join:lobby` to receive live lobby broadcasts (`center:lobby` room).
 
-### 12.2. Client-to-Server Events
+### 13.2. Client-to-Server Events
 | Event | Payload | Purpose |
 | :--- | :--- | :--- |
 | `join:lobby` | – | Join `center:lobby`. Replies `lobby:joined`. |
 | `leave:lobby` | – | Leave `center:lobby`. Replies `lobby:left`. |
 
-### 12.3. Server-to-Client Events
+### 13.3. Server-to-Client Events
 | Event | Payload | Purpose |
 | :--- | :--- | :--- |
 | `lobby:joined` | `{ room, joinedAt }` | Confirms room join. |
@@ -245,7 +336,7 @@ DB unreachable → `503 DATABASE_UNAVAILABLE`.
 
 ---
 
-## 13. Error Code Catalog (as implemented)
+## 14. Error Code Catalog (as implemented)
 
 | Code | HTTP | Typical cause |
 | :--- | :--- | :--- |
@@ -272,4 +363,13 @@ DB unreachable → `503 DATABASE_UNAVAILABLE`.
 | `AUDIT_ACCESS_DENIED` | 403 | Receptionist viewing another shift's audit. |
 | `RATE_LIMITED` | 429 | Rate limiter exceeded. |
 | `DATABASE_UNAVAILABLE` | 503 | Health check when DB is down. |
+| `INVALID_ID` | 400 | Non-UUID path parameter on a platform route. |
+| `REASON_REQUIRED` | 400 | Platform mutation without the audit reason. |
+| `INVALID_SETTING_VALUE` | 400 | Unknown system-setting key or wrong value type. |
+| `UNKNOWN_FEATURE_FLAG` | 404 | Feature flag key outside the catalog. |
+| `AUDIENCE_IDS_REQUIRED` | 400 | Targeted notification without `audienceIds`. |
+| `CENTER_NOT_FOUND` / `TENANT_NOT_FOUND` | 404 | Platform route against an unknown center. |
+| `CENTER_SUSPENDED` / `CENTER_USER_LIMIT_REACHED` | 409 | Creating a user in a suspended center / at its user cap. |
+| `USERNAME_TAKEN` / `USER_EXISTS` | 409 | Username or email already registered. |
+| `ALREADY_CANCELED` | 409 | Canceling a subscription that is already canceled. |
 | `INTERNAL_SERVER_ERROR` / `TRANSACTION_FAILED` / `TRANSACTION_CONFLICT` / `VALUE_TOO_LONG` | 5xx/4xx | Unhandled error / Prisma transaction failures. |

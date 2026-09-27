@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { Role, SessionStatus } from '../../../shared/constants/index.js';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
+import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
 import { recordAuditEntry } from '../reports/audit.js';
 import { isValidUUID } from '../../lib/http.js';
 
@@ -46,7 +47,7 @@ function validation(message: string, messageEn: string, code = 'VALIDATION_ERROR
 
 const reconciliationRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: { id: string }; Body: ReconciliationBody }>('/sessions/:id/reconcile', {
-    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), app.rateLimit.financial],
+    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), app.rateLimit.financial, requireTenantWritable],
     schema: {
       body: {
         type: 'object',

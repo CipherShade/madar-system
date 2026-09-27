@@ -1,0 +1,520 @@
+﻿<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="clean">
+<head profile="http://www.w3.org/1999/xhtml">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>مَدار | نظام إدارة وتشغيل السناتر التعليمية</title>
+<meta name="description" content="مَدار يساعدك تدير الاستقبال، الحضور، المدفوعات، المدرسين والتقارير من نظام واحد." />
+
+<!-- Open Graph -->
+<meta property="og:locale" content="ar_AR" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="مَدار | نظام إدارة وتشغيل السناتر التعليمية" />
+<meta property="og:description" content="مَدار يساعدك تدير الاستقبال، الحضور، المدفوعات، المدرسين والتقارير من نظام واحد." />
+<meta property="og:site_name" content="مَدار" />
+<meta property="og:image" content="assets/og-cover.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="مَدار | نظام إدارة وتشغيل السناتر التعليمية" />
+<meta name="twitter:description" content="إدارة السنتر بالكامل. من مكان واحد." />
+<meta name="theme-color" content="#0e7c56" />
+<link rel="icon" href="assets/madar-mark.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="assets/madar-mark.svg" />
+
+<!-- Cairo + Inter (Arabic-first) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+<!-- Loom VSL URL: replace once ready -->
+<script>
+  window.MADAR = window.MADAR || {};
+  window.MADAR.VIDEO = "";  // ← ضع رابط الـ Loom هنا
+  window.MADAR.TRIAL_URL  = "/signup";   // ← رابط الاشتراك
+  window.MADAR.LOGIN_URL  = "/login";    // ← رابط الدخول
+</script>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">تخطّي إلى المحتوى</a>
+
+  <!-- ============================================================
+       SKIP/NAV
+       ============================================================ -->
+  <div class="mobile-drawer-scrim" data-drawer-scrim></div>
+  <aside class="mobile-drawer" data-mobile-drawer aria-hidden="true">
+    <button class="drawer-close" data-drawer-close aria-label="إغلاق القائمة"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    <nav aria-label="قائمة التنقل للموبايل">
+      <a href="#problems">المشكلة</a>
+      <a href="#product">المنتج</a>
+      <a href="#features">المميزات</a>
+      <a href="#how-it-works">إزاي بيشتغل</a>
+      <a href="#pricing">الأسعار</a>
+      <a href="#faq">الأسئلة الشائعة</a>
+      <a href="#contacts">تواصل معنا</a>
+    </nav>
+    <div class="drawer-foot">
+      <a class="btn btn--primary btn--block" href="/signup">اشترك الآن</a>
+      <a class="btn btn--ghost btn--block" href="/login">تسجيل الدخول</a>
+    </div>
+  </aside>
+
+  <header class="navbar" id="navbar" data-navbar>
+    <div class="container nav-inner">
+      <a class="nav-brand" href="#top" aria-label="مَدار — الرئيسية">
+        <span class="nav-logo">م</span>
+        <span class="nav-name">مَدار</span>
+      </a>
+      <nav class="nav-links" aria-label="التنقل الرئيسي">
+        <a href="#problems">المشكلة</a>
+        <a href="#product">المنتج</a>
+        <a href="#features">المميزات</a>
+        <a href="#how-it-works">إزاي بيشتغل</a>
+        <a href="#pricing">الأسعار</a>
+        <a href="#faq">الأسئلة الشائعة</a>
+      </nav>
+      <div class="nav-actions">
+        <button class="nav-toggle" data-drawer-open aria-label="فتح القائمة" aria-expanded="false" aria-controls="mobile-menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+        <a class="nav-login" href="/login">تسجيل الدخول</a>
+        <a class="btn btn--primary btn--sm" href="/signup">اشترك الآن</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- ============================================================
+         HERO
+         ============================================================ -->
+    <section class="hero" id="top">
+      <div class="hero-bg" aria-hidden="true">
+        <div class="orb orb--1"></div>
+        <div class="orb orb--2"></div>
+        <div class="grid-lines"></div>
+      </div>
+      <div class="container hero-inner">
+        <div class="hero-copy">
+          <span class="eyebrow reveal reveal--in">نظام تشغيل وإدارة السناتر التعليمية</span>
+          <h1 class="hero-title reveal reveal--in">إدارة السنتر بالكامل.<br /><span class="grad">من مكان واحد.</span></h1>
+          <p class="hero-lead reveal reveal--in">مَدار يساعدك تدير <b>الاستقبال، الحضور، المدفوعات، المدرسين والتقارير</b> — من غير فوضى الدفاتر والإكسيل.</p>
+          <div class="hero-cta reveal reveal--in">
+            <a class="btn btn--primary btn--lg" href="/signup">اشترك الآن وابدأ فورًا<svg class="lead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12h14M13 6l6 6-6 6"/></svg></a>
+            <a class="btn btn--ghost btn--lg" href="#vsl"><svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M8 5.5v13l11-6.5-11-6.5z" opacity=".9"/></svg>شوف مدار بيشتغل إزاي</a>
+          </div>
+          <div class="hero-meta reveal reveal--in">
+<span class="trust-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>تفعيل فوري بعد التسجيل</span>
+            <span class="trust-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>بدون بطاقة ائتمان</span>
+            <span class="trust-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>ألغِ في أي وقت</span>
+          </div>
+          <p class="hero-note reveal reveal--in">أنشئ حسابك، اختر باقتك، وسيُفعَّل اشتراكك فورًا — من غير تعقيدات.</p>
+        </div>
+
+        <div class="hero-visual reveal reveal--in" aria-hidden="true">
+          <div class="dash-mock" data-dm>
+            <div class="dm-bar">
+              <div class="dm-top"><svg viewBox="0 0 16 16" fill="currentColor" width="15" height="15"><rect x="2" y="4" width="12" height="9" rx="1.4"/><rect x="3" y="9" width="10" height="1"/></svg><span class="hash">dashboard.madar.center</span></div>
+              <span class="live-tag"><span class="dot"></span>مباشر الآن</span>
+            </div>
+            <div class="dm-metrics">
+              <div class="dm-metric"><div class="lbl">طلاب اليوم</div><div class="val good">312</div><div class="sub">بدخول</div></div>
+              <div class="dm-metric"><div class="lbl">الإيرادات</div><div class="val">24,500 ج.م</div><div class="sub">نقدي + محفظة</div></div>
+              <div class="dm-metric"><div class="lbl">حصص الآن</div><div class="val">18</div><div class="sub">نشطة</div></div>
+              <div class="dm-metric"><div class="lbl">أماكن متاحة</div><div class="val">42</div><div class="bar"><span style="width:64%"></span></div></div>
+            </div>
+            <div class="dm-sessions">
+              <div class="dm-sess">
+                <span class="sb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M6 3h12v11a6 6 0 0 1-12 0V3z"/></svg></span>
+                <div class="fc-txt"><b>حصة فيزياء — 1 ثانوي</b><span>أ. سامح · قاعة 3 · 8 مساءً</span></div>
+                <span class="pill-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>داخل 28</span>
+              </div>
+              <div class="dm-sess">
+                <span class="sb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M6 3h12v11a6 6 0 0 1-12 0V3z"/></svg></span>
+                <div class="fc-txt"><b>شرح إنجليزي — 3 ثانوي</b><span>أ. منى · قاعة 1 · 9:15 م</span></div>
+                <span class="pill-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>داخل 21</span>
+              </div>
+              <div class="dm-sess">
+                <span class="sb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M6 3h12v11a6 6 0 0 1-12 0V3z"/></svg></span>
+                <div class="fc-txt"><b>جبر — 2 ثانوي</b><span>أ. هاني · قاعة 2 · 10 مساءً</span></div>
+                <span class="pill-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>داخل 19</span>
+              </div>
+            </div>
+            <div class="dm-rev">
+              <div class="fc-txt"><b>تحصيل اليوم</b><span>استقبال المركز الرئيسي · وردية مفتوحة</span></div>
+              <div class="dm-rev-val"><span class="money">24,500</span><small>ج.م</small></div>
+            </div>
+          </div>
+
+          <!-- floating chips -->
+          <div class="float-chip float-chip--green float-chip--1">
+            <span class="fc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+            <span class="fc-txt"><b>+12 طالب</b><span>تم تسجيل حضورهم</span></span>
+          </div>
+          <div class="float-chip float-chip--amber float-chip--2">
+            <span class="fc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+            <span class="fc-txt"><b>جلسة بدأت</b><span>قاعة 3 · الآن</span></span>
+          </div>
+          <div class="float-chip float-chip--mint float-chip--3">
+            <span class="fc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 7H9.5A3.5 3.5 0 0 0 6 10.5v0A3.5 3.5 0 0 0 9.5 14H13a3.5 3.5 0 0 1 0 7H6"/></svg></span>
+            <span class="fc-txt"><b>24,500 ج.م</b><span>إيرادات اليوم</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-logos-band container">
+        <div class="logos-wrap" aria-hidden="true">
+          <span class="logos-hint">مصمم للسناتر المصرية — <span style="opacity:.7">حضانات، فصول، مقاعد وإيرادات فعلية</span></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         PROBLEM / PAIN
+         ============================================================ -->
+    <section class="section problems" id="problems">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="eyebrow">المشكلة</span>
+          <h2 class="section-h2">السنتر مش محتاج شغل أكتر.<br />محتاج <span class="grad">نظام أفضل.</span></h2>
+          <p class="section-p">لو بتحس إن كل يوم بيبدأ بنفس الفوضى — الدفاتر، الإكسيل، المواصلات والمكالمات — خد جولة سريعة على اللي بيحصل:</p>
+        </div>
+
+        <div class="pain-grid">
+          <div class="pain-card reveal">
+            <div class="pain-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-3h6v3M9 9h.01M15 9h.01M9 12h.01M15 12h.01"/></svg></div>
+            <h3>الاستقبال والزحمة</h3>
+            <p>تسجيل الطلاب والبحث عنهم بسرعة وسط ضغط الحصص — بس كله على ورقة وذاكرة موظف الاستقبال.</p>
+          </div>
+          <div class="pain-card reveal reveal-delay-1">
+            <div class="pain-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 12H5M15 12C15 20 10 21 3 21M15 12c6 0 6 9 0 9M7 5h10M7 5C7 6 9  grid 9 10 9 12"/></svg></div>
+            <h3>الحسابات</h3>
+            <p>متابعة الكاش، المدفوعات والمصروفات — بدون عمليات حسابية يدوية كل يوم.</p>
+          </div>
+          <div class="pain-card reveal">
+            <div class="pain-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+            <h3>المدرسين</h3>
+            <p>معرفة مستحقات كل مدرس وتسوية الحسابات بسهولة — من غير ما تستنى لآخر الشهر.</p>
+          </div>
+          <div class="pain-card reveal reveal-delay-2">
+            <div class="pain-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l8.5-8.5M17 5l-8.5 8.5M17 5h3.5"/><path d="M6 6l3 3M18 10l-1 1"/></svg></div>
+            <h3>التقارير</h3>
+            <p>بدل ما تجمع الأرقام من كذا مكان، كل حاجة قدامك في تقرير واحد مفصل.</p>
+          </div>
+          <div class="pain-card reveal reveal-delay-1">
+            <div class="pain-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+            <h3>الموظفين</h3>
+            <p>معرفة مين عمل إيه ومتابعة العمليات اليومية — بدون ما تفقد السيطرة.</p>
+          </div>
+          <div class="pain-card reveal">
+            <div class="pain-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V9l9-6 9 6v12M7 10v11M17 10v11M10 21v-4h4v4"/></svg></div>
+<h3>المكاتب المتزامنة</h3>
+            <p>عدة مكاتب استقبال تعمل معاً — منع تكرار التسجيل ومتابعة كل خزينة على حدة.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+    <!-- ============================================================
+         SOLUTION / FLOW
+         ============================================================ -->
+    <section class="section solution" id="solution">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="eyebrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>الحل</span>
+          <h2 class="section-h2">كل المعادلة دي في نظام واحد.</h2>
+          <p class="section-p">من لحظة ما الطالب يدخل حتى آخر تسوية — كل خطوة متصلة باللي قبلها وبعدها.</p>
+        </div>
+        <div class="flow reveal">
+          <div class="flow-line" aria-hidden="true"></div>
+          <div class="flow-step"><span class="flow-num">1</span><div class="flow-body"><b>الطلاب</b><p>تسجيل الطلاب والبحث عنهم فورًا.</p></div></div>
+          <div class="flow-step"><span class="flow-num">2</span><div class="flow-body"><b>الجلسات</b><p>ترتيب المقررات والحصص أيامها وساعاتها.</p></div></div>
+          <div class="flow-step"><span class="flow-num">3</span><div class="flow-body"><b>الاستقبال</b><p>تسجيل الحضور والدفع لحظة الوصول.</p></div></div>
+          <div class="flow-step"><span class="flow-num">4</span><div class="flow-body"><b>التسويات</b><p>حساب مستحقات المدرسين والعمالة تلقائيًا.</p></div></div>
+          <div class="flow-step"><span class="flow-num">5</span><div class="flow-body"><b>التقارير</b><p>رؤية الأرقام عن اليوم بالأسبوع والشهر.</p></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         VSL — VIDEO SALES LETTER
+         ============================================================ -->
+    <section class="section vsl" id="vsl">
+      <div class="container">
+        <div class="section-head reveal reveal--ct">
+          <span class="eyebrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="m22 8-6 4 6 4V8z"/></svg>شوفه بعينك</span>
+          <h2 class="section-h2">إزاي مَدار شغّال في سنتر حقيقي.</h2>
+        </div>
+        <div class="vsl-frame reveal">
+          <div class="vsl-thumb" data-vsl-thumb role="button" tabindex="0" aria-label="شاهد فيديو: إزاي مَدار بيشتغل">
+            <span class="vsl-play">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
+            </span>
+            <div class="vsl-meta"><b>ابدأ من هنا</b><span>فيديو قصير · أقل من 3 دقايق</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+<!-- ============================================================
+         FEATURES
+         ============================================================ -->
+    <section class="section features" id="features">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="eyebrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.9 7.2 16.9l.9-5.4L4.2 7.7l5.4-.8L12 2z"/></svg>المميزات</span>
+          <h2 class="section-h2">كل حاجة سنترك محتاجها،<br />جاهزة بالعربي.</h2>
+          <p class="section-p">ست مجموعات رئيسية، مصمّمة على طريقة شغل السناتر المصرية — من غير تعقيد.</p>
+        </div>
+
+        <div class="feat-grid">
+          <article class="feat-card reveal">
+            <div class="feat-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-3h6v3M9 9h.01M15 9h.01M9 12h.01M15 12h.01"/></svg></div>
+            <h3>الاستقبال</h3>
+            <p>تسجيل الطلاب والبحث عنهم بالاسم في ثانية — حتى وسط ضغط الحصص.</p>
+          </article>
+          <article class="feat-card reveal reveal-delay-1">
+            <div class="feat-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+            <h3>الحضور والدفع</h3>
+            <p>سجّل حضور الطالب وادفع دفعه في نفس الخطوة، والكاش يتحسب على طول.</p>
+          </article>
+          <article class="feat-card reveal reveal-delay-1">
+            <div class="feat-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20M4 20V9l8-6 8 6v11M10 15h4v5h-4z"/></svg></div>
+            <h3>التسويات</h3>
+            <p>حساب مستحقات المدرسين والعمالة تلقائيًا — من غير عمليات يدوية.</p>
+          </article>
+          <article class="feat-card reveal">
+            <div class="feat-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l8.5-8.5M18 4l-8.5 8.5"/><path d="M15 7l-6 6M6 5l3 3M18 10l-1 1"/></svg></div>
+            <h3>التقارير</h3>
+            <p>تقارير الحضور والتحصيل والملخص اليومي جاهزة دايمًا بإسمك.</p>
+          </article>
+          <article class="feat-card reveal reveal-delay-1">
+            <div class="feat-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+            <h3>الموظفين والصلاحيات</h3>
+            <p>صلاحيات واضحة لكل موظف — الاستقبال، المحاسبين، المدرسين، والمدير.</p>
+          </article>
+          <article class="feat-card reveal reveal-delay-1">
+            <div class="feat-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V9l9-6 9 6v12M7 10v11M17 10v11M10 21v-3h4v3"/></svg></div>
+<h3>مكاتب استقبال متزامنة</h3>
+            <p>عدة مكاتب تعمل معاً — منع تكرار التسجيل ومتابعة كل خزينة على حدة.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         HOW IT WORKS
+         ============================================================ -->
+    <section class="section how" id="how">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="eyebrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/></svg>كيف يعمل</span>
+          <h2 class="section-h2">توصلك للنظام خلال 10 دقايق.</h2>
+        </div>
+        <div class="how-grid reveal">
+<div class="how-step">
+            <span class="how-num">1</span>
+            <h3>سجّل واشترك</h3>
+            <p>أنشئ حساب سنترك واختر باقتك — سيُفعَّل اشتراكك فورًا من غير بطاقة ائتمان.</p>
+          </div>
+          <div class="how-step">
+            <span class="how-num">2</span>
+            <h3>قلّب على الشغل</h3>
+            <p>ضيف طلابك وجلساتك وأيامك وساعاتك بنفس طريقة سنترك.</p>
+          </div>
+          <div class="how-step">
+            <span class="how-num">3</span>
+            <h3>ابدأ الاستقبال</h3>
+            <p>سجّل الحضور والدفع من أول يوم، وخلّي النظام يشتغل معاك.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+    <!-- ============================================================
+         PRICING
+         ============================================================ -->
+    <section class="section pricing" id="pricing">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="eyebrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 6.5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>الأسعار</span>
+<h2 class="section-h2">تختار باقتك. وتكبر معاك.<br /><span class="grad">من غير مفاجآت.</span></h2>
+          <p class="section-p">سعر واضح بالجنيه المصري، من غير رسوم خفية — وسيُفعَّل اشتراكك فور إنشاء الحساب.</p>
+        </div>
+
+<div class="price-grid reveal">
+<article class="price-card price-card--featured reveal reveal-delay-1">
+            <div class="price-badge price-badge--hot">الأكثر اختيارًا</div>
+            <h3 class="price-h3">الأساس</h3>
+            <div class="price-amt"><span class="price-cur">ج.م</span><span class="price-num">499</span><span class="price-per">/شهر</span></div>
+            <p class="price-desc">الاختيار اللي بيلائم معظم السناتر المصرية.</p>
+            <ul class="price-list">
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>الاستقبال والحضور والدفع</li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>تسويات المدرسين تلقائيًا</li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>حتى مكتبين استقبال يعملان معاً</li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>دعم سريع على الواتساب</li>
+            </ul>
+            <a class="btn btn--primary btn--block" href="#" data-cta-main>ابدأ مع الأساس</a>
+          </article>
+
+          <article class="price-card reveal reveal-delay-2">
+            <div class="price-top"><span class="price-badge">للسناتر متعددة المكاتب</span><h3 class="price-h3">السيطرة</h3><div class="price-amt"><span class="price-cur">ج.م</span><span class="price-num">1199</span><span class="price-per">/شهر</span></div></div>
+            <p class="price-desc">لكل السناتر اللي بتشتغل بأكثر من مكتب استقبال.</p>
+            <ul class="price-list">
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>كل مميزات الأساس</li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>مكاتب استقبال متزامنة حتى 8 مكاتب</li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>تقارير متقدمة وتصدير البيانات</li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>دعم فني أولوية وتدريب الموظفين</li>
+            </ul>
+            <a class="btn btn--ghost btn--block" href="#" data-cta-main>اشترك الآن</a>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         ROI
+         ============================================================ -->
+    <section class="section roi" id="roi">
+      <div class="container">
+        <div class="roi-wrap reveal">
+          <div class="roi-copy">
+            <span class="eyebrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 6.5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>العائد على الاستثمار</span>
+            <h2 class="section-h2">تكلفة أقل من نصف يوم شغل.<br />نظام بيدي أثر على طول السنة.</h2>
+<p class="section-p">مع مَدار، الوقت اللي كنت بتكتب فيه بالأيدي بيتحول لوقت شغل بيجيب فلوس — وبتعرف في لحظة مين محتاج مستحقاته.</p>
+            <a class="btn btn--primary btn--lg" href="#" data-cta-main>اشترك الآن وابدأ فورًا</a>
+          </div>
+          <dl class="roi-stats reveal reveal-delay-1">
+            <div class="roi-stat"><dt class="roi-num">+8 ساعات</dt><dd class="roi-lab">بتوفرها في الأسبوع من متابعة الحضور والدفع يدويًا.</dd></div>
+            <div class="roi-stat"><dt class="roi-num">0 كُتب</dt><dd class="roi-lab">من غير دفتر وحدة ولا ورقة إكسيل في السنة.</dd></div>
+            <div class="roi-stat"><dt class="roi-num">100%</dt><dd class="roi-lab">دقة مستحقات المدرسين — من غير خصم ولا خلاف.</dd></div>
+          </dl>
+        </div>
+      </div>
+    </section>
+      <!-- ============================================================
+           TRUST / SOCIAL PROOF
+           ============================================================ -->
+      <section class="section trust-section" id="trust">
+        <div class="container">
+          <div class="section-head reveal">
+            <span class="eyebrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"/></svg>الثقة والدعم</span>
+            <h2 class="section-h2">مش بس نظام — ده شريك في الشغل.<br /><span class="grad">وده اللي بيخلي السناتر ترجع لينا.</span></h2>
+            <p class="section-p">احنا بنفهم شغل السناتر المصرية، وبنشتغل من وراك لتحت معاك.</p>
+          </div>
+          <div class="trust-band">
+            <span class="trust-mark">م</span>
+            <div class="trust-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-4.6-9.5-9C.9 9 3 4 8 4c2.5 0 4 1 5 2.5C14 5 15.5 4 18 4c5 0 7.1 5 5.5 8-2.5 4.4-9.5 9-9.5 9z"/></svg>دعم بالعربي</div>
+            <div class="trust-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9 8.8 8.8 0 0 1 1 4c0 3.3-2.7 5-5.5 5-1.Input 0 3-1.5M21 12c0-1.9-.8-3.5-2-4.1"/><path d="M9 2.5c.6 3 4  forgot 4 6.5 2.5"/></svg>تطوير مصري بحت</div>
+            <div class="trust-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 8v4M12 14v4M12 20v2"/></svg>بياناتك أمانة عندنا</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           FAQ
+           ============================================================ -->
+      <section class="section faq-section" id="faq">
+        <div class="container">
+          <div class="section-head reveal">
+            <span class="eyebrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>الأسئلة الشائعة</span>
+            <h2 class="section-h2">أسئلة بتتكرر كتير.<br /><span class="grad">وإجاباتها واضحة.</span></h2>
+          </div>
+          <div class="faq-list reveal">
+            <details class="faq-item">
+<summary class="faq-q"><span>هل مَدار مناسب لسنتر في أولى خطواته؟</span><span class="faq-plus" aria-hidden="true"></span></summary>
+              <div class="faq-a"><p>أكيد. أنشئ حساب سنترك، اختر باقتك المناسبة، وسيُفعَّل اشتراكك فورًا — وتقدر تكمل بإيدك من غير أي التزام.</p></div>
+            </details>
+            <details class="faq-item">
+              <summary class="faq-q"><span>كيف أفعّل اشتراكي؟</span><span class="faq-plus" aria-hidden="true"></span></summary>
+              <div class="faq-a"><p>من صفحة التسجيل، أدخل اسم السنتر واختر باقتك ثم أنشئ حساب المدير — سيُفعَّل اشتراكك فورًا بنهاية التسجيل من غير بطاقة ائتمان.</p></div>
+            </details>
+            <details class="faq-item">
+              <summary class="faq-q"><span>هل أقدر أغيّر باقتي أو أرقّيها لاحقًا؟</span><span class="faq-plus" aria-hidden="true"></span></summary>
+              <div class="faq-a"><p>إيوه، من صفحة «الاشتراك والفوترة» تقدر تختار باقة أعلى أو تغيّر باقتك في أي وقت، والفرق يُحسب على فترة اشتراكك الحالية.</p></div>
+            </details>
+            <details class="faq-item">
+              <summary class="faq-q"><span>هل أقدر أستخدم مَدار على الموبايل؟</span><span class="faq-plus" aria-hidden="true"></span></summary>
+              <div class="faq-a"><p>تمام. مَدار شغال على أي متصفح — موبايل، تابلت أو لابتوب — وبتتكيف مع شاشة أي جهاز.</p></div>
+            </details>
+            <details class="faq-item">
+              <summary class="faq-q"><span>هل بيانات السنتر مضمونة؟</span><span class="faq-plus" aria-hidden="true"></span></summary>
+              <div class="faq-a"><p>بياناتك محفوظة بأمان ومعها نسخ احتياطي يومية، وطبعًا ممنوعة لأي حد تاني غير مدير السنتر.</p></div>
+            </details>
+            <details class="faq-item">
+              <summary class="faq-q"><span>هل أقدر أضيف مدرس عنده حساب في كام سنتر؟</span><span class="faq-plus" aria-hidden="true"></span></summary>
+              <div class="faq-a"><p>آه. إنت بتسجل المدرس مرة واحدة، وبعدين بتضيفه على أي حصة من حصص السنتر — ومستحقاته بتتحسب تلقائيًا على كل حصة.</p></div>
+            </details>
+            <details class="faq-item">
+              <summary class="faq-q"><span>إيه الفرق بينك وبين الإكسيل العادي؟</span><span class="faq-plus" aria-hidden="true"></span></summary>
+              <div class="faq-a"><p>الإكسيل ملف واحد بيعتمد على ذاكرتك وطبقات العالم. مَدار بيحسب التسويات والتقارير تلقائيًا، وبيقفل المستحقات من غير أخطاء.</p></div>
+            </details>
+            <details class="faq-item">
+              <summary class="faq-q"><span>هل أقدر أقدم أرقامي مع أي مقارن تاني؟</span><span class="faq-plus" aria-hidden="true"></span></summary>
+              <div class="faq-a"><p>ممكن تطبع التقارير أو تطلعها كملف، وتقدمها لأي حد حسب ما يناسبك — بياناتك بتاعة حدك.</p></div>
+            </details>
+          </div>
+        </div>
+      </section>
+      <!-- ============================================================
+           FINAL CTA
+           ============================================================ -->
+      <section class="section final-cta" id="final-cta">
+        <div class="container">
+          <div class="final-box reveal">
+            <div class="final-glow" aria-hidden="true"></div>
+            <span class="eyebrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>لحظة القرار</span>
+            <h2 class="section-h2">مرتبك في سنترك<br /><span class="grad">يستاهل نظام.</span></h2>
+<p class="section-p">سجّل حساب سنترك النهارده — وانتقل من الدفاتر للنظام خلال 10 دقايق.</p>
+            <a class="btn btn--primary btn--lg" href="#" data-cta-main>اشترك الآن وابدأ فورًا</a>
+<p class="final-note">بدون بطاقة ائتمان · تفعيل فوري · إلغاء في أي وقت</p>
+          </div>
+        </div>
+      </section>
+
+  <footer class="footer" id="footer">
+    <div class="container">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <a class="nav-brand" href="#top" aria-label="مَدار — الصفحة الرئيسية">
+            <span class="brand-mark" aria-hidden="true">م</span>
+            <span class="brand-name">مَدار</span>
+          </a>
+          <p class="footer-tag">نظام إدارة السناتر التعليمية المصرية.</p>
+          <div class="footer-social" aria-label="روابط التواصل الاجتماعي">
+            <a href="#" aria-label="فيسبوك" data-social><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg></a>
+            <a href="#" aria-label="انستجرام" data-social><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><path d="M17.5 6.5h.01"/></svg></a>
+            <a href="#" aria-label="واتساب" data-social><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.3 14.1c-.3.8-1.5 1.5-2.2 1.6-.6.1-1.3.1-2-.1-.5-.1-1.1-.3-1.9-.6-3.2-1.3-5.3-4.4-5.5-4.6-.2-.2-1.3-1.7-1.3-3.3s.8-2.3 1.1-2.6c.3-.3.6-.4.8-.4h.6c.2 0 .4 0 .6.5l.9 2.1c.1.2.1.3 0 .5l-.3.6-.4.5c-.2.2-.3.4-.1.7.2.3.8 1.3 1.7 2.1 1.2 1.1 2.2 1.4 2.5 1.6.3.2.5.1.6-.1l.8-.9c.2-.3.4-.2.6-.1l2 1c.3.1.5.2.5.3.1.1.1.6-.2 1.5z"/></svg></a>
+          </div>
+        </div>
+        <nav class="footer-nav" aria-label="روابط سريعة">
+          <div class="footer-col">
+            <h4>المنتج</h4>
+            <a href="#features">المميزات</a>
+            <a href="#how">كيف يعمل</a>
+            <a href="#pricing">الأسعار</a>
+            <a href="#trust">الثقة</a>
+            <a href="#faq">الأسئلة الشائعة</a>
+          </div>
+          <div class="footer-col">
+            <h4>الشركة</h4>
+            <a href="#" data-footer-link>من نحن</a>
+            <a href="#" data-footer-link>المدونة</a>
+            <a href="#" data-footer-link>اتصل بنا</a>
+          </div>
+          <div class="footer-col">
+            <h4>قانوني</h4>
+            <a href="#" data-footer-link>سياسة الخصوصية</a>
+            <a href="#" data-footer-link>شروط الاستخدام</a>
+          </div>
+        </nav>
+      </div>
+      <div class="footer-bottom">
+        <p class="footer-copy">© 2026 مَدار · جميع الحقوق محفوظة.</p>
+        <p class="footer-made">صُنع بحب في مصر.</p>
+      </div>
+    </div>
+  </footer>
+
+  <button class="backtotop" data-backtotop aria-label="العودة للأعلى" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+  </button>
+
+  <script src="config.js"></script>
+  <script src="script.js"></script>
+
+</body>
+</html>

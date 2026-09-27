@@ -51,7 +51,7 @@ Set in the **hosting provider's secret/env store**, never in a committed file:
 | `JWT_EXPIRES_IN` | no | Session lifetime, default `12h`. |
 | `DEFAULT_LOCALE` | no | `ar` (default) or `en`. |
 | `REQUEST_BODY_LIMIT_KB`, `SOCKET_MAX_PAYLOAD_KB`, `RATE_LIMIT_*` | no | Overrides with safe defaults. |
-| `SEED_ADMIN_PASSWORD`, `SEED_RECEPTIONIST_PASSWORD` | seed only | Required to seed an empty production DB. |
+| `SEED_ADMIN_PASSWORD`, `SEED_RECEPTIONIST_PASSWORD`, `SEED_SUPER_ADMIN_PASSWORD` | seed only | Required to seed an empty production DB. |
 
 > Fail-fast guarantee is enforced in `src/server/config/index.ts:7` — startup exits with code 1 if any required var is missing.
 

@@ -115,7 +115,7 @@ export function SchedulingPage({ onCheckIn }: { onCheckIn: (id: string) => void 
                           </div>
                         </div>
                         {key === 'now' && (
-                          <div style={{ width: 120 }}>
+                          <div style={{ width: 'min(120px, 100%)' }}>
                             <Progress now={session.currentLobbyCount} max={session.room.capacity} />
                           </div>
                         )}

@@ -31,7 +31,7 @@ graph LR
 | `DEFAULT_LOCALE` | no | `ar` (default) or `en`. |
 | `REQUEST_BODY_LIMIT_KB` / `SOCKET_MAX_PAYLOAD_KB` | no | Request/socket payload caps (default `64` KB). |
 | `RATE_LIMIT_*` | no | Per-endpoint rate limits (login/checkin/search/financial). In-memory per process. |
-| `SEED_ADMIN_PASSWORD` / `SEED_RECEPTIONIST_PASSWORD` | seed only | Required if you run `npm run db:seed` against production; the seed refuses to run in production without them. |
+| `SEED_ADMIN_PASSWORD` / `SEED_RECEPTIONIST_PASSWORD` / `SEED_SUPER_ADMIN_PASSWORD` | seed only | Required if you run `npm run db:seed` against production; the seed refuses to run in production without them. |
 | `VITE_API_BASE_URL` / `VITE_SOCKET_URL` | build only | Absolute API/WebSocket base URLs for **split hosting**. Set at build time; leave unset for single-service. |
 
 > Rules guaranteed by code:
@@ -77,7 +77,7 @@ $env:SEED_RECEPTIONIST_PASSWORD = "<long-random>"
 npm run db:seed
 ```
 
-The seed creates `admin` and `reception1` with the supplied passwords (dev demo defaults are rejected in production). Change them after first login if they were ever exposed.
+The seed creates `admin`, `reception1`, `superadmin` (platform administrator), and per-tenant managers with the supplied passwords (dev demo defaults are rejected in production). Change them after first login if they were ever exposed.
 
 ## 6. Production Verification Checklist
 

@@ -83,7 +83,7 @@ export function ManagementPage({ mode }: { mode: Mode }) {
           </div>
         )
       ) : (
-        <div className="lobby-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }}>
+        <div className="lobby-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))' }}>
           {teachers.map((teacher) => (
             <article className="card" key={teacher.id} style={{ padding: 16 }}>
               <div className="session-top">

@@ -116,7 +116,7 @@ function LobbyPage({ selectedSessionId, onSessionChange }: { selectedSessionId: 
           <h3 className="card-title"><Search className="h-4 w-4" style={{ color: 'var(--primary)' }} />{t('operations.lobby.studentSearch')}</h3>
           {selected ? (
             <div className="flex-between" style={{ marginBottom: 14 }}>
-              <span className="pill pill--primary">{t('operations.lobby.sessionSelected')}: <b>{selected.title}</b></span>
+              <span className="pill pill--primary" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{t('operations.lobby.sessionSelected')}: <b>{selected.title}</b></span>
               <button type="button" className="icon-btn" aria-label={t('actions.close')} onClick={() => { onSessionChange(''); setSelectedSession(''); }}>
                 <RefreshCw className="h-4 w-4" />
               </button>
@@ -365,7 +365,7 @@ function SettlementPage() {
             </select>
           </label>
           {selected && (
-            <div className="metric-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+            <div className="metric-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))' }}>
               <Metric label={t('operations.settlement.price')} value={money(selected.sessionPrice)} />
               <Metric label={t('operations.settlement.centerFee')} value={money(selected.centerFeePerStudent)} />
               <Metric label={t('timeline.attended')} value={selected.currentLobbyCount} />

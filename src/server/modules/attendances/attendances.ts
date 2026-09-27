@@ -2,8 +2,9 @@ import type { FastifyPluginAsync } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { AttendanceStatus, PaymentMethod, Role, SessionStatus, ShiftStatus } from '../../../shared/constants/index.js';
 import { prisma } from '../../lib/prisma.js';
-import { buildLobbyAttendancePayload } from '../../lib/socket.js';
+import { buildLobbyAttendancePayload, lobbyRoomFor } from '../../lib/socket.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
+import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
 import { recordAuditEntry } from '../reports/audit.js';
 import { isValidMoneyAmount, isValidUUID, parsePagination } from '../../lib/http.js';
 import { checkAndIncrementVisitUsage } from '../subscriptions/usageService.js';
@@ -145,7 +146,7 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post<{ Body: AttendanceBody }>('/checkin', {
-    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), app.rateLimit.checkIn],
+    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), app.rateLimit.checkIn, requireTenantWritable],
     schema: { body: attendanceSchema },
   }, async (request, reply) => {
     const { sessionId, studentId, paymentMethod, paymentReference, amountPaid } = request.body;
@@ -187,6 +188,7 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
     const fee = Number(session.sessionPrice);
     const cashAmount = amountPaid ?? fee;
     const duplicate = await prisma.attendance.findFirst({ where: { sessionId, studentId, status: { not: AttendanceStatus.VOID } } });
+
 
     if (duplicate) {
       return reply.code(409).send({
@@ -245,10 +247,10 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
         timestamp: attendance.checkInTime,
       });
 
-      if (request.user.tenantId) {
-        app.io?.to(`tenant:${request.user.tenantId}:lobby`).emit('attendance:checked_in', payload);
-      }
-      app.io?.to('center:lobby').emit('attendance:checked_in', payload);
+      // One room only. The previous code emitted to the tenant room and then
+      // unconditionally to the shared room as well, so every center's check-in
+      // reached every other center's lobby.
+      app.io?.to(lobbyRoomFor(request.user.tenantId)).emit('attendance:checked_in', payload);
 
       return reply.code(201).send({
         success: true,
@@ -352,7 +354,7 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post<{ Params: { id: string } }>('/attendances/:id/void', {
-    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), app.rateLimit.financial],
+    preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), app.rateLimit.financial, requireTenantWritable],
     schema: {
       params: {
         type: 'object',
@@ -413,7 +415,9 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     const newLobbyCount = await prisma.attendance.count({ where: { sessionId: attendance.session.id, status: { not: AttendanceStatus.VOID } } });
-    app.io?.to('center:lobby').emit('attendance:voided', { sessionId: attendance.session.id, attendanceId: voided.id, newLobbyCount });
+    // Scoped to the same center as the check-in, for the same reason: this event
+    // carries a student id and a session id.
+    app.io?.to(lobbyRoomFor(request.user.tenantId)).emit('attendance:voided', { sessionId: attendance.session.id, attendanceId: voided.id, newLobbyCount });
 
     return reply.send({
       success: true,

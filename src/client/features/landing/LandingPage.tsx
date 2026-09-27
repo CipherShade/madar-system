@@ -1,22 +1,42 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
-  Check,
-  ChevronDown,
-  Play,
-  Search,
-  Users,
-  Wallet,
-  Coins,
+  ArrowLeft,
+  ArrowRight,
+  BadgeCheck,
   BarChart3,
   BookOpen,
-  Key,
-  Building2,
-  Clock,
-  Scale,
-  Receipt,
+  CalendarClock,
+  Check,
+  Coins,
+  Gauge,
+  GraduationCap,
+  Languages,
+  LogIn,
+  MapPin,
   Menu,
+  Radio,
+  Receipt,
+  Search,
+  ShieldCheck,
+  Timer,
+  UserCheck,
+  Users,
+  Wallet,
   X,
 } from 'lucide-react';
+import {
+  FOUNDING_OFFER,
+  GUARANTEE,
+  ONBOARDING_VIDEO_URL,
+  PRIMARY_OFFER,
+  SECONDARY_OFFERS,
+  SUPPORT,
+  foundingDiscountPercent,
+  foundingPeriodLabel,
+  type LandingOffer,
+} from '../../../shared/constants/offers';
+import { money } from '../../lib/api';
 import './landing.css';
 
 interface LandingPageProps {
@@ -24,874 +44,825 @@ interface LandingPageProps {
   onNavigateSignup?: () => void;
 }
 
-export function LandingPage({ onNavigateLogin, onNavigateSignup }: LandingPageProps) {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isScrolled, setIsScrolled] = useState(false);
-  const [activeTab, setActiveTab] = useState<'reception' | 'payments' | 'teachers' | 'reports' | 'staff' | 'branches'>('reception');
-  const [openFaq, setOpenFaq] = useState<number | null>(null);
-  const [isPlayingVsl, setIsPlayingVsl] = useState(false);
+type Locale = 'ar' | 'en';
+type TFunc = (key: string, options?: Record<string, unknown>) => string;
 
-  // Calculator State
-  const [calcStudents, setCalcStudents] = useState<number>(150);
-  const [calcNow, setCalcNow] = useState<number>(1.5);
-  const [calcWith, setCalcWith] = useState<number>(0.5);
+/* ══════════════════════════ helpers ══════════════════════════ */
 
-  const hoursSavedPerDay = Math.max(0, (calcStudents * Math.max(calcNow - calcWith, 0)) / 60);
-  const hoursSavedPerMonth = hoursSavedPerDay * 26;
+function formatPrice(value: number, locale: Locale): string {
+  return new Intl.NumberFormat(locale === 'ar' ? 'ar-EG' : 'en-EG', { maximumFractionDigits: 0 }).format(value);
+}
 
-  useEffect(() => {
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 24);
-    };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+function formatMoney(value: number, locale: Locale): string {
+  return money(value, locale === 'ar' ? 'ar-EG' : 'en-EG');
+}
 
-  const handleCta = () => {
-    if (onNavigateSignup) {
-      onNavigateSignup();
-    } else {
-      window.location.hash = '#/signup';
-    }
-  };
+/** Reads a translated array of flat records, skipping anything malformed. */
+function readRecords(t: TFunc, key: string): Array<Record<string, string>> {
+  const value = t(key, { returnObjects: true }) as unknown;
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is Record<string, string> => typeof item === 'object' && item !== null,
+  );
+}
 
-  const handleLogin = () => {
-    if (onNavigateLogin) {
-      onNavigateLogin();
-    } else {
-      window.location.hash = '#/login';
-    }
-  };
+function readStrings(t: TFunc, key: string): string[] {
+  const value = t(key, { returnObjects: true }) as unknown;
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string');
+}
 
-  const toggleFaq = (index: number) => {
-    setOpenFaq(openFaq === index ? null : index);
-  };
+function Section({
+  className = '',
+  id,
+  children,
+}: {
+  className?: string;
+  id?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className={className} id={id}>
+      {children}
+    </section>
+  );
+}
+
+/* ═══════════════════ LOBBY FRAME (real product fields) ═══════════════════ */
+
+type SessionMock = {
+  title: string;
+  teacher: string;
+  subject: string;
+  room: string;
+  time: string;
+  attended: number;
+  capacity: number;
+  state: 'live' | 'soon';
+};
+
+/**
+ * Mirrors the real `/attendances/sessions/active` payload: title, teacher,
+ * subject, room, and the live headcount against room capacity. Values are
+ * illustrative — the frame is labelled as an example in the UI.
+ */
+const SESSION_MOCKS: SessionMock[] = [
+  { title: 'رياضيات · ثالثة ثانوي', teacher: 'أ. أحمد', subject: 'رياضيات', room: 'قاعة 2', time: '04:00', attended: 18, capacity: 24, state: 'live' },
+  { title: 'فيزياء · ثانية ثانوي', teacher: 'أ. محمود', subject: 'فيزياء', room: 'قاعة 1', time: '04:30', attended: 12, capacity: 16, state: 'live' },
+  { title: 'كيمياء · ثالثة ثانوي', teacher: 'أ. سارة', subject: 'كيمياء', room: 'قاعة 3', time: '06:00', attended: 0, capacity: 20, state: 'soon' },
+];
+
+function LobbyFrame({ locale, compact = false }: { locale: Locale; compact?: boolean }) {
+  const { t } = useTranslation('landing');
+  const isArabic = locale === 'ar';
 
   return (
-    <div className="madar-landing" dir="rtl">
-      {/* ================= NAVBAR ================= */}
-      <header className={`lp-nav ${isScrolled ? 'is-scrolled' : ''}`}>
+    <div className="lp-frame">
+      <div className="lp-frame-bar">
+        <span className="lp-frame-dots" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+        <span className="lp-frame-title">مَدار · {t('product.sessions')}</span>
+        <span className="lp-frame-tag">{t('visibility.exampleLabel')}</span>
+      </div>
+
+      <div className="lp-app">
+        <div className="lp-app-head">
+          <span>
+            <b>{t('product.sessions')}</b>
+            <small>
+              {isArabic ? 'الحصص الشغالة دلوقتي واللي جاية' : 'Running now and coming up'}
+            </small>
+          </span>
+          <span className="lp-pill lp-pill--live">{t('product.upcoming')}</span>
+        </div>
+
+        <div className="lp-app-grid">
+          <div>
+            {SESSION_MOCKS.map((session) => (
+              <div
+                key={session.title}
+                className={`lp-session${session.state === 'live' ? ' is-active' : ' is-soon'}`}
+              >
+                <div className="lp-session-top">
+                  <span className="lp-session-title">{session.title}</span>
+                  <span className={`lp-pill${session.state === 'soon' ? ' lp-pill--muted' : ''}`}>
+                    {session.attended}/{session.capacity}
+                  </span>
+                </div>
+
+                <div className="lp-session-meta">
+                  <span>
+                    <GraduationCap className="h-3 w-3" aria-hidden="true" />
+                    {session.teacher} · {session.subject}
+                  </span>
+                  <span>
+                    <Timer className="h-3 w-3" aria-hidden="true" />
+                    {session.time}
+                  </span>
+                  <span>
+                    <MapPin className="h-3 w-3" aria-hidden="true" />
+                    {session.room}
+                  </span>
+                </div>
+
+                <div className="lp-session-foot">
+                  <span>
+                    {t('product.attended')}: <b>{session.attended}</b> / {session.capacity}
+                  </span>
+                  {session.state === 'live' ? (
+                    <span className="lp-pill">{t('product.live')}</span>
+                  ) : (
+                    <span className="lp-pill lp-pill--amber">{t('product.upcoming')}</span>
+                  )}
+                </div>
+
+                <div className="lp-bar">
+                  <i
+                    style={{
+                      width: `${session.capacity ? (session.attended / session.capacity) * 100 : 0}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div>
+            <div className="lp-panel">
+              <div className="lp-panel-title">
+                <Search className="h-3.5 w-3.5" style={{ color: 'var(--app-primary)' }} aria-hidden="true" />
+                {t('product.search')}
+              </div>
+
+              <div className="lp-search">
+                <Search className="h-3 w-3" aria-hidden="true" />
+                <span>{isArabic ? 'أحمد محمود' : 'Ahmed Mahmoud'}</span>
+              </div>
+
+              <div className="lp-student">
+                <span className="lp-avatar" aria-hidden="true">أ</span>
+                <span className="lp-student-meta">
+                  <b>{isArabic ? 'أحمد محمود السيد' : 'Ahmed Mahmoud El-Sayed'}</b>
+                  <small>1042 · {isArabic ? 'ثالثة ثانوي' : 'Grade 12'}</small>
+                </span>
+                <span className="lp-checkin-btn">{t('product.checkIn')}</span>
+              </div>
+
+              <div className="lp-methods">
+                <span className="lp-method is-active">{t('product.cash')}</span>
+                <span className="lp-method">{t('product.vodafoneCash')}</span>
+                <span className="lp-method">{t('product.instapay')}</span>
+              </div>
+            </div>
+
+            {!compact && (
+              <div className="lp-feed">
+                <div className="lp-panel-title">
+                  <Gauge className="h-3.5 w-3.5" style={{ color: 'var(--app-primary)' }} aria-hidden="true" />
+                  {t('product.drawer')}
+                </div>
+                <div className="lp-feed-item">
+                  <Wallet className="h-3 w-3" aria-hidden="true" />
+                  <b>{formatMoney(3110, locale)}</b>
+                </div>
+                <div className="lp-feed-item">
+                  <Receipt className="h-3 w-3" aria-hidden="true" />
+                  <span>{t('product.collected')}</span>
+                  <b>{formatMoney(6200, locale)}</b>
+                </div>
+                <div className="lp-feed-item">
+                  <UserCheck className="h-3 w-3" aria-hidden="true" />
+                  <span>{t('product.attended')}</span>
+                  <b>30</b>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════ PLANS ══════════════════════════ */
+
+function PrimaryPlan({
+  offer,
+  locale,
+  arrow,
+  onChoose,
+}: {
+  offer: LandingOffer;
+  locale: Locale;
+  arrow: ReactNode;
+  onChoose: () => void;
+}) {
+  const { t } = useTranslation('landing');
+  const discount = foundingDiscountPercent(offer);
+  const badge = locale === 'ar' ? offer.badgeAr : offer.badgeEn;
+  const highlight = locale === 'ar' ? offer.highlightAr : offer.highlightEn;
+
+  return (
+    <article className="lp-plan-main">
+      <div>
+        <div className="lp-plan-heading">
+          <h3>{locale === 'ar' ? offer.nameAr : offer.nameEn}</h3>
+          {badge && <span className="lp-plan-badge">{badge}</span>}
+        </div>
+        {highlight && <p className="lp-plan-highlight">{highlight}</p>}
+        <p className="lp-plan-tagline">{locale === 'ar' ? offer.taglineAr : offer.taglineEn}</p>
+
+        <div style={{ marginTop: 26 }}>
+          <span className="lp-plan-eyebrow">{t('pricing.foundingPriceLabel')}</span>
+          <div className="lp-plan-price">
+            <b>{formatPrice(offer.foundingPriceEgp, locale)}</b>
+            <span>{t('pricing.perMonth')}</span>
+          </div>
+          <div className="lp-plan-was">
+            <del>
+              {t('pricing.listPriceLabel')}: {formatPrice(offer.listPriceEgp, locale)}
+            </del>
+            {discount !== null && <span>−{discount}%</span>}
+          </div>
+          <span className="lp-plan-period">
+            <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
+            {locale === 'ar' ? FOUNDING_OFFER.badgeAr : FOUNDING_OFFER.badgeEn} ·{' '}
+            {foundingPeriodLabel(locale)}
+          </span>
+        </div>
+
+        <div className="lp-plan-cta">
+          <button type="button" onClick={onChoose} className="lp-btn lp-btn-white lp-btn-lg lp-btn-block">
+            {t('cta.primary')}
+            {arrow}
+          </button>
+        </div>
+      </div>
+
+      <ul className="lp-plan-features">
+        {(locale === 'ar' ? offer.featuresAr : offer.featuresEn).map((feature) => (
+          <li key={feature}>
+            <Check className="h-4 w-4" aria-hidden="true" />
+            <span>{feature}</span>
+          </li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
+function SecondaryPlan({
+  offer,
+  locale,
+  onChoose,
+}: {
+  offer: LandingOffer;
+  locale: Locale;
+  onChoose: () => void;
+}) {
+  const { t } = useTranslation('landing');
+  const discount = foundingDiscountPercent(offer);
+  const badge = locale === 'ar' ? offer.badgeAr : offer.badgeEn;
+  const highlight = locale === 'ar' ? offer.highlightAr : offer.highlightEn;
+
+  return (
+    <article className="lp-plan-sub">
+      <div className="lp-plan-heading">
+        <h3>{locale === 'ar' ? offer.nameAr : offer.nameEn}</h3>
+        {badge && <span className="lp-plan-badge">{badge}</span>}
+      </div>
+      {highlight && <p className="lp-plan-highlight">{highlight}</p>}
+      <p className="lp-plan-tagline">{locale === 'ar' ? offer.taglineAr : offer.taglineEn}</p>
+
+      <div style={{ marginTop: 18 }}>
+        <div className="lp-plan-price">
+          <b>{formatPrice(offer.foundingPriceEgp, locale)}</b>
+          <span>{t('pricing.perMonthShort')}</span>
+        </div>
+        <div className="lp-plan-was">
+          <del>{formatPrice(offer.listPriceEgp, locale)}</del>
+          {discount !== null && <span>−{discount}%</span>}
+        </div>
+        <span className="lp-plan-period">
+          <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
+          {foundingPeriodLabel(locale)}
+        </span>
+      </div>
+
+      {!offer.available && (
+        <>
+          <span className="lp-soon">{t('pricing.comingSoon')}</span>
+          <small>{t('pricing.comingSoonBody')}</small>
+        </>
+      )}
+
+      <ul className="lp-plan-features">
+        {(locale === 'ar' ? offer.featuresAr : offer.featuresEn).map((feature) => (
+          <li key={feature}>
+            <Check className="h-4 w-4" aria-hidden="true" />
+            <span>{feature}</span>
+          </li>
+        ))}
+      </ul>
+
+      <button
+        type="button"
+        onClick={onChoose}
+        disabled={!offer.available}
+        className="lp-btn lp-btn-ghost lp-btn-block"
+      >
+        {t('pricing.choose', { name: locale === 'ar' ? offer.nameAr : offer.nameEn })}
+      </button>
+    </article>
+  );
+}
+
+/* ══════════════════════════ PAGE ══════════════════════════ */
+
+export function LandingPage({ onNavigateLogin, onNavigateSignup }: LandingPageProps) {
+  const { t } = useTranslation('landing');
+  const { t: tCommon } = useTranslation('common');
+  const { i18n } = useTranslation();
+
+  const isArabic = i18n.language === 'ar';
+  const locale: Locale = isArabic ? 'ar' : 'en';
+  const ArrowIcon = isArabic ? ArrowLeft : ArrowRight;
+  const arrow = <ArrowIcon className="h-4 w-4" aria-hidden="true" />;
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  // Section reveal — skipped entirely for reduced-motion users.
+  const reduceMotion = useMemo(
+    () =>
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    [],
+  );
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const targets = Array.from(root.querySelectorAll<HTMLElement>('.lp-reveal'));
+    if (targets.length === 0) return;
+
+    if (reduceMotion || typeof IntersectionObserver === 'undefined') {
+      targets.forEach((node) => node.classList.add('is-in'));
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add('is-in');
+          observer.unobserve(entry.target);
+        });
+      },
+      { rootMargin: '0px 0px -6% 0px', threshold: 0.06 },
+    );
+
+    targets.forEach((node) => observer.observe(node));
+    return () => observer.disconnect();
+  }, [reduceMotion]);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 16);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // Collapse the mobile menu when the language changes.
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [i18n.language]);
+
+  const goSignup = useCallback(() => {
+    if (onNavigateSignup) onNavigateSignup();
+    else window.location.hash = '#/signup';
+  }, [onNavigateSignup]);
+
+  const goLogin = useCallback(() => {
+    if (onNavigateLogin) onNavigateLogin();
+    else window.location.hash = '#/login';
+  }, [onNavigateLogin]);
+
+  const closeMenu = () => setMenuOpen(false);
+  const toggleLanguage = () => void i18n.changeLanguage(isArabic ? 'en' : 'ar');
+
+  const questions = readStrings(t, 'problem.questions');
+  const answers = readStrings(t, 'problem.answers');
+  const flow = readStrings(t, 'system.flow');
+  const steps = readRecords(t, 'how.steps');
+
+  const visibilityIcons = [Radio, Users, Gauge, Wallet];
+  const visibilityPoints = readRecords(t, 'visibility.points').map((point, index) => ({
+    title: point.title ?? '',
+    body: point.body ?? '',
+    Icon: visibilityIcons[index % visibilityIcons.length],
+  }));
+
+  const moduleIcons = [Gauge, UserCheck, Users, CalendarClock, BookOpen, Wallet, Coins, BarChart3];
+  const moduleCards = readRecords(t, 'system.modules').map((module, index) => ({
+    key: module.key ?? String(index),
+    title: module.title ?? '',
+    body: module.body ?? '',
+    Icon: moduleIcons[index % moduleIcons.length],
+  }));
+
+  const valueKinds = ['system', 'video', 'support', 'data'] as const;
+  const valueItems = readRecords(t, 'value.items').map((item, index) => ({
+    title: item.title ?? '',
+    body: item.body ?? '',
+    kind: valueKinds[index % valueKinds.length],
+  }));
+
+  const period = foundingPeriodLabel(locale);
+  const foundingPrice = formatPrice(PRIMARY_OFFER.foundingPriceEgp, locale);
+  const savePercent = foundingDiscountPercent(PRIMARY_OFFER);
+  const hasSupportChannel = Boolean(SUPPORT.phone || SUPPORT.whatsapp || SUPPORT.email);
+
+  return (
+    <div className="madar-landing" dir={isArabic ? 'rtl' : 'ltr'} ref={rootRef}>
+      {/* ═══════════════════════════ NAV ═══════════════════════════ */}
+      <header className={`lp-nav${scrolled ? ' is-scrolled' : ''}${menuOpen ? ' is-open' : ''}`}>
         <div className="lp-wrap">
-          <div className="lp-nav-pill">
-            <a href="#top" className="lp-brand">
-              <span className="lp-logo-sq">م</span>
-              <span className="lp-brand-name">مدار</span>
+          <div className="lp-nav-inner">
+            <a href="#top" className="lp-logo" onClick={closeMenu}>
+              <span className="lp-logo-mark" aria-hidden="true">م</span>
+              <span className="lp-logo-name">مَدار</span>
             </a>
 
             <nav className="lp-nav-links">
-              <a href="#features">المميزات</a>
-              <a href="#how">كيف يعمل</a>
-              <a href="#pricing">الأسعار</a>
-              <a href="#faq">الأسئلة الشائعة</a>
+              <a href="#system" onClick={closeMenu}>{t('nav.features')}</a>
+              <a href="#visibility" onClick={closeMenu}>{t('nav.how')}</a>
+              <a href="#pricing" onClick={closeMenu}>{t('nav.pricing')}</a>
+              <a href="#guarantee" onClick={closeMenu}>{t('nav.questions')}</a>
             </nav>
 
             <div className="lp-nav-actions">
-              <button type="button" onClick={handleLogin} className="lp-nav-login">
-                تسجيل الدخول
+              <button
+                type="button"
+                className="lp-nav-lang"
+                onClick={toggleLanguage}
+                aria-label={tCommon('actions.switchLanguage')}
+              >
+                <Languages className="h-4 w-4" aria-hidden="true" />
+                {isArabic ? 'English' : 'العربية'}
               </button>
-              <button type="button" onClick={handleCta} className="lp-btn lp-btn-primary lp-btn-sm">
-                ابدأ تجربتك المجانية
+              <button type="button" onClick={goLogin} className="lp-btn lp-btn-quiet lp-btn-sm">
+                <LogIn className="h-4 w-4" aria-hidden="true" />
+                {t('nav.login')}
+              </button>
+              <button type="button" onClick={goSignup} className="lp-btn lp-btn-primary lp-btn-sm">
+                {t('nav.cta')}
               </button>
             </div>
 
             <button
               type="button"
               className="lp-nav-toggle"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              aria-label="القائمة"
+              onClick={() => setMenuOpen((open) => !open)}
+              aria-label={t('nav.menu')}
+              aria-expanded={menuOpen}
             >
-              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+              {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
           </div>
         </div>
       </header>
 
-      {/* ================= HERO ================= */}
+      {/* ═══════════════════════════ HERO ═══════════════════════════ */}
       <section className="lp-hero" id="top">
-        <svg className="lp-hero-rings" viewBox="0 0 800 800" aria-hidden="true">
-          <circle cx="400" cy="400" r="150" />
-          <circle cx="400" cy="400" r="260" />
-          <circle cx="400" cy="400" r="370" />
-        </svg>
-
         <div className="lp-wrap lp-hero-grid">
-          <div>
-            <span className="lp-hero-kicker">مدار — نظام تشغيل وإدارة السنتر بالكامل</span>
+          <div className="lp-reveal">
+            <span className="lp-badge">{t('hero.kicker')}</span>
             <h1>
-              إدارة السنتر بالكامل.
-              <br />
-              من مكان واحد.
+              {t('hero.headlineLead')}
+              <em>{t('hero.headlineAccent')}</em>
             </h1>
-            <p className="lp-hero-lead">
-              مدار يساعدك تدير الاستقبال، الحضور، المدفوعات، المدرسين والتقارير — بدون فوضى الدفاتر وجداول الـ Excel.
-            </p>
+            <p className="lp-hero-sub">{t('hero.sub')}</p>
 
             <div className="lp-hero-actions">
-              <button type="button" onClick={handleCta} className="lp-btn lp-btn-primary lp-btn-lg">
-                ابدأ تجربتك المجانية لمدة 14 يوم
+              <button type="button" onClick={goSignup} className="lp-btn lp-btn-primary lp-btn-lg">
+                {t('cta.primary')}
+                {arrow}
               </button>
-              <a href="#how" className="lp-btn lp-btn-ghost lp-btn-lg">
-                شوف مدار بيشتغل إزاي
+              <a href="#visibility" className="lp-btn lp-btn-ghost lp-btn-lg">
+                {t('cta.secondary')}
               </a>
             </div>
 
             <p className="lp-hero-assure">
-              <Check className="h-5 w-5 text-emerald-600" />
-              14 يوم مجانًا — بدون التزام وبدون بطاقة بنكية
+              <Check className="h-4 w-4" aria-hidden="true" />
+              {t('hero.assure', { price: foundingPrice })}
             </p>
           </div>
 
-          <div>
-            {/* Live Product Dashboard Mockup */}
-            <div className="lp-win" role="img" aria-label="لوحة تحكم مدار">
-              <div className="lp-win-bar">
-                <div className="lp-win-dots">
-                  <i></i>
-                  <i></i>
-                  <i></i>
-                </div>
-                <span className="lp-win-title">مدار · لوحة التحكم الحية</span>
-                <span className="lp-win-note">بيانات حقيقية</span>
-              </div>
+          <div className="lp-reveal">
+            <LobbyFrame locale={locale} compact />
+            <p className="lp-caption">{t('hero.visualCaption')}</p>
+          </div>
+        </div>
+      </section>
 
-              <div style={{ padding: 18, background: '#f6f5f2' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                  <div>
-                    <h4 style={{ fontSize: 15, fontWeight: 800 }}>لوحة التحكم</h4>
-                    <p style={{ fontSize: 11, color: '#6b7280' }}>نظرة شاملة على عمليات السنتر الآن</p>
-                  </div>
-                  <span style={{ fontSize: 11, background: '#e8f5ef', color: '#0b6a4a', padding: '3px 10px', borderRadius: 99, fontWeight: 700 }}>
-                    مكتب 1 · متصل
+      {/* ══════════════════ PROBLEM / TRANSFORMATION ══════════════════ */}
+      <Section className="lp-section lp-section--tint" id="problem">
+        <div className="lp-wrap">
+          <div className="lp-sec-head lp-sec-head--center lp-reveal">
+            <span className="lp-kicker">{t('problem.kicker')}</span>
+            <h2>{t('problem.title')}</h2>
+            <p>{t('problem.sub')}</p>
+          </div>
+
+          <div className="lp-transform lp-reveal">
+            <div className="lp-transform-col lp-transform-col--ask">
+              <h3>{t('problem.askTitle')}</h3>
+              <ul className="lp-qlist lp-qlist--ask">
+                {questions.map((question) => (
+                  <li key={question}>
+                    <Users className="h-4 w-4" aria-hidden="true" />
+                    <span>{question}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="lp-transform-arrow" aria-hidden="true">
+              <ArrowIcon className="h-5 w-5" />
+            </div>
+
+            <div className="lp-transform-col lp-transform-col--see">
+              <h3>{t('problem.seeTitle')}</h3>
+              <ul className="lp-qlist lp-qlist--see">
+                {answers.map((answer) => (
+                  <li key={answer}>
+                    <Check className="h-4 w-4" aria-hidden="true" />
+                    <span>{answer}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      {/* ════════════ OPERATIONAL VISIBILITY — THE LOBBY ════════════ */}
+      <Section className="lp-section" id="visibility">
+        <div className="lp-wrap lp-vis-grid">
+          <div className="lp-reveal">
+            <span className="lp-kicker">{t('visibility.kicker')}</span>
+            <h2>{t('visibility.title')}</h2>
+            <p style={{ marginTop: 14, color: 'var(--lp-ink-2)', fontSize: '1.08rem' }}>
+              {t('visibility.sub')}
+            </p>
+
+            <div className="lp-vis-points">
+              {visibilityPoints.map((point) => (
+                <div className="lp-vis-point" key={point.title}>
+                  <span className="lp-vis-ico" aria-hidden="true">
+                    <point.Icon className="h-4 w-4" />
+                  </span>
+                  <span>
+                    <b>{point.title}</b>
+                    <small>{point.body}</small>
                   </span>
                 </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 14 }}>
-                  <div style={{ background: '#fff', padding: 10, borderRadius: 12, border: '1px solid #e2e0dc' }}>
-                    <span style={{ fontSize: 10, color: '#6b7280' }}>حصص نشطة</span>
-                    <b style={{ display: 'block', fontSize: 17, fontWeight: 800 }}>2</b>
-                  </div>
-                  <div style={{ background: '#fff', padding: 10, borderRadius: 12, border: '1px solid #e2e0dc' }}>
-                    <span style={{ fontSize: 10, color: '#6b7280' }}>طلاب اليوم</span>
-                    <b style={{ display: 'block', fontSize: 17, fontWeight: 800 }}>186</b>
-                  </div>
-                  <div style={{ background: '#fff', padding: 10, borderRadius: 12, border: '1px solid #e2e0dc' }}>
-                    <span style={{ fontSize: 10, color: '#6b7280' }}>مقاعد متاحة</span>
-                    <b style={{ display: 'block', fontSize: 17, fontWeight: 800 }}>38</b>
-                  </div>
-                  <div style={{ background: '#fff', padding: 10, borderRadius: 12, border: '1px solid #e2e0dc' }}>
-                    <span style={{ fontSize: 10, color: '#6b7280' }}>كاش الوردية</span>
-                    <b style={{ display: 'block', fontSize: 17, fontWeight: 800, color: '#0e7c56' }}>3,110 ج.م</b>
-                  </div>
-                </div>
-
-                <div style={{ background: '#fff', padding: 12, borderRadius: 12, border: '1px solid #e2e0dc' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 12 }}>
-                    <b>رياضيات · ثالثة ثانوي (قاعة 2)</b>
-                    <span style={{ color: '#0e7c56', fontWeight: 700 }}>نشطة الآن</span>
-                  </div>
-                  <div style={{ height: 6, background: '#eeede9', borderRadius: 99, overflow: 'hidden' }}>
-                    <div style={{ width: '78%', height: '100%', background: '#0e7c56', borderRadius: 99 }} />
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 10, color: '#6b7280' }}>
-                    <span>62 من 80 طالب حاضر</span>
-                    <span>78% إشغال</span>
-                  </div>
-                </div>
-              </div>
+              ))}
             </div>
+          </div>
 
-            {/* Floating Trust Chips */}
-            <div className="lp-floats">
-              <div className="lp-float">
-                <span className="lp-float-ico">
-                  <Users className="h-4 w-4" />
+          <div className="lp-reveal">
+            <LobbyFrame locale={locale} />
+            <p className="lp-caption">{t('visibility.featuresLabel')}</p>
+          </div>
+        </div>
+      </Section>
+
+      {/* ═══════════════════════ CORE SYSTEM ═══════════════════════ */}
+      <Section className="lp-section lp-section--tint" id="system">
+        <div className="lp-wrap">
+          <div className="lp-sec-head lp-sec-head--center lp-reveal">
+            <span className="lp-kicker">{t('system.kicker')}</span>
+            <h2>{t('system.title')}</h2>
+            <p>{t('system.sub')}</p>
+          </div>
+
+          <div className="lp-modules lp-reveal">
+            {moduleCards.map((module) => (
+              <article className="lp-module" key={module.key}>
+                <span className="lp-vis-ico" aria-hidden="true" style={{ marginBottom: 12 }}>
+                  <module.Icon className="h-4 w-4" />
                 </span>
-                <span>
-                  <b>+12 طالب</b>
-                  <small>تم تسجيل حضورهم الآن</small>
+                <b>{module.title}</b>
+                <small>{module.body}</small>
+              </article>
+            ))}
+          </div>
+
+          <div className="lp-flow lp-reveal">
+            {flow.map((step, index) => (
+              <span key={step} style={{ display: 'contents' }}>
+                {index > 0 && <ArrowIcon className="lp-flow-arrow h-4 w-4" aria-hidden="true" />}
+                <span className="lp-flow-step">
+                  <Radio className="h-3.5 w-3.5" aria-hidden="true" />
+                  {step}
                 </span>
-              </div>
-              <div className="lp-float">
-                <span className="lp-float-ico lp-float-ico--amber">
-                  <Coins className="h-4 w-4" />
-                </span>
-                <span>
-                  <b>24,500 ج.م</b>
-                  <small>إجمالي تحصيل اليوم</small>
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ================= SECTION 3: THE PROBLEM ================= */}
-      <section className="lp-section">
-        <div className="lp-wrap">
-          <div className="lp-sec-head">
-            <h2>السنتر مش محتاج شغل أكتر. محتاج نظام أفضل.</h2>
-            <p>الزحمة، الكاش، حسابات المدرسين، وتقارير آخر اليوم — كلها بتاخد وقتك وتشتتك عن تطوير سنترك.</p>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18 }}>
-            <article className="lp-card">
-              <span className="lp-ico"><Users className="h-5 w-5" /></span>
-              <h3 style={{ marginTop: 16 }}>الاستقبال والزحمة</h3>
-              <p style={{ color: 'var(--lp-ink-2)', marginTop: 8 }}>تسجيل الطلاب والبحث عنهم بالاسم أو الهاتف في ثوانٍ معدودة وسط ضغط الحصص.</p>
-            </article>
-
-            <article className="lp-card">
-              <span className="lp-ico"><Wallet className="h-5 w-5" /></span>
-              <h3 style={{ marginTop: 16 }}>خزينة الوردية والكاش</h3>
-              <p style={{ color: 'var(--lp-ink-2)', marginTop: 8 }}>متابعة الكاش، المدفوعات الرقمية (فودافون كاش وإنستاباي) والمصروفات بدون فوارق.</p>
-            </article>
-
-            <article className="lp-card">
-              <span className="lp-ico"><Coins className="h-5 w-5" /></span>
-              <h3 style={{ marginTop: 16 }}>تسويات المدرسين</h3>
-              <p style={{ color: 'var(--lp-ink-2)', marginTop: 8 }}>حساب مستحقات المدرسين ونسبة السنتر تلقائيًا بناءً على الحضور الفعلي في القاعة.</p>
-            </article>
-
-            <article className="lp-card">
-              <span className="lp-ico"><BarChart3 className="h-5 w-5" /></span>
-              <h3 style={{ marginTop: 16 }}>التقارير اليومية</h3>
-              <p style={{ color: 'var(--lp-ink-2)', marginTop: 8 }}>ملخص شامل بضغطة زر يوضح إجمالي الإيراد، الأرباح، وصافي كاش الدرج.</p>
-            </article>
-
-            <article className="lp-card">
-              <span className="lp-ico"><Key className="h-5 w-5" /></span>
-              <h3 style={{ marginTop: 16 }}>صلاحيات الموظفين</h3>
-              <p style={{ color: 'var(--lp-ink-2)', marginTop: 8 }}>كل موظف استقبال له ورِديته وسجل عملياته الخاص لمنع التلاعب وتحديد المسؤوليات.</p>
-            </article>
-
-            <article className="lp-card">
-              <span className="lp-ico"><Building2 className="h-5 w-5" /></span>
-              <h3 style={{ marginTop: 16 }}>تعدد الفروع والمكاتب</h3>
-              <p style={{ color: 'var(--lp-ink-2)', marginTop: 8 }}>إدارة أكثر من مكتب استقبال وفرع تعليمي من حساب مركزي واحد.</p>
-            </article>
-          </div>
-        </div>
-      </section>
-
-      {/* ================= SECTION 5: VSL / HOW IT WORKS ================= */}
-      <section className="lp-section lp-section--tint" id="how">
-        <div className="lp-wrap">
-          <div className="lp-sec-head lp-sec-head--center">
-            <h2>شوف مدار بيشتغل إزاي في أقل من 10 دقايق</h2>
-            <p>رحلة تشغيل السنتر العملية: من فتح الوردية وتسجيل الحضور إلى تصفية المدرس والتقارير.</p>
-          </div>
-
-          <div style={{ maxWidth: 900, margin: '0 auto', background: '#043128', borderRadius: 24, padding: 24, color: '#fff', textAlign: 'center' }}>
-            <div style={{ aspectRatio: '16/9', background: '#064334', borderRadius: 16, display: 'grid', placeItems: 'center', position: 'relative' }}>
-              {!isPlayingVsl ? (
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setIsPlayingVsl(true)}
-                    style={{ width: 72, height: 72, borderRadius: '50%', background: '#fff', color: '#0e7c56', display: 'grid', placeItems: 'center', margin: '0 auto 14px', border: 0, cursor: 'pointer' }}
-                  >
-                    <Play className="h-7 w-7 fill-current" />
-                  </button>
-                  <p style={{ fontWeight: 800, fontSize: 18 }}>فيديو جولة تشغيل مدار</p>
-                  <span style={{ fontSize: 12, opacity: 0.8 }}>شاهد دورة العمل الكاملة</span>
-                </div>
-              ) : (
-                <div style={{ padding: 20 }}>
-                  <p>جاري تشغيل الفيديو التوضيحي...</p>
-                  <button type="button" onClick={() => setIsPlayingVsl(false)} className="lp-btn lp-btn-light lp-btn-sm" style={{ marginTop: 12 }}>
-                    إغلاق الفيديو
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ================= SECTION 6: FEATURES TABS ================= */}
-      <section className="lp-section" id="features">
-        <div className="lp-wrap">
-          <div className="lp-sec-head">
-            <h2>كل الأدوات اللي محتاجها عشان تدير السنتر بكفاءة</h2>
-            <p>مقسّمة على شغل السنتر الفعلي — اختار القسم اللي حابب تتعرف عليه:</p>
-          </div>
-
-          <div className="lp-features">
-            <div className="lp-tablist" role="tablist">
-              <button
-                type="button"
-                className={`lp-tab ${activeTab === 'reception' ? 'is-active' : ''}`}
-                onClick={() => setActiveTab('reception')}
-              >
-                <Users className="h-4 w-4" /> الاستقبال السريع
-              </button>
-              <button
-                type="button"
-                className={`lp-tab ${activeTab === 'payments' ? 'is-active' : ''}`}
-                onClick={() => setActiveTab('payments')}
-              >
-                <Wallet className="h-4 w-4" /> الخزينة والمدفوعات
-              </button>
-              <button
-                type="button"
-                className={`lp-tab ${activeTab === 'teachers' ? 'is-active' : ''}`}
-                onClick={() => setActiveTab('teachers')}
-              >
-                <BookOpen className="h-4 w-4" /> تسويات المدرسين
-              </button>
-              <button
-                type="button"
-                className={`lp-tab ${activeTab === 'reports' ? 'is-active' : ''}`}
-                onClick={() => setActiveTab('reports')}
-              >
-                <BarChart3 className="h-4 w-4" /> التقارير والحسابات
-              </button>
-              <button
-                type="button"
-                className={`lp-tab ${activeTab === 'branches' ? 'is-active' : ''}`}
-                onClick={() => setActiveTab('branches')}
-              >
-                <Building2 className="h-4 w-4" /> الفروع <span className="lp-tag">Business</span>
-              </button>
-            </div>
-
-            <div className="lp-tabpanels">
-              {activeTab === 'reception' && (
-                <div className="lp-tabpanel">
-                  <div>
-                    <h3 style={{ fontSize: 24, marginBottom: 16 }}>الطلاب داخلين بالعشرات. الاستقبال مش لازم يتلخبط.</h3>
-                    <ul className="lp-checks">
-                      <li>تسجيل الحضور والدفع في خطوة واحدة بأقل من ثانيتين.</li>
-                      <li>بحث ذكي يتسامح مع الهمزات واختلافات الكتابة العربية.</li>
-                      <li>تزامن فوري لمنع تكرار تسجيل الطالب في نفس الحصة عبر المكاتب.</li>
-                      <li>عداد حضور لحظي (Live Headcount) موصول مباشرة بالقاعات.</li>
-                    </ul>
-                  </div>
-                  <div className="lp-win" style={{ padding: 18, background: '#fff' }}>
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, padding: 10, background: '#f5f7f6', borderRadius: 10 }}>
-                      <Search className="h-4 w-4 text-emerald-700" />
-                      <b>أحمد محمود السيد</b>
-                      <span style={{ fontSize: 11, color: '#6b7280', marginInlineStart: 'auto' }}>كود 1042 · ثالثة ثانوي</span>
-                      <span style={{ background: '#0e7c56', color: '#fff', fontSize: 11, padding: '3px 8px', borderRadius: 6, fontWeight: 700 }}>
-                        تسجيل حضور ودفع
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'payments' && (
-                <div className="lp-tabpanel">
-                  <div>
-                    <h3 style={{ fontSize: 24, marginBottom: 16 }}>كل جنيه داخل وخارج الدرج معروف مكانه.</h3>
-                    <ul className="lp-checks">
-                      <li>دعم تحصيل الكاش، محافظ فودافون كاش، وإنستاباي.</li>
-                      <li>حساب آلي للكاش المتوقع في الدرج لحظة بلحظة.</li>
-                      <li>مطابقة رصيد تقفيل الوردية وكشف أي زيادة أو عجز فورًا.</li>
-                      <li>تسجيل مصروفات النثريات مع إرفاق ملاحظات التدقيق.</li>
-                    </ul>
-                  </div>
-                  <div className="lp-win" style={{ padding: 18, background: '#fff' }}>
-                    <div style={{ border: '1px solid #e2e0dc', borderRadius: 12, padding: 14 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13 }}>
-                        <span>الرصيد الافتتاحي:</span> <b>500 ج.م</b>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13, color: '#0e7c56' }}>
-                        <span>الكاش المقبوض:</span> <b>+ 6,200 ج.م</b>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13, color: '#b45309' }}>
-                        <span>مستحقات المدرسين والمصروفات:</span> <b>- 3,590 ج.م</b>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12, paddingTop: 10, borderTop: '1px solid #e2e0dc', fontSize: 15, fontWeight: 800 }}>
-                        <span>الكاش المتوقع بالدرج:</span> <span style={{ color: '#0e7c56' }}>3,110 ج.م</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'teachers' && (
-                <div className="lp-tabpanel">
-                  <div>
-                    <h3 style={{ fontSize: 24, marginBottom: 16 }}>تصفية حساب كل مدرس بدون آلة حاسبة.</h3>
-                    <ul className="lp-checks">
-                      <li>حساب نسبة السنتر ومستحق المدرس تلقائيًا فور انتهاء الحصة.</li>
-                      <li>مطابقة عدد كشف الاستقبال مع حصر مساعد المدرس داخل القاعة.</li>
-                      <li>تسوية مالية وإقفال نهائي للحصة يمنع التلاعب بعد الصرف.</li>
-                    </ul>
-                  </div>
-                  <div className="lp-win" style={{ padding: 18, background: '#fff' }}>
-                    <div style={{ background: '#f8faf9', padding: 14, borderRadius: 12, border: '1px solid #e0e6e2' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                        <b>رياضيات · ثالثة ثانوي</b>
-                        <span style={{ background: '#0e7c56', color: '#fff', fontSize: 11, padding: '2px 8px', borderRadius: 99 }}>تم الصرف</span>
-                      </div>
-                      <p style={{ fontSize: 12, color: '#6b7280' }}>62 طالب حاضر × 80 ج.م = 4,960 ج.م إيراد الحصة</p>
-                      <p style={{ fontSize: 13, fontWeight: 800, color: '#0e7c56', marginTop: 8 }}>صافي مستحق المدرس: 3,410 ج.م (رسوم السنتر: 1,550 ج.م)</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'reports' && (
-                <div className="lp-tabpanel">
-                  <div>
-                    <h3 style={{ fontSize: 24, marginBottom: 16 }}>الصورة الكاملة لليوم قدامك.</h3>
-                    <ul className="lp-checks">
-                      <li>تقارير إيرادات السنتر اليومية والشهرية.</li>
-                      <li>إحصائيات تفصيلية لحضور كل مادة ومرحلة دراسية.</li>
-                      <li>سجل تدقيق كامل (Audit Trail) لجميع العمليات المالية.</li>
-                    </ul>
-                  </div>
-                  <div className="lp-win" style={{ padding: 18, background: '#fff' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
-                      <div style={{ background: '#e8f5ef', padding: 12, borderRadius: 10 }}>
-                        <span style={{ fontSize: 11, color: '#064334' }}>صافي إيراد السنتر</span>
-                        <b style={{ display: 'block', fontSize: 18, color: '#0b6a4a' }}>4,650 ج.م</b>
-                      </div>
-                      <div style={{ background: '#fef3cd', padding: 12, borderRadius: 10 }}>
-                        <span style={{ fontSize: 11, color: '#7a3d06' }}>التحصيل الرقمي</span>
-                        <b style={{ display: 'block', fontSize: 18, color: '#b45309' }}>4,000 ج.م</b>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'branches' && (
-                <div className="lp-tabpanel">
-                  <div>
-                    <h3 style={{ fontSize: 24, marginBottom: 16 }}>فرع واحد النهاردة. أكتر بكرة.</h3>
-                    <ul className="lp-checks">
-                      <li>إدارة مركزية لعدة فروع مع فصل كامل للحسابات والورديات.</li>
-                      <li>تقارير مجمعة لأداء جميع الفروع على مستوى الإدارة.</li>
-                      <li>مكاتب استقبال غير محدودة تعمل بالتوازي.</li>
-                    </ul>
-                  </div>
-                  <div className="lp-win" style={{ padding: 18, background: '#fff' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: 10, background: '#f5f7f6', borderRadius: 8 }}>
-                        <b>الفرع الرئيسي (الدقي)</b>
-                        <span style={{ color: '#0e7c56', fontWeight: 700 }}>186 طالب اليوم</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: 10, background: '#f5f7f6', borderRadius: 8 }}>
-                        <b>فرع مدينة نصر</b>
-                        <span style={{ color: '#0e7c56', fontWeight: 700 }}>142 طالب اليوم</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ================= SECTION 7: 3 STEPS ================= */}
-      <section className="lp-section lp-section--tint">
-        <div className="lp-wrap">
-          <div className="lp-sec-head lp-sec-head--center">
-            <h2>ابدأ في 3 خطوات بسيطة</h2>
-          </div>
-
-          <div className="lp-steps">
-            <div className="lp-card">
-              <span className="lp-step-n">01</span>
-              <h3>أنشئ حساب السنتر</h3>
-              <p style={{ color: 'var(--lp-ink-2)', marginTop: 8 }}>سجل بيانات سنترك وابدأ تجربتك المجانية لمدة 14 يوم فورًا بدون تعقيدات.</p>
-            </div>
-            <div className="lp-card">
-              <span className="lp-step-n">02</span>
-              <h3>أضف القاعات والمدرسين</h3>
-              <p style={{ color: 'var(--lp-ink-2)', marginTop: 8 }}>سجل أسماء القاعات، المدرسين، وسعر الحصص مع نسبة السنتر المحددة.</p>
-            </div>
-            <div className="lp-card">
-              <span className="lp-step-n">03</span>
-              <h3>ابدأ التشغيل اليومي</h3>
-              <p style={{ color: 'var(--lp-ink-2)', marginTop: 8 }}>افتح الوردية واستقبل الطلاب بكل سلاسة وسرعة وبدون أخطاء كاش.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ================= SECTION 9: PRICING ================= */}
-      <section className="lp-section" id="pricing">
-        <div className="lp-wrap">
-          <div className="lp-sec-head lp-sec-head--center">
-            <h2>ابدأ مجانًا. وكبّر مدار مع سنترك.</h2>
-            <p>جرّب مدار لمدة 14 يوم مجانًا، وبعدها اختار الخطة المناسبة لاحتياجاتك بالجنيه المصري.</p>
-          </div>
-
-          {/* 14-Day Free Trial Banner */}
-          <div className="lp-trial">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
-              <div className="lp-trial-days">
-                <b>14</b>
-                <small>يوم</small>
-              </div>
-              <div>
-                <h3 style={{ fontSize: 22 }}>14 يوم تجربة مجانية بالكامل</h3>
-                <p style={{ color: 'var(--lp-ink-2)' }}>جرّب جميع ميزات مدار العملية مع فريقك بدون أي دفع مسبق.</p>
-              </div>
-            </div>
-            <button type="button" onClick={handleCta} className="lp-btn lp-btn-primary lp-btn-lg">
-              ابدأ تجربتك المجانية الآن
-            </button>
-          </div>
-
-          <div className="lp-plans" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 20 }}>
-            {/* Plan 1: Basic */}
-            <article className="lp-plan">
-              <h3 style={{ fontSize: 22 }}>Basic</h3>
-              <p style={{ color: 'var(--lp-ink-2)', marginTop: 6, minHeight: 44, fontSize: 13 }}>
-                للسناتر الصغيرة
-              </p>
-              <div className="lp-price">
-                <b>499</b>
-                <span style={{ fontSize: 15 }}>جنيه / شهرياً</span>
-              </div>
-              <div style={{ background: '#f9fafb', padding: '10px 12px', borderRadius: 10, marginBottom: 18, fontSize: 12, display: 'grid', gap: 6 }}>
-                <div><strong>فرع واحد</strong></div>
-                <div><strong>حساب استقبال واحد</strong></div>
-                <div><strong>3,000 زيارة طالب شهرياً</strong></div>
-              </div>
-              <ul className="lp-checks" style={{ marginBottom: 24, fontSize: 13 }}>
-                <li>النظام التشغيلي الكامل</li>
-                <li>إدارة الطلاب والمدرسين والحصص</li>
-                <li>الاستقبال السريع وتسجيل الحضور</li>
-                <li>خزينة الوردية وتصفية المدرسين</li>
-                <li>التقارير اليومية والمالية</li>
-              </ul>
-              <button type="button" onClick={handleCta} className="lp-btn lp-btn-ghost lp-btn-block lp-btn-md">
-                ابدأ تجربتك المجانية
-              </button>
-            </article>
-
-            {/* Plan 2: Growth */}
-            <article className="lp-plan lp-plan--featured">
-              <span className="lp-plan-flag">الأكثر شيوعاً</span>
-              <h3 style={{ fontSize: 22 }}>Growth</h3>
-              <p style={{ opacity: 0.85, marginTop: 6, minHeight: 44, fontSize: 13 }}>
-                للسناتر التي بدأت في النمو
-              </p>
-              <div className="lp-price">
-                <b>1,499</b>
-                <span style={{ fontSize: 15, opacity: 0.85 }}>جنيه / شهرياً</span>
-              </div>
-              <div style={{ background: 'rgba(255,255,255,0.08)', padding: '10px 12px', borderRadius: 10, marginBottom: 18, fontSize: 12, display: 'grid', gap: 6, color: '#fff' }}>
-                <div><strong>فرع واحد</strong></div>
-                <div><strong>3 حسابات استقبال متزامنة</strong></div>
-                <div><strong>10,000 زيارة طالب شهرياً</strong></div>
-              </div>
-              <ul className="lp-checks" style={{ marginBottom: 24, fontSize: 13 }}>
-                <li style={{ color: '#fff' }}>كل مميزات باقة Basic</li>
-                <li style={{ color: '#fff' }}>3 مكاتب استقبال متزامنة</li>
-                <li style={{ color: '#fff' }}>تقارير تفصيلية وتصدير البيانات</li>
-                <li style={{ color: '#fff' }}>تحليلات حضور وإيرادات متقدمة</li>
-                <li style={{ color: '#fff' }}>دعم فني سريع وأولوية متابعة</li>
-              </ul>
-              <button type="button" onClick={handleCta} className="lp-btn lp-btn-light lp-btn-block lp-btn-md">
-                ابدأ تجربتك المجانية
-              </button>
-            </article>
-
-            {/* Plan 3: Pro */}
-            <article className="lp-plan">
-              <h3 style={{ fontSize: 22 }}>Pro</h3>
-              <p style={{ color: 'var(--lp-ink-2)', marginTop: 6, minHeight: 44, fontSize: 13 }}>
-                للسناتر ذات التشغيل العالي
-              </p>
-              <div className="lp-price">
-                <b>1,999</b>
-                <span style={{ fontSize: 15 }}>جنيه / شهرياً</span>
-              </div>
-              <div style={{ background: '#f9fafb', padding: '10px 12px', borderRadius: 10, marginBottom: 18, fontSize: 12, display: 'grid', gap: 6 }}>
-                <div><strong>فرع واحد</strong></div>
-                <div><strong>حسابات استقبال غير محدودة</strong></div>
-                <div><strong>20,000 زيارة طالب شهرياً</strong></div>
-              </div>
-              <ul className="lp-checks" style={{ marginBottom: 24, fontSize: 13 }}>
-                <li>كل مميزات باقة Growth</li>
-                <li>حسابات استقبال غير محدودة</li>
-                <li>أعلى سرعة معالجة وتزامن فوري</li>
-                <li>إدارة صلاحيات موظفين متقدمة</li>
-                <li>تدريب فريق العمل ومتابعة دورية</li>
-              </ul>
-              <button type="button" onClick={handleCta} className="lp-btn lp-btn-ghost lp-btn-block lp-btn-md">
-                ابدأ تجربتك المجانية
-              </button>
-            </article>
-
-            {/* Plan 4: Multi-Branch */}
-            <article className="lp-plan" style={{ border: '2px solid #1e3a8a' }}>
-              <span className="lp-plan-flag" style={{ background: '#1e3a8a', color: '#fff' }}>للمؤسسات والشبكات</span>
-              <h3 style={{ fontSize: 22, color: '#1e3a8a' }}>Multi-Branch</h3>
-              <p style={{ color: 'var(--lp-ink-2)', marginTop: 6, minHeight: 44, fontSize: 13 }}>
-                لأصحاب أكثر من فرع
-              </p>
-              <div className="lp-price">
-                <b>4,999</b>
-                <span style={{ fontSize: 15 }}>جنيه / شهرياً</span>
-              </div>
-              <div style={{ background: '#f9fafb', padding: '10px 12px', borderRadius: 10, marginBottom: 18, fontSize: 12, display: 'grid', gap: 6 }}>
-                <div><strong>فروع متعددة غير محدودة</strong></div>
-                <div><strong>حسابات استقبال غير محدودة</strong></div>
-                <div><strong>50,000+ زيارة طالب شهرياً</strong></div>
-              </div>
-              <ul className="lp-checks" style={{ marginBottom: 24, fontSize: 13 }}>
-                <li>فروع متعددة غير محدودة</li>
-                <li>لوحة تحكم مركزية لجميع الفروع</li>
-                <li>إدارة موظفين وقاعات لكل فرع</li>
-                <li>تقارير مجمعة ومقارنة بين الفروع</li>
-                <li>مدير حساب مخصص ودعم هاتفي 24/7</li>
-              </ul>
-              <button type="button" onClick={handleCta} className="lp-btn lp-btn-ghost lp-btn-block lp-btn-md" style={{ borderColor: '#1e3a8a', color: '#1e3a8a' }}>
-                ابدأ تجربتك المجانية
-              </button>
-            </article>
-          </div>
-
-          {/* Comparison Table */}
-          <div style={{ marginTop: 48, background: '#fff', padding: '24px 28px', borderRadius: 20, border: '1px solid #e5e7eb' }}>
-            <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 6, textAlign: 'center' }}>مقارنة سريعة بين الباقات</h3>
-            <p style={{ fontSize: 13, color: '#6b7280', textAlign: 'center', marginBottom: 20 }}>اختر الباقة المناسبة لحجم ونشاط سنترك</p>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'right' }}>
-                <thead>
-                  <tr style={{ borderBottom: '2px solid #e5e7eb', background: '#f9fafb' }}>
-                    <th style={{ padding: '12px 14px' }}>الميزة</th>
-                    <th style={{ padding: '12px 14px', textAlign: 'center' }}>Basic (499 ج.م)</th>
-                    <th style={{ padding: '12px 14px', textAlign: 'center' }}>Growth (1,499 ج.م)</th>
-                    <th style={{ padding: '12px 14px', textAlign: 'center' }}>Pro (1,999 ج.م)</th>
-                    <th style={{ padding: '12px 14px', textAlign: 'center' }}>Multi-Branch (4,999 ج.م)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
-                    <td style={{ padding: '12px 14px', fontWeight: 700 }}>زيارات الطلاب الشهرية</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>3,000</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>10,000</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>20,000</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>50,000+</td>
-                  </tr>
-                  <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
-                    <td style={{ padding: '12px 14px', fontWeight: 700 }}>حسابات الاستقبال</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>1</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>3</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>غير محدود</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>غير محدود</td>
-                  </tr>
-                  <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
-                    <td style={{ padding: '12px 14px', fontWeight: 700 }}>عدد الفروع</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>1</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>1</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>1</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>متعدد الفروع</td>
-                  </tr>
-                  <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
-                    <td style={{ padding: '12px 14px', fontWeight: 700 }}>النظام التشغيلي والـ POS</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>✓</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>✓</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>✓</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>✓</td>
-                  </tr>
-                  <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
-                    <td style={{ padding: '12px 14px', fontWeight: 700 }}>التقارير المتقدمة</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>—</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>✓</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>✓</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>✓</td>
-                  </tr>
-                  <tr>
-                    <td style={{ padding: '12px 14px', fontWeight: 700 }}>إدارة فروع مجمعة</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>—</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>—</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>—</td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>✓</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ================= SECTION 10: INTERACTIVE ROI CALCULATOR ================= */}
-      <section className="lp-section lp-section--tint">
-        <div className="lp-wrap" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 36, alignItems: 'center' }}>
-          <div>
-            <h2>تكلفة النظام أقل من تكلفة الفوضى التشغيلية.</h2>
-            <p style={{ marginTop: 14, color: 'var(--lp-ink-2)' }}>
-              القيمة الحقيقية لمدار هي الساعات اللي فريقك بيوفرها يومياً، والأخطاء المالية اللي بتختفي تماماً.
-            </p>
-            <ul style={{ display: 'grid', gap: 10, marginTop: 22 }}>
-              <li style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#fff', borderRadius: 10 }}>
-                <Clock className="h-5 w-5 text-emerald-700" /> وقت أقل 3 أضعاف في طابور الاستقبال
-              </li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#fff', borderRadius: 10 }}>
-                <Scale className="h-5 w-5 text-emerald-700" /> صفر أخطاء في حسابات نسب المدرسين
-              </li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#fff', borderRadius: 10 }}>
-                <Receipt className="h-5 w-5 text-emerald-700" /> مطابقة الكاش والدرج لحظة بلحظة
-              </li>
-            </ul>
-          </div>
-
-          <div className="lp-calc">
-            <h3>احسب الوقت اللي ممكن توفره مع مدار:</h3>
-            <p className="lp-calc-tag">حاسبة تقديرية بناءً على سرعة الاستقبال اليومي</p>
-
-            <div className="lp-calc-fields">
-              <label>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>عدد الطلاب يومياً في السنتر:</span>
-                <input
-                  type="number"
-                  min="1"
-                  value={calcStudents}
-                  onChange={(e) => setCalcStudents(Number(e.target.value) || 0)}
-                />
-              </label>
-
-              <label>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>وقت تسجيل الطالب بالطريقة الحالية (بالدقائق):</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0.1"
-                  value={calcNow}
-                  onChange={(e) => setCalcNow(Number(e.target.value) || 0)}
-                />
-              </label>
-
-              <label>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>وقت تسجيل الطالب مع مدار السريع (بالدقائق):</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0.1"
-                  value={calcWith}
-                  onChange={(e) => setCalcWith(Number(e.target.value) || 0)}
-                />
-              </label>
-            </div>
-
-            <div className="lp-calc-out">
-              <div>
-                <small style={{ display: 'block', color: 'var(--lp-brand-700)', fontWeight: 700 }}>الوقت الموفر يومياً:</small>
-                <b>{hoursSavedPerDay.toFixed(1)} ساعة</b>
-              </div>
-              <div>
-                <small style={{ display: 'block', color: 'var(--lp-brand-700)', fontWeight: 700 }}>الوقت الموفر شهرياً (26 يوم):</small>
-                <b>{hoursSavedPerMonth.toFixed(1)} ساعة</b>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ================= SECTION 12: FAQ ================= */}
-      <section className="lp-section" id="faq">
-        <div className="lp-wrap">
-          <div className="lp-sec-head lp-sec-head--center">
-            <h2>أسئلة بتتسأل كتير</h2>
-          </div>
-
-          <div className="lp-faq">
-            {[
-              {
-                q: 'هل مدار مناسب لحجم السنتر بتاعي؟',
-                a: 'نعم، مدار مصمم لخدمة السناتر الصغيرة التي تبدأ بمكتب واحد وقاعة وحتى الصروح الكبيرة متعددة القاعات والفروع.',
-              },
-              {
-                q: 'هل يحتاج مدار إلى أجهزة كمبيوتر بمواصفات معينة؟',
-                a: 'لا، مدار نظام سحابي بالكامل (Cloud SaaS) يعمل من أي متصفح ويب على الكمبيوتر أو التابلت أو الهاتف دون الحاجة لتثبيت برامج معقدة.',
-              },
-              {
-                q: 'هل بيانات السنتر وأرقام الطلاب والمدرسين في أمان؟',
-                a: 'بيانات سنترك مشفرة بالكامل ومعزولة في قاعدة بيانات مستقلة، مع نسخ احتياطي يومي وسجل تدقيق يحفظ كل حركة داخل النظام.',
-              },
-              {
-                q: 'كيف أبدأ التجربة المجانية؟',
-                a: 'اضغط على "ابدأ تجربتك المجانية" واملأ بيانات سنترك وستحصل فوراً على 14 يوم تجربة مجانية كاملة الميزات بدون أي دفع.',
-              },
-            ].map((item, index) => (
-              <div key={index} className="lp-faq-item">
-                <button
-                  type="button"
-                  className="lp-faq-q"
-                  onClick={() => toggleFaq(index)}
-                  aria-expanded={openFaq === index}
-                >
-                  <span>{item.q}</span>
-                  <ChevronDown
-                    className={`h-5 w-5 text-emerald-800 transition-transform ${
-                      openFaq === index ? 'rotate-180' : ''
-                    }`}
-                  />
-                </button>
-                {openFaq === index && (
-                  <div className="lp-faq-a">
-                    <p>{item.a}</p>
-                  </div>
-                )}
-              </div>
+              </span>
             ))}
           </div>
         </div>
-      </section>
+      </Section>
 
-      {/* ================= SECTION 13: FINAL CTA ================= */}
-      <section className="lp-final">
-        <div className="lp-wrap" style={{ position: 'relative', zIndex: 1 }}>
-          <h2 style={{ color: '#fff', fontSize: 36 }}>جاهز تدير سنترك بطريقة أذكى؟</h2>
-          <p style={{ maxWidth: 500, margin: '16px auto 32px', opacity: 0.9 }}>
-            ابدأ تجربتك المجانية لمدة 14 يوم واكتشف كيف يغير مدار كفاءة الاستقبال والحسابات.
-          </p>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 14, flexWrap: 'wrap' }}>
-            <button type="button" onClick={handleCta} className="lp-btn lp-btn-light lp-btn-lg">
-              ابدأ تجربتك المجانية
-            </button>
-            <button type="button" onClick={handleLogin} className="lp-btn lp-btn-outline-light lp-btn-lg">
-              تسجيل الدخول إلى حسابك
-            </button>
+      {/* ════════════════════════ VALUE STACK ════════════════════════ */}
+      <Section className="lp-section" id="value">
+        <div className="lp-wrap lp-value-grid">
+          <div className="lp-reveal">
+            <span className="lp-kicker">{t('value.kicker')}</span>
+            <h2>{t('value.title')}</h2>
+            {hasSupportChannel ? (
+              <p className="lp-support-line" style={{ marginTop: 16 }}>
+                <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                {[SUPPORT.phone, SUPPORT.whatsapp, SUPPORT.email].filter(Boolean).join(' · ')}
+              </p>
+            ) : (
+              <p className="lp-placeholder">{t('value.supportUnconfigured')}</p>
+            )}
           </div>
-          <p style={{ marginTop: 24, fontSize: 13, opacity: 0.8 }}>14 يوم مجانًا — بدون التزام</p>
-        </div>
-      </section>
 
-      {/* ================= FOOTER ================= */}
-      <footer className="lp-footer">
-        <div className="lp-wrap lp-footer-grid">
-          <div>
-            <a href="#top" className="lp-brand">
-              <span className="lp-logo-sq">م</span>
-              <span className="lp-brand-name">مدار</span>
-            </a>
-            <p style={{ marginTop: 12, color: 'var(--lp-ink-2)', fontSize: 14 }}>
-              نظام تشغيل وإدارة السناتر والمراكز التعليمية في مصر.
+          <div className="lp-value-list lp-reveal">
+            {valueItems.map((item, index) => (
+              <article className="lp-value-item" key={item.title}>
+                <span className="lp-value-n" aria-hidden="true">
+                  {index + 1}
+                </span>
+                <span>
+                  <b>{item.title}</b>
+                  <p>{item.body}</p>
+                  {item.kind === 'video' && !ONBOARDING_VIDEO_URL && (
+                    <p className="lp-placeholder">{t('value.videoUnconfigured')}</p>
+                  )}
+                </span>
+              </article>
+            ))}
+          </div>
+        </div>
+      </Section>
+
+      {/* ════════════════════════ PRICING ════════════════════════ */}
+      <Section className="lp-section lp-section--tint" id="pricing">
+        <div className="lp-wrap">
+          <div className="lp-sec-head lp-sec-head--center lp-reveal">
+            <span className="lp-kicker">{t('pricing.kicker')}</span>
+            <h2>{t('pricing.title')}</h2>
+            <p>{t('pricing.sub')}</p>
+          </div>
+
+          {FOUNDING_OFFER.enabled && (
+            <p className="lp-price-lead lp-reveal">
+              <BadgeCheck className="h-5 w-5" aria-hidden="true" />
+              <span>{t('pricing.foundingNote', { price: foundingPrice, period })}</span>
+              {savePercent !== null && <b>−{savePercent}%</b>}
             </p>
+          )}
+
+          <div className="lp-reveal">
+            <PrimaryPlan offer={PRIMARY_OFFER} locale={locale} arrow={arrow} onChoose={goSignup} />
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 14 }}>
-            <b>روابط سريعة</b>
-            <a href="#features" style={{ color: 'var(--lp-ink-2)' }}>المميزات</a>
-            <a href="#pricing" style={{ color: 'var(--lp-ink-2)' }}>الأسعار</a>
-            <a href="#faq" style={{ color: 'var(--lp-ink-2)' }}>الأسئلة الشائعة</a>
-          </div>
+          <div className="lp-reveal">
+            <div style={{ marginTop: 'clamp(28px, 4vw, 44px)' }}>
+              <h3 style={{ fontSize: '1.25rem' }}>{t('pricing.otherTitle')}</h3>
+              <p style={{ marginTop: 6, color: 'var(--lp-ink-2)' }}>{t('pricing.otherSub')}</p>
+            </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 14 }}>
-            <b>الحساب</b>
-            <button type="button" onClick={handleLogin} style={{ textAlign: 'start', color: 'var(--lp-ink-2)', background: 'none', border: 0, padding: 0, cursor: 'pointer' }}>
-              تسجيل الدخول
-            </button>
-            <button type="button" onClick={handleCta} style={{ textAlign: 'start', color: 'var(--lp-brand-600)', fontWeight: 700, background: 'none', border: 0, padding: 0, cursor: 'pointer' }}>
-              ابدأ تجربتك المجانية
-            </button>
+            <div className="lp-plans-secondary">
+              {SECONDARY_OFFERS.map((offer) => (
+                <SecondaryPlan key={offer.slug} offer={offer} locale={locale} onChoose={goSignup} />
+              ))}
+            </div>
           </div>
         </div>
+      </Section>
 
-        <div className="lp-wrap" style={{ borderTop: '1px solid var(--lp-line)', marginTop: 32, paddingBlock: 20, textAlign: 'center', fontSize: 13, color: 'var(--lp-ink-3)' }}>
-          © 2026 مَدار — جميع الحقوق محفوظة.
+      {/* ════════════════════════ GUARANTEE ════════════════════════ */}
+      {GUARANTEE.enabled && (
+        <Section className="lp-section" id="guarantee">
+          <div className="lp-wrap">
+            <div className="lp-guarantee lp-reveal">
+              <div className="lp-guarantee-badge" aria-hidden="true">
+                <b>{GUARANTEE.windowDays}</b>
+                <small>{isArabic ? 'يوم' : 'days'}</small>
+              </div>
+              <div>
+                <span className="lp-kicker">{t('guarantee.kicker')}</span>
+                <h3>{t('guarantee.title')}</h3>
+                <p>{isArabic ? GUARANTEE.headlineAr : GUARANTEE.headlineEn}</p>
+                <div className="lp-terms">
+                  <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                  {GUARANTEE.termsUrl ? (
+                    <a href={GUARANTEE.termsUrl} target="_blank" rel="noreferrer noopener">
+                      {t('guarantee.termsLink')}
+                    </a>
+                  ) : (
+                    <span>{t('guarantee.termsMissing')}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </Section>
+      )}
+
+      {/* ════════════════════════ HOW IT WORKS ════════════════════════ */}
+      <Section className="lp-section lp-section--tint" id="how">
+        <div className="lp-wrap">
+          <div className="lp-sec-head lp-sec-head--center lp-reveal">
+            <span className="lp-kicker">{t('how.kicker')}</span>
+            <h2>{t('how.title')}</h2>
+          </div>
+
+          <div className="lp-steps lp-reveal">
+            {steps.map((step, index) => (
+              <article className="lp-step" key={step.title}>
+                <span className="lp-step-n" aria-hidden="true">
+                  {index + 1}
+                </span>
+                <b>{step.title}</b>
+                <p>{step.body}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </Section>
+
+      {/* ════════════════════════ FINAL CTA ════════════════════════ */}
+      <section className="lp-final">
+        <div className="lp-wrap lp-reveal">
+          <h2>{t('final.title')}</h2>
+          <p>{t('final.sub')}</p>
+          <div className="lp-final-actions">
+            <button type="button" onClick={goSignup} className="lp-btn lp-btn-white lp-btn-lg">
+              {t('cta.primary')}
+              {arrow}
+            </button>
+            <button type="button" onClick={goLogin} className="lp-btn lp-btn-outline-white lp-btn-lg">
+              {t('cta.toLogin')}
+            </button>
+          </div>
+          <p className="lp-final-note">
+            <Check className="h-4 w-4" aria-hidden="true" />
+            {t('final.note')}
+          </p>
+        </div>
+      </section>
+
+      {/* ════════════════════════ FOOTER ════════════════════════ */}
+      <footer className="lp-footer">
+        <div className="lp-wrap">
+          <div className="lp-footer-grid">
+            <div>
+              <span className="lp-logo">
+                <span className="lp-logo-mark" aria-hidden="true">م</span>
+                <span className="lp-logo-name">مَدار</span>
+              </span>
+              <p>{t('footer.about')}</p>
+            </div>
+
+            <div className="lp-footer-col">
+              <b>{t('footer.links')}</b>
+              <a href="#system">{t('nav.features')}</a>
+              <a href="#pricing">{t('nav.pricing')}</a>
+              <a href="#guarantee">{t('nav.questions')}</a>
+            </div>
+
+            <div className="lp-footer-col">
+              <b>{t('footer.account')}</b>
+              <button type="button" onClick={goLogin}>{t('nav.login')}</button>
+              <button
+                type="button"
+                onClick={goSignup}
+                style={{ color: 'var(--lp-deep)', fontWeight: 800 }}
+              >
+                {t('nav.cta')}
+              </button>
+            </div>
+          </div>
+
+          <div className="lp-footer-bottom">
+            <span>{t('footer.copyright', { year: new Date().getFullYear() })}</span>
+            <button type="button" className="lp-nav-lang" onClick={toggleLanguage}>
+              <Languages className="h-4 w-4" aria-hidden="true" />
+              {isArabic ? 'English' : 'العربية'}
+            </button>
+          </div>
         </div>
       </footer>
     </div>

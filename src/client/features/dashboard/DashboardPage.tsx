@@ -99,7 +99,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (id: string) => void
           {active.length === 0 ? (
             <EmptyState text={t('operations.lobby.empty')} />
           ) : (
-            <div className="session-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
+            <div className="session-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 260px), 1fr))' }}>
               {active.map((session) => {
                 const ratio = session.room.capacity > 0 ? session.currentLobbyCount / session.room.capacity : 0;
                 return (

@@ -1,12 +1,12 @@
 import argon2 from 'argon2';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { FastifyPluginAsync } from 'fastify';
-import { Role } from '../../../shared/constants/index.js';
+import { Prisma } from '@prisma/client';
+import { PaymentMethod, Role, SubscriptionStatus, TenantPlan } from '../../../shared/constants/index.js';
+import { PURCHASABLE_PLAN_IDS, PENDING_PAYMENT_LIMITS, getPlanConfig } from '../../../shared/constants/plans.js';
 import { prisma } from '../../lib/prisma.js';
 import { config } from '../../config/index.js';
 import { recordAuditEntry } from '../reports/audit.js';
-
-import { getPlanConfig } from '../../../shared/constants/plans.js';
 
 export type AuthTokenPayload = {
   sub: string;
@@ -30,7 +30,9 @@ type RegisterCenterBody = {
   ownerPhone: string;
   username: string;
   password: string;
-  plan?: 'BASIC' | 'GROWTH' | 'PRO' | 'MULTI_BRANCH' | 'BUSINESS';
+  plan?: 'ESSENTIAL' | 'CONTROL';
+  /** The tenant's Instapay account name (e.g. name@instapay) used as proof of the subscription payment. */
+  paymentReference: string;
 };
 
 const publicUserSelect = {
@@ -42,6 +44,8 @@ const publicUserSelect = {
   preferredLanguage: true,
   phoneNumber: true,
 } as const;
+
+const SUBSCRIPTION_PERIOD_DAYS = 30;
 
 function setAuthCookie(reply: FastifyReply, token: string): void {
   reply.setCookie('access_token', token, {
@@ -98,6 +102,7 @@ const authRoutes: FastifyPluginAsync = async (app) => {
 
     const token = await app.jwt.sign({ sub: user.id, username: user.username, role: user.role as Role, tenantId: user.tenantId }, { expiresIn: config.jwtExpiresIn });
     setAuthCookie(reply, token);
+    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
     const { passwordHash: _passwordHash, isActive: _isActive, ...safeUser } = user;
     return reply.send({ success: true, data: { user: safeUser } });
   });
@@ -107,14 +112,15 @@ const authRoutes: FastifyPluginAsync = async (app) => {
     schema: {
       body: {
         type: 'object',
-        required: ['centerName', 'ownerName', 'ownerPhone', 'username', 'password'],
+        required: ['centerName', 'ownerName', 'ownerPhone', 'username', 'password', 'paymentReference'],
         properties: {
           centerName: { type: 'string', minLength: 2, maxLength: 100 },
           ownerName: { type: 'string', minLength: 2, maxLength: 100 },
           ownerPhone: { type: 'string', pattern: '^(010|011|012|015)[0-9]{8}$' },
           username: { type: 'string', minLength: 3, maxLength: 50, pattern: '^[a-zA-Z0-9_-]+$' },
           password: { type: 'string', minLength: 8, maxLength: 200 },
-          plan: { type: 'string', enum: ['BASIC', 'GROWTH', 'PRO', 'MULTI_BRANCH', 'BUSINESS'] },
+          plan: { type: 'string', enum: PURCHASABLE_PLAN_IDS as string[] },
+          paymentReference: { type: 'string', pattern: '^[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+$', minLength: 3, maxLength: 100 },
         },
         additionalProperties: false,
       },
@@ -124,14 +130,18 @@ const authRoutes: FastifyPluginAsync = async (app) => {
     if (existingUser) {
       return reply.code(409).send({
         success: false,
-        error: { code: 'USERNAME_TAKEN', message: 'اسم المستخدم مسجل مسبقاً، يرجى اختيار اسم مستخدم آخر.', messageEn: 'Username is already taken.' },
+        error: {
+          code: 'USERNAME_TAKEN',
+          message: 'اسم الدخول هذا مستخدم بالفعل في حساب آخر — اختر اسمًا آخر لتسجيل الدخول.',
+          messageEn: 'This login username is already taken. Pick another one.',
+        },
       });
     }
 
-    const requestedPlan = request.body.plan || 'BASIC';
-    const planConfig = getPlanConfig(requestedPlan);
-    const trialDays = 14;
-    const trialEndsAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000);
+    const plan = request.body.plan && PURCHASABLE_PLAN_IDS.includes(request.body.plan)
+      ? request.body.plan
+      : TenantPlan.ESSENTIAL;
+    const planConfig = getPlanConfig(plan);
     const slugSuffix = Math.random().toString(36).substring(2, 7);
     const slug = `center-${slugSuffix}`;
 
@@ -143,17 +153,40 @@ const authRoutes: FastifyPluginAsync = async (app) => {
     });
 
     const result = await prisma.$transaction(async (tx) => {
+      // The paid plan is recorded on the PENDING subscription, not on the
+      // tenant. The tenant itself starts on the capped trial tier and stays
+      // inactive until a SUPER_ADMIN verifies the transfer, so a self-declared
+      // payment reference can never hand out a paid plan's limits.
       const tenant = await tx.tenant.create({
         data: {
           name: request.body.centerName,
           slug,
           ownerName: request.body.ownerName,
           ownerPhone: request.body.ownerPhone,
-          plan: planConfig.id as any,
-          trialEndsAt,
-          isActive: true,
-          maxDesks: planConfig.maxReceptionists ?? 999,
-          maxBranches: planConfig.maxBranches ?? 99,
+          plan: TenantPlan.FREE_TRIAL,
+          isActive: false,
+          maxDesks: PENDING_PAYMENT_LIMITS.maxDesks,
+          maxBranches: PENDING_PAYMENT_LIMITS.maxBranches,
+          maxUsers: PENDING_PAYMENT_LIMITS.maxUsers,
+          visitLimit: PENDING_PAYMENT_LIMITS.visitLimit,
+        },
+      });
+
+      // The subscription is the only record of what was paid for; the period
+      // starts when the payment is verified, not when the form is submitted.
+      const periodStart = new Date();
+      const periodEnd = new Date(Date.now() + SUBSCRIPTION_PERIOD_DAYS * 24 * 60 * 60 * 1000);
+      const subscription = await tx.subscription.create({
+        data: {
+          tenantId: tenant.id,
+          plan: plan as TenantPlan,
+          status: SubscriptionStatus.PENDING,
+          amount: new Prisma.Decimal(planConfig.priceEgp ?? 0),
+          currency: 'EGP',
+          paymentMethod: PaymentMethod.INSTAPAY,
+          paymentReference: request.body.paymentReference.trim(),
+          periodStart,
+          periodEnd,
         },
       });
 
@@ -172,22 +205,10 @@ const authRoutes: FastifyPluginAsync = async (app) => {
         select: publicUserSelect,
       });
 
-      // Initialize default branch
-      const branch = await tx.branch.create({
-        data: {
-          tenantId: tenant.id,
-          name: 'الفرع الرئيسي',
-          address: 'المقر الرئيسي',
-          phoneNumber: request.body.ownerPhone,
-          isActive: true,
-        },
-      });
-
-      // Initialize default room for quick start linked to the branch
+      // Initialize default room for quick start
       await tx.room.create({
         data: {
           tenantId: tenant.id,
-          branchId: branch.id,
           name: 'قاعة ١ (الرئيسية)',
           capacity: 60,
           floor: 'الطابق الأول',
@@ -201,7 +222,7 @@ const authRoutes: FastifyPluginAsync = async (app) => {
         action: 'TENANT_REGISTERED',
         entityType: 'TENANT',
         entityId: tenant.id,
-        metadata: { centerName: tenant.name, plan: tenant.plan },
+        metadata: { centerName: tenant.name, plan: subscription.plan },
       }, tx);
 
       return { user, tenant };

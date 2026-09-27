@@ -124,7 +124,7 @@ export async function getTenantUsageSummary(tenantId: string, now: Date = new Da
     totalVisits = liveCount;
   }
 
-  const warning = calculateUsageWarning(totalVisits, planConfig.monthlyVisitLimit);
+  const warning = calculateUsageWarning(totalVisits, planConfig.monthlyVisitLimit ?? 0);
   const actualBranchCount = Math.max(1, branchesCount);
 
   const branchUsageList = branchRecords.map((b) => {
@@ -144,7 +144,7 @@ export async function getTenantUsageSummary(tenantId: string, now: Date = new Da
     periodStart: periodStart.toISOString(),
     periodEnd: periodEnd.toISOString(),
     usedVisits: totalVisits,
-    monthlyLimit: planConfig.monthlyVisitLimit,
+    monthlyLimit: planConfig.monthlyVisitLimit ?? 0,
     remainingVisits: warning.remaining,
     percentage: warning.percentage,
     warningLevel: warning.warningLevel,
@@ -244,11 +244,11 @@ export async function checkAndIncrementVisitUsage(
   }
 
   const newTotal = currentTenantVisits + 1;
-  const remaining = Math.max(0, planConfig.monthlyVisitLimit - newTotal);
+  const remaining = Math.max(0, (planConfig.monthlyVisitLimit ?? 0) - newTotal);
 
   return {
     newVisitCount: newTotal,
-    limit: planConfig.monthlyVisitLimit,
+    limit: planConfig.monthlyVisitLimit ?? 0,
     remaining,
   };
 }

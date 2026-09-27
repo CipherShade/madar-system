@@ -45,3 +45,7 @@ nohup.out
 *.db-journal
 *.sqlite
 *.sqlite3
+
+# Database dumps. These contain real student and payment records, unencrypted.
+backups/
+*.dump

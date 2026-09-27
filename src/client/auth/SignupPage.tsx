@@ -1,8 +1,14 @@
 import { useState, type FormEvent } from 'react';
-import { Building2, UserRound, Phone, KeyRound, ArrowRight, ArrowLeft, Check, Sparkles } from 'lucide-react';
+import { Building2, UserRound, Phone, KeyRound, ArrowRight, ArrowLeft, Check, Sparkles, ExternalLink } from 'lucide-react';
 import { useAuth } from './AuthContext';
 import { Banner } from '../components/ui/kit';
+import { InstapayQr } from '../components/ui/InstapayQr';
 import { EGYPTIAN_MOBILE_REGEX } from '../../shared/constants/index';
+import { PURCHASABLE_PLAN_IDS, PLANS } from '../../shared/constants/plans';
+import { billingConfig } from '../lib/billingConfig';
+import type { TenantPlan } from '../../shared/constants/index';
+
+const INSTAPAY_ACCOUNT_REGEX = /^[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+$/;
 
 interface SignupPageProps {
   onNavigateLogin?: () => void;
@@ -12,17 +18,22 @@ interface SignupPageProps {
 export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPageProps) {
   const { registerCenter } = useAuth();
 
-  const [step, setStep] = useState<1 | 2>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [centerName, setCenterName] = useState('');
-  const [plan, setPlan] = useState<'BASIC' | 'GROWTH' | 'PRO' | 'MULTI_BRANCH'>('BASIC');
+  const [plan, setPlan] = useState<'ESSENTIAL' | 'CONTROL'>(PURCHASABLE_PLAN_IDS[0] as 'ESSENTIAL' | 'CONTROL');
 
   const [ownerName, setOwnerName] = useState('');
   const [ownerPhone, setOwnerPhone] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [paymentReference, setPaymentReference] = useState('');
 
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const selectedPlanConfig = PLANS[plan as TenantPlan];
+  const instapayAccount = billingConfig.paymentAccounts.INSTAPAY;
+  const instapayLink = 'paymentLink' in instapayAccount && instapayAccount.paymentLink ? instapayAccount.paymentLink : null;
 
   const validateStep1 = () => {
     setError('');
@@ -40,27 +51,46 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
     }
   };
 
+  const validateOwnerDetails = () => {
+    setError('');
+    if (!ownerName.trim() || ownerName.trim().length < 2) {
+      setError('يرجى إدخال اسم مدير أو مالك السنتر.');
+      return false;
+    }
+    if (!EGYPTIAN_MOBILE_REGEX.test(ownerPhone.trim())) {
+      setError('يرجى إدخال رقم هاتف مصري صحيح يبدأ بـ (010, 011, 012, 015).');
+      return false;
+    }
+    if (!username.trim() || username.trim().length < 3) {
+      setError('اسم الدخول يجب أن يكون 3 أحرف على الأقل بالإنجليزية أو أرقام.');
+      return false;
+    }
+    if (password.length < 8) {
+      setError('كلمة المرور يجب أن تكون 8 خانات على الأقل.');
+      return false;
+    }
+    return true;
+  };
+
+  const handleNextToPayment = (e: FormEvent) => {
+    e.preventDefault();
+    if (validateOwnerDetails()) {
+      setStep(3);
+    }
+  };
+
   const handleFinalSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (!ownerName.trim() || ownerName.trim().length < 2) {
-      setError('يرجى إدخال اسم مدير أو مالك السنتر.');
+    if (!validateOwnerDetails()) return;
+
+    if (!paymentReference.trim()) {
+      setError('يرجى إدخال اسم حسابك في إنستاباي (الذي دفعت منه) لإثبات الدفع.');
       return;
     }
-
-    if (!EGYPTIAN_MOBILE_REGEX.test(ownerPhone.trim())) {
-      setError('يرجى إدخال رقم هاتف مصري صحيح يبدأ بـ (010, 011, 012, 015).');
-      return;
-    }
-
-    if (!username.trim() || username.trim().length < 3) {
-      setError('اسم المستخدم يجب أن يكون 3 أحرف على الأقل بالإنجليزية أو أرقام.');
-      return;
-    }
-
-    if (password.length < 8) {
-      setError('كلمة المرور يجب أن تكون 8 خانات على الأقل.');
+    if (!INSTAPAY_ACCOUNT_REGEX.test(paymentReference.trim())) {
+      setError('صيغة اسم إنستاباي غير صحيحة — أدخله مثلًا على هذا الشكل: name@instapay');
       return;
     }
 
@@ -73,6 +103,7 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
         username: username.trim().toLowerCase(),
         password,
         plan,
+        paymentReference: paymentReference.trim(),
       });
       // AuthProvider automatically sets user and redirects to AppShell
     } catch (err: unknown) {
@@ -84,35 +115,38 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
   };
 
   return (
-    <main className="login-bg" dir="rtl">
-      <div className="login-card" style={{ maxWidth: 520 }}>
+     <main className="login-bg" dir="rtl">
+       <div className="login-card" style={{ maxWidth: 480 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div className="login-logo" style={{ cursor: 'pointer', margin: 0 }} onClick={onNavigateLanding}>
             م
           </div>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#e8f5ef', color: '#0e7c56', padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 700 }}>
-            <Sparkles className="h-3.5 w-3.5" /> 14 يوم تجربة مجانية
+            <Sparkles className="h-3.5 w-3.5" /> الدفع عبر إنستاباي
           </span>
         </div>
 
         <h1 className="login-title" style={{ fontSize: 22, marginTop: 4 }}>
-          {step === 1 ? 'إنشاء حساب سنتر تعليمي جديد' : 'بيانات مدير السنتر والحساب'}
+          {step === 1 ? 'إنشاء حساب سنتر تعليمي جديد' : step === 2 ? 'بيانات مدير السنتر والحساب' : 'دفع الاشتراك وبدء التشغيل'}
         </h1>
         <p className="login-sub">
           {step === 1
-            ? 'خطوة 1 من 2: أدخل اسم سنترك واختر باقتك'
-            : 'خطوة 2 من 2: أنشئ حساب الدخول الرئيسي لإدارة السنتر'}
+            ? 'خطوة 1 من 3: أدخل اسم سنترك واختر باقتك'
+            : step === 2
+              ? 'خطوة 2 من 3: أنشئ حساب الدخول الرئيسي لإدارة السنتر'
+              : 'خطوة 3 من 3: ادفع اشتراك الباقة عبر إنستاباي لتفعيل حسابك'}
         </p>
 
         {/* Step Progress Bar */}
         <div style={{ display: 'flex', gap: 6, margin: '14px 0 20px' }}>
           <div style={{ height: 4, flex: 1, borderRadius: 99, background: '#0e7c56' }} />
-          <div style={{ height: 4, flex: 1, borderRadius: 99, background: step === 2 ? '#0e7c56' : '#e2e0dc' }} />
+          <div style={{ height: 4, flex: 1, borderRadius: 99, background: step >= 2 ? '#0e7c56' : '#e2e0dc' }} />
+          <div style={{ height: 4, flex: 1, borderRadius: 99, background: step >= 3 ? '#0e7c56' : '#e2e0dc' }} />
         </div>
 
         <Banner text={error} tone="error" />
 
-        {step === 1 ? (
+        {step === 1 && (
           <form onSubmit={handleNextStep} className="form-stack">
             <label className="field">
               <span className="field-label">اسم السنتر / المركز التعليمي *</span>
@@ -130,81 +164,36 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
 
             <div style={{ marginTop: 8 }}>
               <span className="field-label" style={{ display: 'block', marginBottom: 8 }}>
-                اختر الباقة (تشمل 14 يوم تجربة مجانية لكافة الميزات)
+                اختر باقتك — يُفعَّل اشتراكك بعد تأكيد دفعة إنستاباي
               </span>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div
-                  onClick={() => setPlan('BASIC')}
-                  style={{
-                    border: `2px solid ${plan === 'BASIC' ? '#0e7c56' : '#e2e0dc'}`,
-                    background: plan === 'BASIC' ? '#f0faf5' : '#fff',
-                    borderRadius: 12,
-                    padding: 12,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <b style={{ fontSize: 14 }}>Basic (الأساسية)</b>
-                    {plan === 'BASIC' && <Check className="h-4 w-4 text-emerald-700" />}
-                  </div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: '#0e7c56', margin: '3px 0' }}>499 ج.م/شهر</div>
-                  <small style={{ fontSize: 10, color: '#6b7280' }}>1 فرع • 1 استقبال • 3,000 زيارة</small>
-                </div>
-
-                <div
-                  onClick={() => setPlan('GROWTH')}
-                  style={{
-                    border: `2px solid ${plan === 'GROWTH' ? '#0e7c56' : '#e2e0dc'}`,
-                    background: plan === 'GROWTH' ? '#f0faf5' : '#fff',
-                    borderRadius: 12,
-                    padding: 12,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <b style={{ fontSize: 14 }}>Growth (النمو)</b>
-                    {plan === 'GROWTH' && <Check className="h-4 w-4 text-emerald-700" />}
-                  </div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: '#0e7c56', margin: '3px 0' }}>1,499 ج.م/شهر</div>
-                  <small style={{ fontSize: 10, color: '#6b7280' }}>1 فرع • 3 استقبال • 10,000 زيارة</small>
-                </div>
-
-                <div
-                  onClick={() => setPlan('PRO')}
-                  style={{
-                    border: `2px solid ${plan === 'PRO' ? '#0e7c56' : '#e2e0dc'}`,
-                    background: plan === 'PRO' ? '#f0faf5' : '#fff',
-                    borderRadius: 12,
-                    padding: 12,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <b style={{ fontSize: 14 }}>Pro (المتقدمة)</b>
-                    {plan === 'PRO' && <Check className="h-4 w-4 text-emerald-700" />}
-                  </div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: '#0e7c56', margin: '3px 0' }}>1,999 ج.م/شهر</div>
-                  <small style={{ fontSize: 10, color: '#6b7280' }}>1 فرع • استقبال غير محدود • 20,000 زيارة</small>
-                </div>
-
-                <div
-                  onClick={() => setPlan('MULTI_BRANCH')}
-                  style={{
-                    border: `2px solid ${plan === 'MULTI_BRANCH' ? '#0e7c56' : '#e2e0dc'}`,
-                    background: plan === 'MULTI_BRANCH' ? '#f0faf5' : '#fff',
-                    borderRadius: 12,
-                    padding: 12,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <b style={{ fontSize: 14 }}>Multi-Branch (فروع)</b>
-                    {plan === 'MULTI_BRANCH' && <Check className="h-4 w-4 text-emerald-700" />}
-                  </div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: '#0e7c56', margin: '3px 0' }}>4,999 ج.م/شهر</div>
-                  <small style={{ fontSize: 10, color: '#6b7280' }}>فروع متعددة • استقبال غير محدود • 50,000+ زيارة</small>
-                </div>
+               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))', gap: 10 }}>
+                 {PURCHASABLE_PLAN_IDS.map((planId) => {
+                   const planConfig = PLANS[planId as TenantPlan];
+                   const isSelected = plan === planId;
+                   return (
+                     <div
+                       key={planId}
+                       onClick={() => setPlan(planId as 'ESSENTIAL' | 'CONTROL')}
+                       style={{
+                         border: `2px solid ${isSelected ? '#0e7c56' : '#e2e0dc'}`,
+                         background: isSelected ? '#f0faf5' : '#fff',
+                         borderRadius: 12,
+                         padding: 12,
+                         cursor: 'pointer',
+                       }}
+                     >
+                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                         <b style={{ fontSize: 15 }}>{planConfig.nameAr}</b>
+                         {isSelected && <Check className="h-4 w-4 text-emerald-700" />}
+                       </div>
+                       <div style={{ fontSize: 13, fontWeight: 800, color: '#0e7c56', margin: '4px 0' }}>
+                         {planConfig.priceEgp} ج.م/شهر
+                       </div>
+                       <small style={{ fontSize: 10, color: '#6b7280' }}>{planConfig.taglineAr}</small>
+                     </div>
+                   );
+                 })}
               </div>
             </div>
 
@@ -212,8 +201,10 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
               المتابعة لبيانات الحساب <ArrowLeft className="h-4 w-4" />
             </button>
           </form>
-        ) : (
-          <form onSubmit={handleFinalSubmit} className="form-stack">
+        )}
+
+        {step === 2 && (
+          <form onSubmit={handleNextToPayment} className="form-stack">
             <label className="field">
               <span className="field-label">اسم المدير / المالك *</span>
               <div className="searchbar">
@@ -244,7 +235,7 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
             </label>
 
             <label className="field">
-              <span className="field-label">اسم المستخدم للدخول (إنجليزي) *</span>
+              <span className="field-label">اسم الدخول (إنجليزي — فريد لكل حساب) *</span>
               <div className="searchbar">
                 <UserRound className="h-4 w-4" aria-hidden="true" />
                 <input
@@ -256,6 +247,7 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
                   onChange={(e) => setUsername(e.target.value)}
                 />
               </div>
+              <small style={{ fontSize: 11, color: '#6b7280', marginTop: 4, display: 'block' }}>هذا الاسم هو ما تستخدمه لتسجيل الدخول، ويجب أن يكون غير مستخدم من قبل في أي حساب آخر.</small>
             </label>
 
             <label className="field">
@@ -273,7 +265,7 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
               </div>
             </label>
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+            <div style={{ display: 'flex', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
               <button
                 type="button"
                 onClick={() => setStep(1)}
@@ -287,15 +279,87 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
                 type="submit"
                 className="btn btn--primary"
                 style={{ flex: 2, paddingBlock: 12 }}
-                disabled={submitting}
               >
-                {submitting ? 'جاري إنشاء السنتر...' : 'إنشاء السنتر وبدء التجربة'}
+                المتابعة للدفع والتفعيل <ArrowLeft className="h-4 w-4" />
               </button>
             </div>
           </form>
         )}
 
-        <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+        {step === 3 && (
+          <form onSubmit={handleFinalSubmit} className="form-stack">
+            <div style={{ background: '#f0faf5', border: '1px solid #c9e8db', borderRadius: 14, padding: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <b style={{ fontSize: 15 }}>باقة {selectedPlanConfig.nameAr}</b>
+                <span style={{ fontWeight: 800, color: '#0e7c56', fontSize: 15 }}>{selectedPlanConfig.priceEgp} ج.م / شهر</span>
+              </div>
+              <p style={{ fontSize: 12, color: '#0b6a4a', margin: 0 }}>
+                ادفع مبلغ الاشتراك عبر إنستاباي بإحدى الطريقتين، ثم أدخل اسم حسابك لإثبات الدفع.
+              </p>
+            </div>
+
+            <div style={{ background: '#fff', border: '1px solid #e2e0dc', borderRadius: 14, padding: 16, display: 'grid', gap: 10 }}>
+              <InstapayQr />
+              {instapayLink && (
+                  <a
+                    href={instapayLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn--primary"
+                    style={{ justifyContent: 'center', width: '100%', paddingBlock: 11 }}
+                  >
+                    ادفع الآن عبر رابط إنستاباي <ExternalLink className="h-4 w-4" />
+                  </a>
+                )}
+                <div style={{ fontSize: 13, textAlign: 'center' }}>
+                  <span style={{ color: '#6b7280' }}>أو حوّل إلى الحساب:</span>{' '}
+                  <b dir="ltr" style={{ color: '#0e7c56' }}>{instapayAccount.accountNumber}</b>
+                </div>
+              </div>
+
+            <label className="field">
+              <span className="field-label">اسم حسابك في إنستاباي (الذي دفعت منه) — إثبات الدفع *</span>
+              <div className="searchbar">
+                <UserRound className="h-4 w-4" aria-hidden="true" />
+                <input
+                  className="input"
+                  dir="ltr"
+                  style={{ textAlign: 'start' }}
+                  placeholder="name@instapay"
+                  required
+                  autoComplete="off"
+                  value={paymentReference}
+                  onChange={(e) => setPaymentReference(e.target.value)}
+                />
+              </div>
+              <small style={{ fontSize: 11, color: '#6b7280', marginTop: 4, display: 'block' }}>
+                أدخل اسم حساب إنستاباي الذي دفعت منه بالضبط — مثل: name@instapay
+              </small>
+            </label>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className="btn btn--secondary"
+                style={{ flex: 1, paddingBlock: 12 }}
+                disabled={submitting}
+              >
+                <ArrowRight className="h-4 w-4" /> السابق
+              </button>
+              <button
+                type="submit"
+                className="btn btn--primary"
+                style={{ flex: 2, paddingBlock: 12 }}
+                disabled={submitting}
+              >
+                {submitting ? 'جاري إنشاء السنتر وتفعيل الاشتراك...' : 'تأكيد الدفع وإنشاء السنتر'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', fontSize: 13, gap: 8, flexWrap: 'wrap' }}>
           {onNavigateLanding && (
             <button type="button" onClick={onNavigateLanding} className="btn-link" style={{ color: 'var(--text-secondary)' }}>
               ← العودة للرئيسية

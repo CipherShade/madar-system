@@ -177,7 +177,7 @@ Two internal staff roles (Prisma enum `Role`): `ADMIN` and `RECEPTIONIST`. Teach
 | Payload limits | Fastify `bodyLimit` and Socket `maxHttpBufferSize` (default 64 KB each, env-overridable). |
 | Safe errors | Central `setErrorHandler` + `setNotFoundHandler` never leak internals; schema/Prisma/unhandled errors map to safe, localized envelopes. |
 | Request IDs | `genReqId` honors `x-request-id` or `crypto.randomUUID`; Pino logger redacts `req.headers.cookie`, `authorization`, `password`, `access_token`. |
-| Secrets | Production refuses to start without `DATABASE_URL`, `JWT_SECRET`, `COOKIE_SECRET`, `CORS_ORIGIN`; development-only fallback secrets print warnings. `.env.example` documents everything; seed requires `SEED_ADMIN_PASSWORD`/`SEED_RECEPTIONIST_PASSWORD` in production. |
+| Secrets | Production refuses to start without `DATABASE_URL`, `JWT_SECRET`, `COOKIE_SECRET`, `CORS_ORIGIN`; development-only fallback secrets print warnings. `.env.example` documents everything; seed requires `SEED_ADMIN_PASSWORD`/`SEED_RECEPTIONIST_PASSWORD`/`SEED_SUPER_ADMIN_PASSWORD` in production. |
 
 Not yet implemented (open work): account lockout beyond rate limiting, security response headers (HSTS/CSP), structured access/retention policy enforcement.
 

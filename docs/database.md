@@ -370,7 +370,7 @@ After restore, run `npx prisma migrate status`, verify the audit-log table and c
 
 ### Seed security
 
-The development seed uses demo-only fallback passwords. Production seeding requires `SEED_ADMIN_PASSWORD` and `SEED_RECEPTIONIST_PASSWORD`; the seed does not print passwords. Change both accounts immediately after first production login.
+The development seed uses demo-only fallback passwords. Production seeding requires `SEED_ADMIN_PASSWORD`, `SEED_RECEPTIONIST_PASSWORD`, and `SEED_SUPER_ADMIN_PASSWORD` (platform administrator); the seed does not print passwords. Change all accounts immediately after first production login.
 
 ## 6. Key Financial Calculations (SQL Reference)
 
