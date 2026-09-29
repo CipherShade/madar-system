@@ -1,4 +1,4 @@
-import { BarChart3, BookOpen, Building2, CalendarDays, ClipboardCheck, Coins, CreditCard, GraduationCap, LayoutDashboard, Shield, Users, Wallet } from 'lucide-react';
+import { BarChart3, BookOpen, Building2, CalendarDays, ClipboardCheck, Coins, CreditCard, GraduationCap, LayoutDashboard, Shield, Sparkles, Users, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Role } from '@prisma/client';
 
@@ -43,6 +43,7 @@ export const navigationGroups: NavigationGroup[] = [
       { id: 'settlement', labelKey: 'navigation.settlement', icon: Coins, roles: ADMIN_ONLY },
       { id: 'reports', labelKey: 'navigation.reports', icon: BarChart3, roles: ADMIN_ONLY },
       { id: 'billing', labelKey: 'navigation.billing', icon: CreditCard, roles: ADMIN_ONLY },
+      { id: 'data-migration', labelKey: 'navigation.dataMigration', icon: Sparkles, roles: ADMIN_ONLY },
     ],
   },
   {

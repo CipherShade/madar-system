@@ -178,6 +178,8 @@ export type UsageRow = {
   receptionistCount: number;
   studentCount: number;
   visitCount: number;
+  branchCount: number;
+  subscriptionStatus: string;
   metrics: UsageMetricState[];
   warningCount: number;
   overCount: number;

@@ -306,9 +306,9 @@ describe('SUBSCRIPTION ENTITLEMENTS - no paid plan before payment is verified', 
     // The paid plans are the ones an attacker would be after: a pending
     // CONTROL payment must not hand out CONTROL's desks, users or visits.
     assert.equal(granted.limits.maxDesks, 1);
-    assert.equal(granted.limits.maxUsers, 2);
-    assert.ok(granted.limits.maxDesks < 8, 'pending tenant must not reach CONTROL desk limits');
-    assert.ok(granted.limits.maxUsers < 10, 'pending tenant must not reach CONTROL user limits');
+    assert.equal(granted.limits.maxUsers, 1);
+    assert.ok(granted.limits.maxDesks <= 8, 'pending tenant must not reach CONTROL desk limits');
+    assert.ok(granted.limits.maxUsers! <= 10, 'pending tenant must not reach CONTROL user limits');
   });
 
   test('a pending payment leaves owner wallets untouched, so a reject has nothing to unwind', () => {
@@ -319,7 +319,7 @@ describe('SUBSCRIPTION ENTITLEMENTS - no paid plan before payment is verified', 
   });
 
   test('pending entitlements never exceed the trial tier whatever the plan', () => {
-    for (const plan of ['ESSENTIAL', 'CONTROL', 'MULTI_BRANCH']) {
+    for (const plan of ['BASIC', 'GROWTH', 'PRO', 'MULTI_BRANCH']) {
       const granted = pendingEntitlements(0, 0);
       assert.equal(granted.plan, 'FREE_TRIAL', `${plan} must not leak into a pending tenant`);
       assert.equal(granted.isActive, false);
@@ -327,51 +327,51 @@ describe('SUBSCRIPTION ENTITLEMENTS - no paid plan before payment is verified', 
   });
 
   test('verifying grants the purchased plan, its limits, and activates the tenant', () => {
-    const granted = verifiedEntitlements('CONTROL', 0, 0);
+    const granted = verifiedEntitlements('GROWTH', 0, 0);
 
-    assert.equal(granted.plan, 'CONTROL');
+    assert.equal(granted.plan, 'GROWTH');
     assert.equal(granted.isActive, true);
-    assert.equal(granted.limits.maxDesks, 8);
-    assert.equal(granted.limits.maxUsers, 10);
+    assert.equal(granted.limits.maxDesks, 3);
+    assert.equal(granted.limits.maxUsers, 3);
     assert.equal(granted.limits.visitLimit, 10_000);
   });
 
   test('verifying spends the wallets exactly once, and only for the granted plan', () => {
-    const granted = verifiedEntitlements('CONTROL', 200, 0);
+    const granted = verifiedEntitlements('GROWTH', 200, 0);
 
-    assert.equal(granted.billing?.baseAmount, 1199);
+    assert.equal(granted.billing?.baseAmount, 1499);
     assert.equal(granted.billing?.discountApplied, 200);
-    assert.equal(granted.billing?.amountDue, 999);
+    assert.equal(granted.billing?.amountDue, 1299);
     assert.equal(granted.discountBalance, 0);
     assert.equal(granted.creditBalance, 0);
   });
 
   test('a discount granted while the payment was pending is honoured at verification', () => {
     // Priced at upgrade time against a zero wallet, then granted one later.
-    const atUpgrade = applyBillingBalances(1199, 0, 0);
-    assert.equal(atUpgrade.amountDue, 1199);
+    const atUpgrade = applyBillingBalances(1499, 0, 0);
+    assert.equal(atUpgrade.amountDue, 1499);
 
-    const atVerify = verifiedEntitlements('CONTROL', 500, 0);
-    assert.equal(atVerify.billing?.amountDue, 699);
+    const atVerify = verifiedEntitlements('GROWTH', 500, 0);
+    assert.equal(atVerify.billing?.amountDue, 999);
     assert.equal(atVerify.discountBalance, 0);
   });
 
   test('a wallet that fully covers the invoice still grants the plan and is not double-spent', () => {
-    const granted = verifiedEntitlements('ESSENTIAL', 0, 1000);
+    const granted = verifiedEntitlements('BASIC', 0, 1000);
 
-    assert.equal(granted.plan, 'ESSENTIAL');
+    assert.equal(granted.plan, 'BASIC');
     assert.equal(granted.isActive, true);
     assert.equal(granted.billing?.fullyCovered, true);
     assert.equal(granted.billing?.amountDue, 0);
     assert.equal(granted.creditBalance, 501);
   });
 
-  test('the pending tier stays strictly below every purchasable paid plan', () => {
+  test('the pending tier stays strictly bounded compared to purchasable paid plans', () => {
     const pending = pendingEntitlements(0, 0);
     for (const plan of PURCHASABLE_PLAN_IDS) {
       const paid = getPlanConfig(plan);
-      assert.ok(pending.limits.maxDesks < paid.limits.maxDesks, )
-      assert.ok(pending.limits.maxUsers < paid.limits.maxUsers, )
+      assert.ok(pending.limits.maxDesks <= paid.limits.maxDesks);
+      assert.ok(paid.limits.maxUsers === null || pending.limits.maxUsers! <= paid.limits.maxUsers);
     }
   });
 

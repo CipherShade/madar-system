@@ -136,7 +136,7 @@ const platformBillingRoutes: FastifyPluginAsync = async (app) => {
           additionalProperties: false,
           properties: {
             tenantId: { type: 'string', format: 'uuid' },
-            plan: { type: 'string', enum: [...PURCHASABLE_PLAN_IDS, 'FREE_TRIAL'] },
+            plan: { type: 'string', enum: [...PURCHASABLE_PLAN_IDS, 'FREE_TRIAL', 'ESSENTIAL', 'CONTROL', 'BUSINESS', 'ENTERPRISE'] },
             paymentMethod: { type: 'string', enum: Object.values(PaymentMethod) },
             paymentReference: { type: 'string', minLength: 2, maxLength: 200 },
             startImmediately: { type: 'boolean' },
@@ -182,8 +182,8 @@ const platformBillingRoutes: FastifyPluginAsync = async (app) => {
           data: {
             plan: plan as TenantPlan,
             maxDesks: planConfig.limits.maxDesks,
-            maxBranches: planConfig.limits.maxBranches,
-            maxUsers: planConfig.limits.maxUsers,
+            maxBranches: planConfig.limits.maxBranches ?? 2147483647,
+            maxUsers: planConfig.limits.maxUsers ?? 2147483647,
             visitLimit: planConfig.limits.visitLimit,
             discountBalance: new Prisma.Decimal(billing.remainingDiscount),
             creditBalance: new Prisma.Decimal(billing.remainingCredit),

@@ -4,6 +4,7 @@ import { Role } from '../../../shared/constants/index.js';
 import { canAddBranch } from '../../../shared/constants/plans.js';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
+import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
 import { isValidUUID } from '../../lib/http.js';
 import { recordAuditEntry } from '../reports/audit.js';
 
@@ -64,7 +65,7 @@ const branchRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post<{ Body: BranchBody }>('/', {
-    preHandler: [authenticate, requireRoles(Role.ADMIN)],
+    preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable],
     schema: { body: branchSchema },
   }, async (request, reply) => {
     const tenantId = request.user?.tenantId;
@@ -135,7 +136,7 @@ const branchRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.patch<{ Params: { id: string }; Body: Partial<BranchBody> }>('/:id', {
-    preHandler: [authenticate, requireRoles(Role.ADMIN)],
+    preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable],
     schema: { body: { ...branchSchema, required: [] } },
   }, async (request, reply) => {
     if (!isValidUUID(request.params.id)) {
@@ -204,7 +205,7 @@ const branchRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.delete<{ Params: { id: string } }>('/:id', {
-    preHandler: [authenticate, requireRoles(Role.ADMIN)],
+    preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable],
   }, async (request, reply) => {
     if (!isValidUUID(request.params.id)) {
       return reply.code(400).send(invalid('معرّف الفرع غير صالح.', 'The branch id is invalid.'));

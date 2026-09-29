@@ -128,6 +128,8 @@ export type TenantUsageRow = {
   receptionistCount: number;
   studentCount: number;
   visitCount: number;
+  branchCount: number;
+  subscriptionStatus: string;
   metrics: UsageMetricState[];
   warningCount: number;
   overCount: number;
@@ -142,11 +144,16 @@ export async function computeUsageForTenants(tenants: UsageTenant[], now = new D
   if (tenants.length === 0) return [];
 
   const tenantIds = tenants.map((tenant) => tenant.id);
-  const [activeSubscriptions, userCounts, receptionistCounts, studentCounts, overrides] = await Promise.all([
+  const [activeSubscriptions, allSubscriptions, userCounts, receptionistCounts, studentCounts, branchCounts, overrides] = await Promise.all([
     prisma.subscription.findMany({
       where: { tenantId: { in: tenantIds }, status: 'ACTIVE' },
       select: { tenantId: true, status: true, periodStart: true, periodEnd: true },
       orderBy: { periodStart: 'desc' },
+    }),
+    prisma.subscription.findMany({
+      where: { tenantId: { in: tenantIds } },
+      select: { tenantId: true, status: true },
+      orderBy: { createdAt: 'desc' },
     }),
     prisma.user.groupBy({ by: ['tenantId'], where: { tenantId: { in: tenantIds } }, _count: { _all: true } }),
     prisma.user.groupBy({
@@ -155,6 +162,7 @@ export async function computeUsageForTenants(tenants: UsageTenant[], now = new D
       _count: { _all: true },
     }),
     prisma.student.groupBy({ by: ['tenantId'], where: { tenantId: { in: tenantIds } }, _count: { _all: true } }),
+    prisma.branch.groupBy({ by: ['tenantId'], where: { tenantId: { in: tenantIds }, isActive: true }, _count: { _all: true } }),
     prisma.usageOverride.findMany({
       where: { tenantId: { in: tenantIds }, OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
       select: { tenantId: true, metric: true, extraAmount: true },
@@ -167,6 +175,14 @@ export async function computeUsageForTenants(tenants: UsageTenant[], now = new D
     list.push(sub);
     byTenantSubscriptions.set(sub.tenantId, list);
   }
+
+  const latestStatusByTenant = new Map<string, string>();
+  for (const sub of allSubscriptions) {
+    if (!latestStatusByTenant.has(sub.tenantId)) {
+      latestStatusByTenant.set(sub.tenantId, sub.status);
+    }
+  }
+
   const periodStarts = new Map<string, Date>();
   for (const tenant of tenants) {
     periodStarts.set(
@@ -175,11 +191,12 @@ export async function computeUsageForTenants(tenants: UsageTenant[], now = new D
     );
   }
 
-  const [visitCounts, userByTenant, receptionistsByTenant, studentsByTenant, overridesByTenant] = await Promise.all([
+  const [visitCounts, userByTenant, receptionistsByTenant, studentsByTenant, branchesByTenant, overridesByTenant] = await Promise.all([
     countVisitsPerTenant(periodStarts, tenantIds),
     new Map(userCounts.map((row) => [row.tenantId, row._count._all])),
     new Map(receptionistCounts.map((row) => [row.tenantId, row._count._all])),
     new Map(studentCounts.map((row) => [row.tenantId, row._count._all])),
+    new Map(branchCounts.map((row) => [row.tenantId, row._count._all])),
     new Map<string, Map<string, number>>(
       [...new Set(overrides.map((row) => row.tenantId))].map((tenantId) => [
         tenantId,
@@ -198,11 +215,15 @@ export async function computeUsageForTenants(tenants: UsageTenant[], now = new D
       activeOverrideExtra[metric as UsageMetric] = extra;
     }
 
+    const branchCount = branchesByTenant.get(tenant.id) ?? 0;
+    const subscriptionStatus = latestStatusByTenant.get(tenant.id) ?? (tenant.isActive ? 'ACTIVE' : 'TRIALING');
+
     const summary = computeTenantUsage({
       userCount: userByTenant.get(tenant.id) ?? 0,
       receptionistCount: receptionistsByTenant.get(tenant.id) ?? 0,
       studentCount: studentsByTenant.get(tenant.id) ?? 0,
       visitCount: visitCounts.get(tenant.id) ?? 0,
+      branchCount,
       limits: {
         maxDesks: tenant.maxDesks,
         maxBranches: tenant.maxBranches,
@@ -219,6 +240,8 @@ export async function computeUsageForTenants(tenants: UsageTenant[], now = new D
       receptionistCount: receptionistsByTenant.get(tenant.id) ?? 0,
       studentCount: studentsByTenant.get(tenant.id) ?? 0,
       visitCount: visitCounts.get(tenant.id) ?? 0,
+      branchCount,
+      subscriptionStatus,
       ...summary,
     };
   });

@@ -19,10 +19,10 @@
   },
   "hero": {
     "kicker": "The operating system for your center",
-    "headlineLead": "See exactly what is happening inside your center,",
-    "headlineAccent": "as it happens",
-    "sub": "From reception to check-in, attendance, payments and teacher settlements — everything in one place, without chasing anyone for an answer.",
-    "assure": "Starts at {{price}} EGP/month — no credit card needed",
+    "headlineLead": "Run your center",
+    "headlineAccent": "easily and quickly.",
+    "sub": "Know what is happening in real time, and run attendance, collections, sessions and reception from one place — without paper, crowds or queues.",
+    "assure": "The complete Madar subscription is {{price}} EGP/month — no credit card needed",
     "visualCaption": "The same lobby screen you use inside Madar"
   },
   "problem": {
@@ -102,8 +102,8 @@
   "pricing": {
     "kicker": "Pricing",
     "title": "One plan runs the whole center",
-    "sub": "Pay for one plan and see everything it does together. The founding price is below the standard price.",
-    "foundingNote": "Current founding price {{price}} EGP/month {{period}}",
+    "sub": "The complete Madar system, at one clear price.",
+    "foundingNote": "Current price: {{price}} EGP/month for a limited time",
     "perMonth": "EGP / month",
     "listPriceLabel": "Standard price",
     "foundingPriceLabel": "Founding price",
@@ -115,6 +115,16 @@
     "perMonthShort": "/month",
     "guaranteeTitle": "Two-week guarantee",
     "included": "Included in the plan"
+  },
+  "addons": {
+    "kicker": "Optional add-ons",
+    "title": "Add what your center needs",
+    "sub": "Optional additions to the core Madar subscription, not separate plans.",
+    "add": "Add to your subscription",
+    "selected": "Added",
+    "inventory": { "title": "Books and inventory management", "price": "+300 EGP / month", "description": "Run external books, inventory and sales from inside Madar.", "features": ["Books and products", "Inventory tracking", "Sell books to students", "Reserve unavailable books", "Deposit collection", "Remaining balance tracking", "Receive stock", "Hand over reserved books", "Returns", "Inventory movements", "Low-stock alerts", "Sales and profit reports"] },
+    "migration": { "title": "Move center data with AI", "price": "0 EGP", "description": "Let Madar start from your current data — not from scratch.", "detail": "Upload notebooks, PDFs, images, Excel files or any files you use at the center, and Madar will prepare your current data for the system.", "free": "Free the first time with a Madar subscription" },
+    "summary": { "madar": "Madar", "base": "1,199 EGP/month", "inventory": "Books and inventory", "inventoryPrice": "+300 EGP/month", "migration": "AI data migration", "migrationPrice": "0 EGP first time", "total": "Total", "totalBase": "1,199 EGP/month", "totalWithInventory": "1,499 EGP/month" }
   },
   "guarantee": {
     "kicker": "The guarantee",

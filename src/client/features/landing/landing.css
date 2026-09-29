@@ -1371,6 +1371,26 @@
   line-height: 1.6;
 }
 
+.madar-landing .lp-addons-head { margin-top: clamp(30px, 5vw, 54px); }
+.madar-landing .lp-addons-head h3 { margin-top: 8px; font-size: clamp(1.5rem, 1.1rem + 1.2vw, 2rem); }
+.madar-landing .lp-addons-head p { margin-top: 8px; color: var(--lp-ink-2); }
+.madar-landing .lp-addon-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 20px; }
+.madar-landing .lp-addon { display: flex; flex-direction: column; padding: 24px; border: 1px solid var(--lp-line); border-radius: var(--lp-radius); background: #fff; transition: border-color .2s ease, box-shadow .2s ease; }
+.madar-landing .lp-addon.is-selected { border-color: var(--lp-brand-500); box-shadow: 0 0 0 3px var(--lp-brand-50); }
+.madar-landing .lp-addon-icon { color: var(--lp-brand-600); margin-bottom: 12px; }
+.madar-landing .lp-addon h4 { font-size: 1.2rem; }
+.madar-landing .lp-addon-price { display: block; margin-top: 8px; color: var(--lp-brand-700); font-size: 1.1rem; }
+.madar-landing .lp-addon p { margin-top: 10px; color: var(--lp-ink-2); line-height: 1.75; }
+.madar-landing .lp-addon small { margin-top: 4px; color: var(--lp-ink-3); line-height: 1.7; }
+.madar-landing .lp-addon-free { display: block; margin-top: 14px; color: var(--lp-brand-700); font-size: .9rem; }
+.madar-landing .lp-addon ul { display: grid; gap: 7px; margin: 16px 0; }
+.madar-landing .lp-addon li { display: flex; gap: 8px; align-items: flex-start; color: var(--lp-ink-2); font-size: .9rem; }
+.madar-landing .lp-addon li svg { flex: 0 0 auto; margin-top: .15em; color: var(--lp-brand-500); }
+.madar-landing .lp-addon .lp-btn { margin-top: auto; }
+.madar-landing .lp-total { display: grid; grid-template-columns: 1fr auto; gap: 8px 20px; max-width: 480px; margin: 20px auto 0; padding: 18px 20px; background: var(--lp-brand-50); border: 1px solid var(--lp-brand-200); border-radius: 14px; color: var(--lp-ink-2); }
+.madar-landing .lp-total b { color: var(--lp-deep); }
+.madar-landing .lp-total strong { padding-top: 10px; margin-top: 2px; border-top: 1px solid var(--lp-brand-200); color: var(--lp-deep); font-size: 1.05rem; }
+
 /* ------------------------------------------------------------ guarantee -- */
 .madar-landing .lp-guarantee {
   display: grid;
@@ -1737,7 +1757,8 @@
   }
 
   .madar-landing .lp-modules,
-  .madar-landing .lp-plan-features {
+  .madar-landing .lp-plan-features,
+  .madar-landing .lp-addon-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 

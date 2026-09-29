@@ -15,6 +15,7 @@ const SchedulingPage = lazy(() => import('../../features/scheduling/SchedulingPa
 const StudentsPage = lazy(() => import('../../features/students/StudentsPage').then((m) => ({ default: m.StudentsPage })));
 const OperationsPage = lazy(() => import('../../features/operations/OperationsPage').then((m) => ({ default: m.OperationsPage })));
 const BillingPage = lazy(() => import('../../features/billing/BillingPage').then((m) => ({ default: m.BillingPage })));
+const DataMigrationPage = lazy(() => import('../../features/billing/DataMigrationPage').then((m) => ({ default: m.DataMigrationPage })));
 const SuperAdminPage = lazy(() => import('../../features/admin/SuperAdminPage').then((m) => ({ default: m.SuperAdminPage })));
 
 // ── Page loading fallback ─────────────────────────────────────────────────────
@@ -65,6 +66,7 @@ export function AppShell() {
       case 'settlement': return <OperationsPage mode="settlement" />;
       case 'reports': return <OperationsPage mode="reports" />;
       case 'billing': return <BillingPage />;
+      case 'data-migration': return <DataMigrationPage />;
       case 'lobby': return <OperationsPage mode="lobby" selectedSessionId={sessionId} onSessionChange={setSessionId} />;
       case 'superadmin': return <SuperAdminPage />;
       default: return <DashboardPage onNavigate={navigate} />;

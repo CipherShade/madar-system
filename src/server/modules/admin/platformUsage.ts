@@ -26,9 +26,25 @@ const platformUsageRoutes: FastifyPluginAsync = async (app) => {
     const status = request.query.status ?? 'all';
     const searchWhere = buildCenterSearchWhere(request.query.search ?? '');
 
+    let planFilterCondition: Prisma.TenantWhereInput['plan'] = undefined;
+    if (request.query.plan && request.query.plan !== 'all') {
+      const p = request.query.plan.toUpperCase();
+      if (p === 'BASIC') {
+        planFilterCondition = { in: [TenantPlan.BASIC, TenantPlan.ESSENTIAL] };
+      } else if (p === 'GROWTH') {
+        planFilterCondition = { in: [TenantPlan.GROWTH, TenantPlan.CONTROL] };
+      } else if (p === 'PRO') {
+        planFilterCondition = { in: [TenantPlan.PRO, TenantPlan.BUSINESS] };
+      } else if (p === 'MULTI_BRANCH') {
+        planFilterCondition = { in: [TenantPlan.MULTI_BRANCH, TenantPlan.ENTERPRISE] };
+      } else if (p in TenantPlan) {
+        planFilterCondition = p as TenantPlan;
+      }
+    }
+
     const where: Prisma.TenantWhereInput = {
       ...(searchWhere ? { AND: [searchWhere] } : {}),
-      ...(request.query.plan && request.query.plan !== 'all' ? { plan: request.query.plan as TenantPlan } : {}),
+      ...(planFilterCondition ? { plan: planFilterCondition } : {}),
       ...(status === 'active' ? { isActive: true } : {}),
       ...(status === 'suspended' ? { isActive: false } : {}),
     };
@@ -62,6 +78,8 @@ const platformUsageRoutes: FastifyPluginAsync = async (app) => {
           receptionistCount: usage?.receptionistCount ?? 0,
           studentCount: usage?.studentCount ?? 0,
           visitCount: usage?.visitCount ?? 0,
+          branchCount: usage?.branchCount ?? 0,
+          subscriptionStatus: usage?.subscriptionStatus ?? (tenant.isActive ? 'ACTIVE' : 'TRIALING'),
           metrics: usage?.metrics ?? [],
           warningCount: usage?.warningCount ?? 0,
           overCount: usage?.overCount ?? 0,

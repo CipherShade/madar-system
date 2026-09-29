@@ -12,9 +12,10 @@ import { applyBillingBalances, verifiedEntitlements } from '../admin/billingMath
 import { addEgyptDays, resolveTenantLifecycle, startOfEgyptDay } from '../../lib/tenantLifecycle.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
 import { recordAuditEntry } from '../reports/audit.js';
+import { getTenantUsageSummary } from './usageService.js';
 
 type UpgradeBody = {
-  plan: 'ESSENTIAL' | 'CONTROL';
+  plan: TenantPlan;
   /** Upgrades are Instapay-only, matching the signup payment flow. */
   paymentMethod: PaymentMethod;
   /** The payer's Instapay account name (e.g. name@instapay), used as payment proof. */
@@ -104,7 +105,8 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
       : 0;
 
     const periodStart = resolveUsagePeriodStart(tenant.createdAt, subscriptions, now);
-    const usedVisits = await prisma.attendance.count({
+    const usageSummary = await getTenantUsageSummary(tenantId, now).catch(() => null);
+    const usedVisits = usageSummary ? usageSummary.usedVisits : await prisma.attendance.count({
       where: buildVisitCountWhere(periodStart, tenantId),
     });
     const lifecycle = resolveTenantLifecycle(subscriptions, now);
@@ -119,6 +121,7 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
         // what the write guard enforces.
         lifecycle,
         usage: {
+          ...(usageSummary || {}),
           periodStart,
           visits: computeVisitUsage(usedVisits, tenant.visitLimit),
         },
@@ -309,8 +312,8 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
           plan: granted.plan as TenantPlan,
           isActive: granted.isActive,
           maxDesks: granted.limits.maxDesks,
-          maxBranches: granted.limits.maxBranches,
-          maxUsers: granted.limits.maxUsers,
+          maxBranches: granted.limits.maxBranches ?? 2147483647,
+          maxUsers: granted.limits.maxUsers ?? 2147483647,
           visitLimit: granted.limits.visitLimit,
           discountBalance: new Prisma.Decimal(granted.discountBalance),
           creditBalance: new Prisma.Decimal(granted.creditBalance),

@@ -166,8 +166,8 @@ const authRoutes: FastifyPluginAsync = async (app) => {
           plan: TenantPlan.FREE_TRIAL,
           isActive: false,
           maxDesks: PENDING_PAYMENT_LIMITS.maxDesks,
-          maxBranches: PENDING_PAYMENT_LIMITS.maxBranches,
-          maxUsers: PENDING_PAYMENT_LIMITS.maxUsers,
+          maxBranches: PENDING_PAYMENT_LIMITS.maxBranches ?? 2147483647,
+          maxUsers: PENDING_PAYMENT_LIMITS.maxUsers ?? 2147483647,
           visitLimit: PENDING_PAYMENT_LIMITS.visitLimit,
         },
       });

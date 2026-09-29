@@ -20,7 +20,7 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [centerName, setCenterName] = useState('');
-  const [plan, setPlan] = useState<'ESSENTIAL' | 'CONTROL'>(PURCHASABLE_PLAN_IDS[0] as 'ESSENTIAL' | 'CONTROL');
+  const [plan, setPlan] = useState<TenantPlan>(PURCHASABLE_PLAN_IDS[0]);
 
   const [ownerName, setOwnerName] = useState('');
   const [ownerPhone, setOwnerPhone] = useState('');
@@ -174,7 +174,7 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
                    return (
                      <div
                        key={planId}
-                       onClick={() => setPlan(planId as 'ESSENTIAL' | 'CONTROL')}
+                       onClick={() => setPlan(planId)}
                        style={{
                          border: `2px solid ${isSelected ? '#0e7c56' : '#e2e0dc'}`,
                          background: isSelected ? '#f0faf5' : '#fff',

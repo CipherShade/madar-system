@@ -63,8 +63,8 @@ export function PlansSection() {
               <td style={{ fontSize: 13 }}>
                 <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
                   <span>{t('superAdmin.plans.limitDesks')}: <strong>{formatNumber(plan.limits.maxDesks)}</strong></span>
-                  <span>{t('superAdmin.plans.limitBranches')}: <strong>{formatNumber(plan.limits.maxBranches)}</strong></span>
-                  <span>{t('superAdmin.plans.limitUsers')}: <strong>{formatNumber(plan.limits.maxUsers)}</strong></span>
+                  <span>{t('superAdmin.plans.limitBranches')}: <strong>{plan.limits.maxBranches === null ? t('superAdmin.plans.unlimited') : formatNumber(plan.limits.maxBranches)}</strong></span>
+                  <span>{t('superAdmin.plans.limitUsers')}: <strong>{plan.limits.maxUsers === null ? t('superAdmin.plans.unlimited') : formatNumber(plan.limits.maxUsers)}</strong></span>
                   <span>
                     {t('superAdmin.plans.limitVisits')}:{' '}
                     <strong>

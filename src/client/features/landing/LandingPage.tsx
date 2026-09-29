@@ -5,6 +5,7 @@ import {
   ArrowRight,
   BadgeCheck,
   BarChart3,
+  Bot,
   BookOpen,
   CalendarClock,
   Check,
@@ -29,11 +30,9 @@ import {
   FOUNDING_OFFER,
   GUARANTEE,
   ONBOARDING_VIDEO_URL,
-  PRIMARY_OFFER,
-  SECONDARY_OFFERS,
+  MADAR_OFFER,
   SUPPORT,
   foundingDiscountPercent,
-  foundingPeriodLabel,
   type LandingOffer,
 } from '../../../shared/constants/offers';
 import { money } from '../../lib/api';
@@ -289,8 +288,7 @@ function PrimaryPlan({
           </div>
           <span className="lp-plan-period">
             <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
-            {locale === 'ar' ? FOUNDING_OFFER.badgeAr : FOUNDING_OFFER.badgeEn} ·{' '}
-            {foundingPeriodLabel(locale)}
+            {locale === 'ar' ? FOUNDING_OFFER.badgeAr : FOUNDING_OFFER.badgeEn}
           </span>
         </div>
 
@@ -310,72 +308,6 @@ function PrimaryPlan({
           </li>
         ))}
       </ul>
-    </article>
-  );
-}
-
-function SecondaryPlan({
-  offer,
-  locale,
-  onChoose,
-}: {
-  offer: LandingOffer;
-  locale: Locale;
-  onChoose: () => void;
-}) {
-  const { t } = useTranslation('landing');
-  const discount = foundingDiscountPercent(offer);
-  const badge = locale === 'ar' ? offer.badgeAr : offer.badgeEn;
-  const highlight = locale === 'ar' ? offer.highlightAr : offer.highlightEn;
-
-  return (
-    <article className="lp-plan-sub">
-      <div className="lp-plan-heading">
-        <h3>{locale === 'ar' ? offer.nameAr : offer.nameEn}</h3>
-        {badge && <span className="lp-plan-badge">{badge}</span>}
-      </div>
-      {highlight && <p className="lp-plan-highlight">{highlight}</p>}
-      <p className="lp-plan-tagline">{locale === 'ar' ? offer.taglineAr : offer.taglineEn}</p>
-
-      <div style={{ marginTop: 18 }}>
-        <div className="lp-plan-price">
-          <b>{formatPrice(offer.foundingPriceEgp, locale)}</b>
-          <span>{t('pricing.perMonthShort')}</span>
-        </div>
-        <div className="lp-plan-was">
-          <del>{formatPrice(offer.listPriceEgp, locale)}</del>
-          {discount !== null && <span>−{discount}%</span>}
-        </div>
-        <span className="lp-plan-period">
-          <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
-          {foundingPeriodLabel(locale)}
-        </span>
-      </div>
-
-      {!offer.available && (
-        <>
-          <span className="lp-soon">{t('pricing.comingSoon')}</span>
-          <small>{t('pricing.comingSoonBody')}</small>
-        </>
-      )}
-
-      <ul className="lp-plan-features">
-        {(locale === 'ar' ? offer.featuresAr : offer.featuresEn).map((feature) => (
-          <li key={feature}>
-            <Check className="h-4 w-4" aria-hidden="true" />
-            <span>{feature}</span>
-          </li>
-        ))}
-      </ul>
-
-      <button
-        type="button"
-        onClick={onChoose}
-        disabled={!offer.available}
-        className="lp-btn lp-btn-ghost lp-btn-block"
-      >
-        {t('pricing.choose', { name: locale === 'ar' ? offer.nameAr : offer.nameEn })}
-      </button>
     </article>
   );
 }
@@ -484,9 +416,10 @@ export function LandingPage({ onNavigateLogin, onNavigateSignup }: LandingPagePr
     kind: valueKinds[index % valueKinds.length],
   }));
 
-  const period = foundingPeriodLabel(locale);
-  const foundingPrice = formatPrice(PRIMARY_OFFER.foundingPriceEgp, locale);
-  const savePercent = foundingDiscountPercent(PRIMARY_OFFER);
+  const [inventorySelected, setInventorySelected] = useState(false);
+  const [migrationSelected, setMigrationSelected] = useState(false);
+  const foundingPrice = formatPrice(MADAR_OFFER.foundingPriceEgp, locale);
+  const savePercent = foundingDiscountPercent(MADAR_OFFER);
   const hasSupportChannel = Boolean(SUPPORT.phone || SUPPORT.whatsapp || SUPPORT.email);
 
   return (
@@ -546,6 +479,7 @@ export function LandingPage({ onNavigateLogin, onNavigateSignup }: LandingPagePr
             <span className="lp-badge">{t('hero.kicker')}</span>
             <h1>
               {t('hero.headlineLead')}
+              {' '}
               <em>{t('hero.headlineAccent')}</em>
             </h1>
             <p className="lp-hero-sub">{t('hero.sub')}</p>
@@ -728,25 +662,51 @@ export function LandingPage({ onNavigateLogin, onNavigateSignup }: LandingPagePr
           {FOUNDING_OFFER.enabled && (
             <p className="lp-price-lead lp-reveal">
               <BadgeCheck className="h-5 w-5" aria-hidden="true" />
-              <span>{t('pricing.foundingNote', { price: foundingPrice, period })}</span>
+              <span>{t('pricing.foundingNote', { price: foundingPrice })}</span>
               {savePercent !== null && <b>−{savePercent}%</b>}
             </p>
           )}
 
           <div className="lp-reveal">
-            <PrimaryPlan offer={PRIMARY_OFFER} locale={locale} arrow={arrow} onChoose={goSignup} />
+            <PrimaryPlan offer={MADAR_OFFER} locale={locale} arrow={arrow} onChoose={goSignup} />
           </div>
 
           <div className="lp-reveal">
-            <div style={{ marginTop: 'clamp(28px, 4vw, 44px)' }}>
-              <h3 style={{ fontSize: '1.25rem' }}>{t('pricing.otherTitle')}</h3>
-              <p style={{ marginTop: 6, color: 'var(--lp-ink-2)' }}>{t('pricing.otherSub')}</p>
+            <div className="lp-addons-head">
+              <span className="lp-kicker">{t('addons.kicker')}</span>
+              <h3>{t('addons.title')}</h3>
+              <p>{t('addons.sub')}</p>
             </div>
 
-            <div className="lp-plans-secondary">
-              {SECONDARY_OFFERS.map((offer) => (
-                <SecondaryPlan key={offer.slug} offer={offer} locale={locale} onChoose={goSignup} />
-              ))}
+            <div className="lp-addon-grid">
+              <article className={`lp-addon${inventorySelected ? ' is-selected' : ''}`}>
+                <BookOpen className="lp-addon-icon h-5 w-5" aria-hidden="true" />
+                <h4>{t('addons.inventory.title')}</h4>
+                <b className="lp-addon-price">{t('addons.inventory.price')}</b>
+                <p>{t('addons.inventory.description')}</p>
+                <ul>{readStrings(t, 'addons.inventory.features').map((feature) => <li key={feature}><Check className="h-4 w-4" />{feature}</li>)}</ul>
+                <button type="button" className="lp-btn lp-btn-ghost lp-btn-block" onClick={() => setInventorySelected((selected) => !selected)}>
+                  {inventorySelected ? t('addons.selected') : t('addons.add')}
+                </button>
+              </article>
+              <article className={`lp-addon${migrationSelected ? ' is-selected' : ''}`}>
+                <Bot className="lp-addon-icon h-5 w-5" aria-hidden="true" />
+                <h4>{t('addons.migration.title')}</h4>
+                <b className="lp-addon-price">{t('addons.migration.price')}</b>
+                <p>{t('addons.migration.description')}</p>
+                <small>{t('addons.migration.detail')}</small>
+                <strong className="lp-addon-free">{t('addons.migration.free')}</strong>
+                <button type="button" className="lp-btn lp-btn-ghost lp-btn-block" onClick={() => setMigrationSelected((selected) => !selected)}>
+                  {migrationSelected ? t('addons.selected') : t('addons.add')}
+                </button>
+              </article>
+            </div>
+
+            <div className="lp-total" aria-live="polite">
+              <span>{t('addons.summary.madar')}</span><b>{t('addons.summary.base')}</b>
+              {inventorySelected && <><span>{t('addons.summary.inventory')}</span><b>{t('addons.summary.inventoryPrice')}</b></>}
+              {migrationSelected && <><span>{t('addons.summary.migration')}</span><b>{t('addons.summary.migrationPrice')}</b></>}
+              <strong>{t('addons.summary.total')}</strong><strong>{t(inventorySelected ? 'addons.summary.totalWithInventory' : 'addons.summary.totalBase')}</strong>
             </div>
           </div>
         </div>

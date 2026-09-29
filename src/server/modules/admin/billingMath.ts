@@ -227,6 +227,7 @@ export type TenantUsageInput = {
   receptionistCount: number;
   studentCount: number;
   visitCount: number;
+  branchCount?: number;
   limits: PlanLimits & { maxUsers: number; maxDesks: number; maxBranches: number; visitLimit: number | null };
   activeOverrideExtra: Partial<Record<UsageMetric, number>>;
 };
@@ -259,9 +260,8 @@ export function computeTenantUsage(input: TenantUsageInput): TenantUsageSummary 
     // reported as an informational metric only — never a warning.
     computeMetricUsage('STUDENTS', input.studentCount, withExtra('STUDENTS', null)),
     computeMetricUsage('VISITS', input.visitCount, withExtra('VISITS', limits.visitLimit)),
-    // No Branch model exists yet, so branch usage is unmeasurable — report the
-    // limit with used = 0 rather than inventing a number.
-    computeMetricUsage('BRANCHES', 0, withExtra('BRANCHES', limits.maxBranches)),
+    // Branch usage measured against tenant active branches count
+    computeMetricUsage('BRANCHES', input.branchCount ?? 0, withExtra('BRANCHES', limits.maxBranches)),
   ];
 
   const highestLevel = metrics.reduce<VisitUsageLevel>(

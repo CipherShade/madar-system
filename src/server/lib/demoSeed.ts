@@ -277,7 +277,7 @@ async function seedMainCenter(
       isActive: true,
       maxDesks: 3,
       maxBranches: 1,
-      maxUsers: getPlanConfig(TenantPlan.ESSENTIAL).limits.maxUsers,
+      maxUsers: getPlanConfig(TenantPlan.ESSENTIAL).limits.maxUsers ?? 2147483647,
       visitLimit: getPlanConfig(TenantPlan.ESSENTIAL).limits.visitLimit,
       trialEndsAt: plusDays(7),
     },
