@@ -38,10 +38,12 @@ export function DashboardPage({ onNavigate }: { onNavigate: (id: string) => void
         if (isAdmin) {
           const [day, subData] = await Promise.all([
             api<DayReport>(`/reports/daily?date=${today()}`).catch(() => null),
-            api<{ usage: UsageData | null }>('/subscriptions/current').catch(() => null),
+            api<{ usage: (UsageData & { summaryAvailable?: boolean }) | null }>('/subscriptions/current').catch(() => null),
           ]);
           if (day) setReport(day);
-          if (subData?.usage) setUsage(subData.usage);
+          // `summaryAvailable` guards against a server-side summary failure, which
+          // returns a usage object carrying only the period and visit counters.
+          if (subData?.usage?.summaryAvailable) setUsage(subData.usage);
         }
       } catch { notify(t('operations.loadError'), 'error'); }
       finally { setUsageLoading(false); }

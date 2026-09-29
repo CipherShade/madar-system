@@ -105,7 +105,14 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
       : 0;
 
     const periodStart = resolveUsagePeriodStart(tenant.createdAt, subscriptions, now);
-    const usageSummary = await getTenantUsageSummary(tenantId, now).catch(() => null);
+    // A failed summary must not be laundered into a half-filled object: the
+    // client reads this payload to build the usage meter, and a truthy `usage`
+    // that is missing its plan/limit fields crashes the dashboard. Flag the
+    // summary as unavailable instead, and log it so the cause is visible.
+    const usageSummary = await getTenantUsageSummary(tenantId, now).catch((error: unknown) => {
+      request.log.error({ error, tenantId }, 'tenant usage summary unavailable');
+      return null;
+    });
     const usedVisits = usageSummary ? usageSummary.usedVisits : await prisma.attendance.count({
       where: buildVisitCountWhere(periodStart, tenantId),
     });
@@ -124,6 +131,7 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
           ...(usageSummary || {}),
           periodStart,
           visits: computeVisitUsage(usedVisits, tenant.visitLimit),
+          summaryAvailable: usageSummary !== null,
         },
         subscriptions: subscriptions.map((sub) => ({
           ...sub,

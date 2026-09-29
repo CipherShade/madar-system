@@ -58,18 +58,29 @@ export function UsageMeter({ usage, loading, onNavigateToBilling }: UsageMeterPr
 
   if (!usage) return null;
 
+  // The usage meter is advisory, so a payload missing the fields it renders
+  // must degrade to "not shown" rather than throw: an unguarded `plan.name`
+  // here takes the whole app down, because nothing above it catches render
+  // errors. A summary that did not load is exactly this shape.
+  if (!usage.plan || typeof usage.usedVisits !== 'number' || typeof usage.monthlyLimit !== 'number') {
+    return null;
+  }
+
   const {
     plan,
     usedVisits,
     monthlyLimit,
-    remainingVisits,
-    percentage,
     warningLevel,
-    receptionistCount,
     receptionistLimit,
-    branchCount,
     branchLimit,
   } = usage;
+
+  // Remaining counters are display-only, so normalise anything missing rather
+  // than letting a malformed number throw inside toLocaleString().
+  const remainingVisits = typeof usage.remainingVisits === 'number' ? usage.remainingVisits : 0;
+  const percentage = typeof usage.percentage === 'number' ? usage.percentage : 0;
+  const receptionistCount = typeof usage.receptionistCount === 'number' ? usage.receptionistCount : 0;
+  const branchCount = typeof usage.branchCount === 'number' ? usage.branchCount : 0;
 
   // Visual Tone for progress bar and cards
   let progressColor = 'var(--primary, #0e7c56)';
