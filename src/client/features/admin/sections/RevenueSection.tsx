@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, TrendingUp, Undo2 } from 'lucide-react';
-import { Metric, Pill } from '../../../components/ui/kit';
+import { Metric } from '../../../components/ui/kit';
 import { api, money } from '../../../lib/api';
 import { EmptyBlock, ErrorBlock, LoadingBlock, SectionHeader, SectionTable } from './primitives';
 import { formatNumber } from './format';
-import { planPill } from './plan';
 import type { RevenueReport } from './types';
 
 function monthLabel(key: string, locale: string): string {
@@ -38,7 +37,6 @@ export function RevenueSection() {
   }, []);
 
   const maxHistory = data ? Math.max(1, ...data.history.map((point) => point.amount)) : 1;
-  const planEntries = data ? Object.entries(data.mrrByPlan) : [];
 
   return (
     <div>
@@ -95,29 +93,6 @@ export function RevenueSection() {
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
-
-            <div>
-              <h3 className="page-title" style={{ fontSize: 15, marginBottom: 12 }}>{t('superAdmin.revenue.byPlan')}</h3>
-              {planEntries.length === 0 ? (
-                <EmptyBlock labelKey="superAdmin.revenue.byPlanEmpty" />
-              ) : (
-                <SectionTable
-                  labelKey="superAdmin.revenue.byPlan"
-                  headers={['superAdmin.revenue.col.plan', 'superAdmin.revenue.col.mrr']}
-                  colSpan={2}
-                >
-                  {planEntries.map(([plan, amount]) => {
-                    const pill = planPill(plan);
-                    return (
-                      <tr key={plan}>
-                        <td><Pill tone={pill.tone}>{pill.label}</Pill></td>
-                        <td><strong>{money(amount, locale)}</strong></td>
-                      </tr>
-                    );
-                  })}
-                </SectionTable>
               )}
             </div>
           </div>

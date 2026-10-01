@@ -17,12 +17,12 @@
  */
 
 import type { FastifyPluginAsync } from 'fastify';
-import { Prisma, TenantPlan } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import argon2 from 'argon2';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
 import { Role } from '../../../shared/constants/index.js';
-import { PURCHASABLE_PLAN_IDS, getPlanConfig } from '../../../shared/constants/plans.js';
+import { MONTHLY_PRICE_EGP } from '../../../shared/constants/subscription.js';
 import { normalizeArabicText } from '../../../shared/utils/arabicNormalization.js';
 import { recordSuperAdminAudit } from './audit.js';
 import { buildCenterSearchWhere, computeUsageForTenants, fail, paginationFromQuery, paginationPayload } from './platformHelpers.js';
@@ -44,23 +44,15 @@ function serializeTenant(tenant: {
   id: string;
   name: string;
   slug: string;
-  plan: string;
   isActive: boolean;
   trialEndsAt: Date | null;
-  maxDesks: number;
-  maxBranches: number;
-  maxUsers: number;
-  visitLimit: number | null;
   discountBalance: Prisma.Decimal;
   creditBalance: Prisma.Decimal;
   createdAt: Date;
 }, now: Date) {
-  const plan = getPlanConfig(tenant.plan);
   return {
     ...tenant,
-    planNameAr: plan.nameAr,
-    planNameEn: plan.nameEn,
-    priceMonthly: plan.priceEgp ?? 0,
+    priceMonthly: MONTHLY_PRICE_EGP,
     discountBalance: tenant.discountBalance.toString(),
     creditBalance: tenant.creditBalance.toString(),
     trialDaysRemaining: tenant.trialEndsAt
@@ -91,7 +83,6 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
         where: {
           isActive: true,
           trialEndsAt: { gt: now },
-          plan: 'FREE_TRIAL',
         },
       }),
       prisma.tenant.count({ where: { isActive: false } }),
@@ -126,32 +117,27 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       limit?: string;
       search?: string;
       status?: string;
-      plan?: string;
       paymentStatus?: string;
-      usageStatus?: string;
       sort?: string;
     };
   }>('/tenants', { preHandler: SUPER_ADMIN_GATE }, async (request, reply) => {
     const { page, limit, skip } = paginationFromQuery(request.query);
     const status = request.query.status ?? 'all';
     const paymentStatus = request.query.paymentStatus ?? 'all';
-    const usageStatus = request.query.usageStatus ?? 'all';
     const searchWhere = buildCenterSearchWhere(request.query.search ?? '');
 
     const where: Prisma.TenantWhereInput = {
       ...(searchWhere ? { AND: [searchWhere] } : {}),
-      ...(request.query.plan && request.query.plan !== 'all' ? { plan: request.query.plan as TenantPlan } : {}),
       ...(status === 'active' ? { isActive: true } : {}),
       ...(status === 'suspended' ? { isActive: false } : {}),
-      ...(status === 'trial' ? { isActive: true, plan: 'FREE_TRIAL', trialEndsAt: { gt: new Date() } } : {}),
+      ...(status === 'trial' ? { isActive: true, trialEndsAt: { gt: new Date() } } : {}),
     };
 
     const sort = request.query.sort ?? 'newest';
     const orderBy: Prisma.TenantOrderByWithRelationInput =
       sort === 'oldest' ? { createdAt: 'asc' }
         : sort === 'name' ? { name: 'asc' }
-          : sort === 'plan' ? { plan: 'asc' }
-            : { createdAt: 'desc' };
+          : { createdAt: 'desc' };
 
     const [tenants, total] = await Promise.all([
       prisma.tenant.findMany({
@@ -163,15 +149,10 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
           id: true,
           name: true,
           slug: true,
-          plan: true,
           isActive: true,
           trialEndsAt: true,
           ownerName: true,
           ownerPhone: true,
-          maxDesks: true,
-          maxBranches: true,
-          maxUsers: true,
-          visitLimit: true,
           discountBalance: true,
           creditBalance: true,
           createdAt: true,
@@ -187,7 +168,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       computeUsageForTenants(tenants, now),
       prisma.subscription.findMany({
         where: { tenantId: { in: tenantIds }, status: { in: ['ACTIVE', 'TRIALING'] } },
-        select: { tenantId: true, plan: true, amount: true, periodStart: true, periodEnd: true, status: true, paymentMethod: true },
+        select: { tenantId: true, amount: true, periodStart: true, periodEnd: true, status: true, paymentMethod: true },
         orderBy: { periodEnd: 'desc' },
       }),
       prisma.user.findMany({
@@ -208,10 +189,6 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       const usage = usageByTenant.get(tenant.id);
       const subscription = subscriptionByTenant.get(tenant.id);
       const owner = ownerByTenant.get(tenant.id);
-      const visitsMetric = usage?.metrics.find((metric) => metric.metric === 'VISITS');
-      const usersMetric = usage?.metrics.find((metric) => metric.metric === 'USERS');
-      const isApproachingLimit = usage?.warningCount ? usage.warningCount > 0 : false;
-      const isOverLimit = usage?.overCount ? usage.overCount > 0 : false;
 
       return {
         ...serializeTenant(tenant, now),
@@ -225,17 +202,11 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
               : 'due'
           : 'none',
         visitsThisPeriod: usage?.visitCount ?? 0,
-        visitLimitEffective: visitsMetric?.limit ?? null,
-        visitUsagePercent: visitsMetric?.percent ?? null,
-        usageLevel: usage?.highestLevel ?? 'none',
-        isApproachingLimit,
-        isOverLimit,
         userCount: tenant._count.users,
         receptionistCount: usage?.receptionistCount ?? 0,
         studentCount: tenant._count.students,
         teacherCount: tenant._count.teachers,
         sessionCount: tenant._count.sessions,
-        userUsagePercent: usersMetric?.percent ?? null,
         owner: owner
           ? {
             name: owner.fullName,
@@ -252,14 +223,12 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
     });
 
     const filtered =
-      paymentStatus === 'all' && usageStatus === 'all'
+      paymentStatus === 'all'
         ? rows
         : rows.filter((row) => {
           if (paymentStatus === 'paid' && row.paymentStatus !== 'paid') return false;
           if (paymentStatus === 'due' && row.paymentStatus !== 'due') return false;
           if (paymentStatus === 'none' && row.paymentStatus !== 'none') return false;
-          if (usageStatus === 'approaching' && !row.isApproachingLimit) return false;
-          if (usageStatus === 'over' && !row.isOverLimit) return false;
           return true;
         });
 
@@ -268,7 +237,6 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       data: {
         tenants: filtered,
         pagination: paginationPayload(page, limit, total),
-        plans: PURCHASABLE_PLAN_IDS,
       },
     });
   });
@@ -280,7 +248,6 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       ownerName: string;
       ownerPhone: string;
       username: string;
-      plan?: string;
       password?: string;
       reason?: string;
     };
@@ -298,7 +265,6 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
             ownerName: { type: 'string', minLength: 2, maxLength: 100 },
             ownerPhone: { type: 'string', pattern: '^(010|011|012|015)[0-9]{8}$' },
             username: { type: 'string', minLength: 3, maxLength: 50, pattern: '^[a-zA-Z0-9_-]+$' },
-            plan: { type: 'string', enum: [...PURCHASABLE_PLAN_IDS, 'FREE_TRIAL', 'ESSENTIAL', 'CONTROL', 'BUSINESS', 'ENTERPRISE'] },
             password: { type: 'string', minLength: 8, maxLength: 200 },
             reason: { type: 'string', minLength: 2, maxLength: 500 },
           },
@@ -306,9 +272,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       },
     },
     async (request, reply) => {
-      const { name, ownerName, ownerPhone, username, plan } = request.body;
-      const planValue = plan ?? 'FREE_TRIAL';
-      const planConfig = getPlanConfig(planValue);
+      const { name, ownerName, ownerPhone, username } = request.body;
 
       const existingUser = await prisma.user.findUnique({ where: { username }, select: { id: true } });
       if (existingUser) {
@@ -339,13 +303,8 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
             slug,
             ownerName: ownerName.trim(),
             ownerPhone,
-            plan: planValue as never,
             isActive: true,
-            trialEndsAt: planValue === 'FREE_TRIAL' ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000) : null,
-            maxDesks: planConfig.limits.maxDesks,
-            maxBranches: planConfig.limits.maxBranches ?? 2147483647,
-            maxUsers: planConfig.limits.maxUsers ?? 2147483647,
-            visitLimit: planConfig.limits.visitLimit,
+            trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
           },
         });
 
@@ -376,7 +335,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
             action: 'PLATFORM_TENANT_CREATED',
             entityType: 'Tenant',
             entityId: tenant.id,
-            afterJson: { name: tenant.name, slug: tenant.slug, plan: tenant.plan, ownerUsername: user.username },
+            afterJson: { name: tenant.name, slug: tenant.slug, ownerUsername: user.username },
             reason: request.body.reason ?? null,
             ip: request.ip ?? null,
           },
@@ -394,84 +353,6 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
           temporaryPassword: request.body.password ? null : temporaryPassword,
         },
       });
-    },
-  );
-
-  // ── PATCH /api/admin/tenants/:id/limits — change a limit directly ──────
-  app.patch<{
-    Params: { id: string };
-    Body: {
-      maxUsers?: number;
-      maxDesks?: number;
-      maxBranches?: number;
-      visitLimit?: number | null;
-      reason?: string;
-    };
-  }>(
-    '/tenants/:id/limits',
-    {
-      preHandler: SUPER_ADMIN_GATE,
-      schema: {
-        body: {
-          type: 'object',
-          additionalProperties: false,
-          minProperties: 1,
-          properties: {
-            maxUsers: { type: 'integer', minimum: 1, maximum: 1000 },
-            maxDesks: { type: 'integer', minimum: 1, maximum: 1000 },
-            maxBranches: { type: 'integer', minimum: 1, maximum: 1000 },
-            visitLimit: { type: ['integer', 'null'], minimum: 0, maximum: 10_000_000 },
-            reason: { type: 'string', minLength: 2, maxLength: 500 },
-          },
-        },
-      },
-    },
-    async (request, reply) => {
-      const { maxUsers, maxDesks, maxBranches, visitLimit, reason } = request.body;
-      if (maxUsers === undefined && maxDesks === undefined && maxBranches === undefined && visitLimit === undefined) {
-        return fail(reply, 400, 'NO_LIMIT_CHANGES', 'لم يتم تحديد أي حد لتغييره.', 'No limit was provided to change.');
-      }
-      if (reason === undefined) {
-        return fail(reply, 400, 'REASON_REQUIRED', 'سبب تغيير الحد مطلوب للتدقيق.', 'A reason is required for the audit trail.');
-      }
-
-      const before = await prisma.tenant.findUnique({
-        where: { id: request.params.id },
-        select: { id: true, maxUsers: true, maxDesks: true, maxBranches: true, visitLimit: true },
-      });
-      if (!before) return fail(reply, 404, 'TENANT_NOT_FOUND', 'المركز غير موجود.', 'Tenant not found.');
-
-      const tenant = await prisma.$transaction(async (tx) => {
-        const updated = await tx.tenant.update({
-          where: { id: before.id },
-          data: {
-            ...(maxUsers === undefined ? {} : { maxUsers }),
-            ...(maxDesks === undefined ? {} : { maxDesks }),
-            ...(maxBranches === undefined ? {} : { maxBranches }),
-            ...(visitLimit === undefined ? {} : { visitLimit }),
-          },
-          select: { id: true, maxUsers: true, maxDesks: true, maxBranches: true, visitLimit: true },
-        });
-
-        await recordSuperAdminAudit(
-          {
-            actorId: request.user.sub,
-            tenantId: before.id,
-            action: 'PLATFORM_TENANT_LIMITS_CHANGED',
-            entityType: 'Tenant',
-            entityId: before.id,
-            beforeJson: before as unknown as Prisma.InputJsonValue,
-            afterJson: updated as unknown as Prisma.InputJsonValue,
-            reason,
-            ip: request.ip ?? null,
-          },
-          tx,
-        );
-
-        return updated;
-      });
-
-      return reply.send({ success: true, data: { tenant } });
     },
   );
 
@@ -501,7 +382,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       }
 
       const now = new Date();
-      const [subscriptions, recentAudit, users, supportNotes, overrides, healthAlerts, adjustments, attendanceSummary] =
+      const [subscriptions, recentAudit, users, supportNotes, healthAlerts, adjustments, attendanceSummary] =
         await Promise.all([
           prisma.subscription.findMany({
             where: { tenantId: id },
@@ -529,11 +410,6 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
             take: 20,
             include: { author: { select: { id: true, fullName: true, username: true } } },
           }),
-          prisma.usageOverride.findMany({
-            where: { tenantId: id, OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
-            orderBy: { createdAt: 'desc' },
-            include: { grantedBy: { select: { id: true, fullName: true, username: true } } },
-          }),
           prisma.systemHealthEvent.findMany({
             where: { tenantId: id, resolvedAt: null },
             orderBy: { createdAt: 'desc' },
@@ -557,12 +433,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
           id: tenant.id,
           name: tenant.name,
           slug: tenant.slug,
-          plan: tenant.plan,
           isActive: tenant.isActive,
-          maxDesks: tenant.maxDesks,
-          maxBranches: tenant.maxBranches,
-          maxUsers: tenant.maxUsers,
-          visitLimit: tenant.visitLimit,
           createdAt: tenant.createdAt,
         }],
         now,
@@ -586,7 +457,6 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
           usage: usage[0] ?? null,
           users,
           supportNotes,
-          overrides,
           healthAlerts,
           adjustments: adjustments.map((adjustment) => ({
             ...adjustment,
@@ -648,8 +518,6 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
         where: { id },
         data: {
           trialEndsAt: newTrialEnd,
-          // Keep plan as FREE_TRIAL if it currently is; don't downgrade paid tenants
-          ...(tenant.plan === 'FREE_TRIAL' ? {} : {}),
         },
       });
 
@@ -770,8 +638,8 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
 
   // ═══ GET /api/admin/console-stats  (Phase 2 console stats v2) ══════════════
   // Platform KPIs reading the per-tenant platform tables added in migration
-  // 20260924000000_platform_models: support notes, system health, usage
-  // overrides, system settings + live MRR/trial/free-center splits.
+  // 20260924000000_platform_models: support notes, system health,
+  // system settings + live MRR/trial splits.
   app.get(
     '/console-stats',
     { preHandler: SUPER_ADMIN_GATE },
@@ -784,12 +652,10 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
         activeTenants,
         trialTenants,
         suspendedTenants,
-        freeTenants,
         newCentersThisMonth,
         subscriptionAgg,
         openSupportNotes,
         platformNotifications,
-        usageOverrides,
         openViewAsSessions,
         recentHealthEvents,
         pastDueSubscriptions,
@@ -806,11 +672,9 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
           where: {
             isActive: true,
             trialEndsAt: { gt: now },
-            plan: 'FREE_TRIAL',
           },
         }),
         prisma.tenant.count({ where: { isActive: false } }),
-        prisma.tenant.count({ where: { plan: 'FREE_TRIAL' } }),
         prisma.tenant.count({ where: { createdAt: { gte: monthStart } } }),
         prisma.subscription.aggregate({
           _sum: { amount: true },
@@ -818,7 +682,6 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
         }),
         prisma.supportNote.count({ where: { status: 'OPEN' } }),
         prisma.platformNotification.count(),
-        prisma.usageOverride.count({ where: { expiresAt: { gte: now } } }),
         prisma.superAdminSession.count({ where: { endedAt: null } }),
         prisma.systemHealthEvent.findMany({
           orderBy: { createdAt: 'desc' },
@@ -860,34 +723,30 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
         )._sum.amount ?? 0,
       );
 
-      // Centers at or near a configured limit — the dashboard's "needs
-      // attention" list, computed with the same rules as the usage screen.
+      // Centers with the most recorded activity this period — the dashboard's
+      // "needs attention" list.
       const limitCandidates = await prisma.tenant.findMany({
         where: { isActive: true },
         select: {
-          id: true, name: true, slug: true, plan: true, isActive: true,
-          maxDesks: true, maxBranches: true, maxUsers: true, visitLimit: true, createdAt: true,
+          id: true, name: true, slug: true, isActive: true, createdAt: true,
         },
       });
       const usageRows = await computeUsageForTenants(limitCandidates, now);
       const approachingLimits = usageRows
-        .filter((row) => row.warningCount > 0)
-        .sort((a, b) => b.overCount - a.overCount || b.warningCount - a.warningCount)
+        .sort((a, b) => b.visitCount - a.visitCount)
         .slice(0, 5)
         .map((row) => ({
           tenantId: row.tenantId,
           centerName: limitCandidates.find((tenant) => tenant.id === row.tenantId)?.name ?? '',
-          level: row.highestLevel,
-          warningCount: row.warningCount,
-          overCount: row.overCount,
-          metrics: row.metrics.filter((metric) => metric.warning),
+          visitsThisPeriod: row.visitCount,
+          receptionistCount: row.receptionistCount,
+          metrics: row.metrics,
         }));
 
       return reply.send({
         success: true,
         data: {
           mrrEgp: mrr,
-          mrrByPlan: { FREE_TRIAL: 0, FREE: 0, PAID: mrr },
           revenueThisMonth,
           monthlyVisits,
           tenants: {
@@ -895,7 +754,6 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
             active: activeTenants,
             trial: trialTenants,
             suspended: suspendedTenants,
-            free: freeTenants,
             newThisMonth: newCentersThisMonth,
           },
           users: { total: totalUsers, inactive: inactiveUsers },
@@ -906,7 +764,6 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
           approachingLimits,
           support: { openNotes: openSupportNotes, recentNotes: recentSupportNotes },
           notifications: { total: platformNotifications },
-          usageOverrides: { active: usageOverrides },
           viewAs: { openSessions: openViewAsSessions },
           recentHealthEvents,
           recentActivity,

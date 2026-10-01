@@ -1,16 +1,18 @@
 /**
  * Pure billing/usage math for the super-admin console.
  *
- * Every formula that turns a plan price into a payable amount — or an
+ * Every formula that turns the subscription price into a payable amount — or an
  * owner's discount/credit decision into a balance — lives here so it can be
  * unit-tested in isolation. Route modules and UI components must never
  * re-implement any of it (AGENTS.md: financial arithmetic isolation).
+ *
+ * The subscription is a single unlimited product, so nothing here knows about
+ * plans, caps, or usage overrides. Usage is reported as counts, never as a
+ * percentage of a limit.
  */
 
 import { Prisma } from '@prisma/client';
-import { TenantPlan } from '../../../shared/constants/index.js';
-import { computeVisitUsage, PENDING_PAYMENT_LIMITS, getPlanConfig } from '../../../shared/constants/plans.js';
-import type { PlanLimits, VisitUsage, VisitUsageLevel } from '../../../shared/constants/plans.js';
+import { MONTHLY_PRICE_EGP } from '../../../shared/constants/subscription.js';
 
 export type MoneyInput = Prisma.Decimal | number | string | null | undefined;
 
@@ -45,7 +47,7 @@ export function computeDiscountAmount(price: MoneyInput, kind: DiscountKind, val
 }
 
 export type BalanceApplication = {
-  /** Plan price before any owner adjustment. */
+  /** Subscription price before any owner adjustment. */
   baseAmount: number;
   /** Portion of the tenant discount wallet consumed by this invoice. */
   discountApplied: number;
@@ -116,15 +118,13 @@ export function computeWalletMutation(type: WalletAction, amount: MoneyInput): W
 /**
  * What a tenant may actually use, derived from the state of its payment.
  *
- * A PENDING payment must never hand out a paid plan's limits. The tenant keeps
- * a capped, inactive trial tier so the center can still try the product, but
- * nothing that was paid for is granted until a SUPER_ADMIN verifies the
- * transfer (AGENTS.md: financial isolation + no entitlement before payment).
+ * A PENDING payment must never activate the paid subscription. The tenant stays
+ * on its (unlimited) trial-tier activity, but nothing that was paid for is
+ * granted until a SUPER_ADMIN verifies the transfer (AGENTS.md: financial
+ * isolation + no entitlement before payment).
  */
 export type TenantEntitlements = {
-  plan: string;
   isActive: boolean;
-  limits: PlanLimits;
   discountBalance: number;
   creditBalance: number;
   /** Wallet spend for this invoice; null when no invoice is being settled. */
@@ -134,16 +134,14 @@ export type TenantEntitlements = {
 /**
  * Entitlements for a tenant whose payment is still unverified. Owner-granted
  * discount/credit wallets are deliberately left untouched, so rejecting the
- * payment has nothing to unwind — the tenant simply never received the plan.
+ * payment has nothing to unwind — the tenant simply never received the month.
  */
 export function pendingEntitlements(
   discountBalance: MoneyInput,
   creditBalance: MoneyInput,
 ): TenantEntitlements {
   return {
-    plan: TenantPlan.FREE_TRIAL,
     isActive: false,
-    limits: PENDING_PAYMENT_LIMITS,
     discountBalance: roundMoney(Math.max(0, toMoneyNumber(discountBalance))),
     creditBalance: roundMoney(Math.max(0, toMoneyNumber(creditBalance))),
     billing: null,
@@ -151,23 +149,18 @@ export function pendingEntitlements(
 }
 
 /**
- * Entitlements granted once the payment is verified: the purchased plan and
- * its real limits, an active tenant, and the owner wallets spent against this
- * invoice. The wallet math is recomputed here from the tenant's live balances
- * so a discount granted while the payment was pending is honoured.
+ * Entitlements granted once the payment is verified: an active subscription and
+ * the owner wallets spent against this invoice. The wallet math is recomputed
+ * here from the tenant's live balances so a discount granted while the payment
+ * was pending is honoured.
  */
 export function verifiedEntitlements(
-  purchasedPlan: string,
   discountBalance: MoneyInput,
   creditBalance: MoneyInput,
 ): TenantEntitlements {
-  const planConfig = getPlanConfig(purchasedPlan);
-  const baseAmount = planConfig.priceEgp ?? 0;
-  const billing = applyBillingBalances(baseAmount, discountBalance, creditBalance);
+  const billing = applyBillingBalances(MONTHLY_PRICE_EGP, discountBalance, creditBalance);
   return {
-    plan: planConfig.id,
     isActive: true,
-    limits: planConfig.limits,
     discountBalance: billing.remainingDiscount,
     creditBalance: billing.remainingCredit,
     billing,
@@ -179,47 +172,14 @@ export function verifiedEntitlements(
 export const USAGE_METRICS = ['USERS', 'RECEPTIONISTS', 'STUDENTS', 'VISITS', 'BRANCHES'] as const;
 export type UsageMetric = (typeof USAGE_METRICS)[number];
 
-/** Warning-only threshold shared with the center UI: 80% of the limit. */
-export const USAGE_WARNING_PERCENT = 80;
-
 export type UsageMetricState = {
   metric: UsageMetric;
   used: number;
-  limit: number | null;
-  percent: number | null;
-  remaining: number | null;
-  level: VisitUsageLevel;
-  overLimit: boolean;
-  warning: boolean;
 };
 
-/**
- * Normalizes one metric into the same shape the client renders for visits, so
- * the console and the center can never disagree on "approaching the limit".
- * A null limit means unlimited (never a warning).
- */
-export function computeMetricUsage(
-  metric: UsageMetric,
-  used: number,
-  limit: number | null | undefined,
-): UsageMetricState {
-  const visitUsage: VisitUsage = computeVisitUsage(used, metric === 'VISITS' ? limit : normalizeHardLimit(limit));
-  return {
-    metric,
-    used: visitUsage.used,
-    limit: visitUsage.limit,
-    percent: visitUsage.percent,
-    remaining: visitUsage.remaining,
-    level: visitUsage.level,
-    overLimit: visitUsage.overLimit,
-    warning: visitUsage.level === 'warning' || visitUsage.level === 'strong' || visitUsage.level === 'over',
-  };
-}
-
-/** maxUsers/maxDesks/maxBranches are hard caps; 0 would disable the center, so treat it as "no cap known". */
-function normalizeHardLimit(limit: number | null | undefined): number | null {
-  if (limit === null || limit === undefined) return null;
-  return limit > 0 ? Math.floor(limit) : null;
+/** Counts only: the product is unlimited, so no metric has a limit or a level. */
+export function computeMetricUsage(metric: UsageMetric, used: number): UsageMetricState {
+  return { metric, used: Number.isFinite(used) ? used : 0 };
 }
 
 export type TenantUsageInput = {
@@ -228,52 +188,22 @@ export type TenantUsageInput = {
   studentCount: number;
   visitCount: number;
   branchCount?: number;
-  limits: PlanLimits & { maxUsers: number; maxDesks: number; maxBranches: number; visitLimit: number | null };
-  activeOverrideExtra: Partial<Record<UsageMetric, number>>;
 };
 
 export type TenantUsageSummary = {
   metrics: UsageMetricState[];
-  warningCount: number;
-  overCount: number;
-  highestLevel: VisitUsageLevel;
 };
 
-const LEVEL_ORDER: Record<VisitUsageLevel, number> = { none: 0, ok: 1, warning: 2, strong: 3, over: 4 };
-
-/**
- * Builds every metric row for one center: used count, the effective limit
- * (plan/tenant limit plus any active usage override) and the warning state.
- */
+/** Builds the per-center usage counts shown in the console. */
 export function computeTenantUsage(input: TenantUsageInput): TenantUsageSummary {
-  const { limits, activeOverrideExtra } = input;
-  const withExtra = (metric: UsageMetric, limit: number | null): number | null => {
-    const extra = activeOverrideExtra[metric] ?? 0;
-    if (limit === null) return null;
-    return limit + Math.max(0, extra);
-  };
-
-  const metrics: UsageMetricState[] = [
-    computeMetricUsage('USERS', input.userCount, withExtra('USERS', limits.maxUsers)),
-    computeMetricUsage('RECEPTIONISTS', input.receptionistCount, withExtra('RECEPTIONISTS', limits.maxUsers)),
-    // No student cap is configured anywhere in the system, so students are
-    // reported as an informational metric only — never a warning.
-    computeMetricUsage('STUDENTS', input.studentCount, withExtra('STUDENTS', null)),
-    computeMetricUsage('VISITS', input.visitCount, withExtra('VISITS', limits.visitLimit)),
-    // Branch usage measured against tenant active branches count
-    computeMetricUsage('BRANCHES', input.branchCount ?? 0, withExtra('BRANCHES', limits.maxBranches)),
-  ];
-
-  const highestLevel = metrics.reduce<VisitUsageLevel>(
-    (highest, metric) => (LEVEL_ORDER[metric.level] > LEVEL_ORDER[highest] ? metric.level : highest),
-    'none',
-  );
-
   return {
-    metrics,
-    warningCount: metrics.filter((metric) => metric.warning).length,
-    overCount: metrics.filter((metric) => metric.level === 'over').length,
-    highestLevel,
+    metrics: [
+      computeMetricUsage('USERS', input.userCount),
+      computeMetricUsage('RECEPTIONISTS', input.receptionistCount),
+      computeMetricUsage('STUDENTS', input.studentCount),
+      computeMetricUsage('VISITS', input.visitCount),
+      computeMetricUsage('BRANCHES', input.branchCount ?? 0),
+    ],
   };
 }
 
@@ -327,23 +257,21 @@ export function sumRevenueByPeriod(
  * "now" for every paying center. Centers whose current period has lapsed are
  * not MRR — they are reported separately as at-risk revenue.
  */
-export function computeRevenueSnapshot(rows: Array<{ amount: MoneyInput; periodEnd: Date | string; plan: string }>, now: Date) {
+export function computeRevenueSnapshot(rows: Array<{ amount: MoneyInput; periodEnd: Date | string }>, now: Date) {
   let mrr = 0;
   let atRisk = 0;
-  const byPlan = new Map<string, number>();
 
   for (const row of rows) {
     const amount = roundMoney(Math.max(0, toMoneyNumber(row.amount)));
     if (amount <= 0) continue;
-    byPlan.set(row.plan, roundMoney((byPlan.get(row.plan) ?? 0) + amount));
     if (new Date(row.periodEnd).getTime() > now.getTime()) mrr = roundMoney(mrr + amount);
     else atRisk = roundMoney(atRisk + amount);
   }
 
-  return { mrr, atRisk, byPlan: Object.fromEntries(byPlan) };
+  return { mrr, atRisk };
 }
 
-export type RevenueRow = { amount: MoneyInput; periodStart: Date | string; periodEnd: Date | string; plan: string };
+export type RevenueRow = { amount: MoneyInput; periodStart: Date | string; periodEnd: Date | string };
 
 /** Convenience wrapper: snapshot + history from one query result. */
 export function buildRevenueReport(rows: RevenueRow[], months: number, now: Date) {

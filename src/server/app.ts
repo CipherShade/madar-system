@@ -22,7 +22,7 @@ import reportRoutes from './modules/reports/reports.js';
 import userRoutes from './modules/users/users.js';
 import branchRoutes from './modules/management/branches.js';
 import subscriptionRoutes from './modules/subscriptions/subscriptions.js';
-import publicPlanRoutes from './modules/subscriptions/publicPlans.js';
+import publicPricingRoutes from './modules/subscriptions/publicPricing.js';
 import adminRoutes from './modules/admin/admin.js';
 import platformOpsRoutes from './modules/admin/platformOps.js';
 import platformUsersRoutes from './modules/admin/platformUsers.js';
@@ -118,7 +118,7 @@ export function buildApp(options?: BuildAppOptions): FastifyInstance {
   app.register(userRoutes, { prefix: '/api/users' });
   app.register(branchRoutes, { prefix: '/api/branches' });
   app.register(subscriptionRoutes, { prefix: '/api/subscriptions' });
-  app.register(publicPlanRoutes, { prefix: '/api' });
+  app.register(publicPricingRoutes, { prefix: '/api' });
   app.register(adminRoutes, { prefix: '/api/admin' });
   app.register(platformOpsRoutes, { prefix: '/api/admin' });
   app.register(platformUsersRoutes, { prefix: '/api/admin' });

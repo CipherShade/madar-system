@@ -5,7 +5,6 @@ import { Pill, notify } from '../../../components/ui/kit';
 import { api } from '../../../lib/api';
 import { EmptyBlock, ErrorBlock, FilterSelect, LoadingBlock, Pagination, SectionHeader, SectionTable, TemporaryPasswordNotice } from './primitives';
 import { formatDate, formatDateTime, formatNumber } from './format';
-import { planPill } from './plan';
 import type { CenterOption, PlatformUser, PlatformUserDetail } from './types';
 
 const LIMIT = 20;
@@ -230,7 +229,7 @@ function UserDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
               <div className="page-sub" style={{ fontSize: 12 }}>
                 {t('superAdmin.users.centerLabel')}: {detail.tenant?.name ?? t('superAdmin.users.noCenter')}
                 {' · '}
-                {t('superAdmin.users.centerUsersActive', { count: detail.centerUsersActive })} / {detail.tenant?.maxUsers ?? '—'}
+                {t('superAdmin.users.centerUsersActive', { count: detail.centerUsersActive })}
               </div>
               <div className="page-sub" style={{ fontSize: 12 }}>
                 {t('superAdmin.users.lastLogin')}: {formatDateTime(detail.lastLoginAt)} · {t('superAdmin.users.createdAt')}: {formatDate(detail.createdAt)}
@@ -446,7 +445,6 @@ export function UsersSection() {
           >
             {users.length === 0 ? undefined : (
               users.map((user) => {
-                const pill = user.centerPlan ? planPill(user.centerPlan) : null;
                 const busy = busyId === user.id;
                 return (
                   <tr key={user.id} style={{ opacity: user.isActive ? 1 : 0.6 }}>
@@ -457,12 +455,6 @@ export function UsersSection() {
                     </td>
                     <td style={{ fontSize: 13 }}>
                       {user.centerName ?? t('superAdmin.users.noCenter')}
-                      {pill && (
-                        <>
-                          <br />
-                          <Pill tone={pill.tone}>{pill.label}</Pill>
-                        </>
-                      )}
                     </td>
                     <td><Pill tone="accent">{t(`superAdmin.users.role.${user.role}`, user.role)}</Pill></td>
                     <td>

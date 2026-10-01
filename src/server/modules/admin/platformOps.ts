@@ -18,7 +18,6 @@ import { config } from '../../config/index.js';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
 import { recordSuperAdminAudit } from './audit.js';
-import { USAGE_METRICS } from './billingMath.js';
 import { fail, toInt } from './platformHelpers.js';
 
 const SUPER_ADMIN_GATE = [authenticate, requireRoles(Role.SUPER_ADMIN)];
@@ -28,7 +27,6 @@ const SUPER_ADMIN_GATE = [authenticate, requireRoles(Role.SUPER_ADMIN)];
 export const FEATURE_FLAG_CATALOG = [
   { key: 'reception_ui_v2', labelAr: 'واجهة الاستقبال الجديدة', descriptionAr: 'الواجهة الحديثة لشاشة الاستقبال والمكاتب.' },
   { key: 'advanced_reports', labelAr: 'التقارير المتقدمة', descriptionAr: 'تقارير تحليلية موسّعة للمدار.' },
-  { key: 'multi_branch', labelAr: 'متعدد الفروع', descriptionAr: 'إدارة أكثر من فرع من حساب واحد.' },
   { key: 'teacher_analytics', labelAr: 'تحليلات المدرسين', descriptionAr: 'مؤشرات أداء وتحليل ترددي للمدرسين.' },
   { key: 'experimental_features', labelAr: 'ميزات تجريبية', descriptionAr: 'تجارب غير مستقرة — فعّلها على مركز محدد فقط.' },
 ] as const;
@@ -41,11 +39,10 @@ const FLAG_SETTING_PREFIX = 'flag:';
 
 type FeatureFlagValue = {
   enabled: boolean;
-  plans: Record<string, boolean>;
   centers: Record<string, boolean>;
 };
 
-const DEFAULT_FLAG_VALUE: FeatureFlagValue = { enabled: false, plans: {}, centers: {} };
+const DEFAULT_FLAG_VALUE: FeatureFlagValue = { enabled: false, centers: {} };
 
 type SettingKind = 'string' | 'number' | 'boolean' | 'json';
 
@@ -59,10 +56,6 @@ const SETTINGS_CATALOG: Record<string, { kind: SettingKind; default: Prisma.Inpu
   'platform.registrationOpen': { kind: 'boolean', default: true },
   'platform.maintenanceMode': { kind: 'boolean', default: false },
   'platform.maintenanceMessageAr': { kind: 'string', default: '' },
-  'platform.defaultLimits': {
-    kind: 'json',
-    default: { maxDesks: 1, maxBranches: 1, maxUsers: 3, visitLimit: null },
-  },
 };
 
 const SETTING_KEYS = Object.keys(SETTINGS_CATALOG);
@@ -70,13 +63,10 @@ const SETTING_KEYS = Object.keys(SETTINGS_CATALOG);
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function readFlagValue(raw: Prisma.JsonValue | null | undefined): FeatureFlagValue {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ...DEFAULT_FLAG_VALUE, plans: {}, centers: {} };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ...DEFAULT_FLAG_VALUE, centers: {} };
   const source = raw as Record<string, unknown>;
   return {
     enabled: source.enabled === true,
-    plans: typeof source.plans === 'object' && source.plans !== null && !Array.isArray(source.plans)
-      ? Object.fromEntries(Object.entries(source.plans as Record<string, unknown>).map(([k, v]) => [k, v === true]))
-      : {},
     centers: typeof source.centers === 'object' && source.centers !== null && !Array.isArray(source.centers)
       ? Object.fromEntries(Object.entries(source.centers as Record<string, unknown>).map(([k, v]) => [k, v === true]))
       : {},
@@ -283,7 +273,7 @@ const platformOpsRoutes: FastifyPluginAsync = async (app) => {
     Body: {
       titleAr: string;
       bodyAr: string;
-      audience: 'ALL_CENTERS' | 'PLAN' | 'CENTER' | 'USER';
+      audience: 'ALL_CENTERS' | 'CENTER' | 'USER';
       audienceIds?: string[];
       publishNow?: boolean;
     };
@@ -299,7 +289,7 @@ const platformOpsRoutes: FastifyPluginAsync = async (app) => {
           properties: {
             titleAr: { type: 'string', minLength: 2, maxLength: 200 },
             bodyAr: { type: 'string', minLength: 2, maxLength: 2000 },
-            audience: { type: 'string', enum: ['ALL_CENTERS', 'PLAN', 'CENTER', 'USER'] },
+            audience: { type: 'string', enum: ['ALL_CENTERS', 'CENTER', 'USER'] },
             audienceIds: { type: 'array', maxItems: 500, items: { type: 'string', maxLength: 64 } },
             publishNow: { type: 'boolean' },
           },
@@ -451,7 +441,7 @@ const platformOpsRoutes: FastifyPluginAsync = async (app) => {
     return reply.send({ success: true, data: { flags } });
   });
 
-  app.put<{ Params: { key: string }; Body: { enabled?: boolean; plans?: Record<string, boolean>; centers?: Record<string, boolean> } }>(
+  app.put<{ Params: { key: string }; Body: { enabled?: boolean; centers?: Record<string, boolean> } }>(
     '/feature-flags/:key',
     {
       preHandler: SUPER_ADMIN_GATE,
@@ -461,7 +451,6 @@ const platformOpsRoutes: FastifyPluginAsync = async (app) => {
           additionalProperties: false,
           properties: {
             enabled: { type: 'boolean' },
-            plans: { type: 'object', additionalProperties: { type: 'boolean' } },
             centers: { type: 'object', additionalProperties: { type: 'boolean' } },
           },
         },
@@ -477,7 +466,6 @@ const platformOpsRoutes: FastifyPluginAsync = async (app) => {
       const current = readFlagValue((await prisma.systemSetting.findUnique({ where: { key: settingKey } }))?.value);
       const next: FeatureFlagValue = {
         enabled: request.body.enabled ?? current.enabled,
-        plans: request.body.plans ?? current.plans,
         centers: request.body.centers ?? current.centers,
       };
 
@@ -866,13 +854,8 @@ const platformOpsRoutes: FastifyPluginAsync = async (app) => {
         slug: tenant.slug,
         ownerName: tenant.ownerName,
         ownerPhone: tenant.ownerPhone,
-        plan: tenant.plan,
         isActive: tenant.isActive,
         trialEndsAt: tenant.trialEndsAt,
-        maxDesks: tenant.maxDesks,
-        maxBranches: tenant.maxBranches,
-        maxUsers: tenant.maxUsers,
-        visitLimit: tenant.visitLimit,
         users: tenant._count.users,
         students: tenant._count.students,
         teachers: tenant._count.teachers,
@@ -1064,7 +1047,7 @@ const platformOpsRoutes: FastifyPluginAsync = async (app) => {
           take: limit,
           skip: offset,
           include: {
-            tenant: { select: { id: true, name: true, slug: true, plan: true } },
+            tenant: { select: { id: true, name: true, slug: true } },
             author: { select: { id: true, fullName: true, username: true } },
           },
         }),
@@ -1102,7 +1085,7 @@ const platformOpsRoutes: FastifyPluginAsync = async (app) => {
         const created = await tx.supportNote.create({
           data: { tenantId, authorId: request.user.sub, text: text.trim(), status: 'OPEN' },
           include: {
-            tenant: { select: { id: true, name: true, slug: true, plan: true } },
+            tenant: { select: { id: true, name: true, slug: true } },
             author: { select: { id: true, fullName: true, username: true } },
           },
         });
@@ -1155,7 +1138,7 @@ const platformOpsRoutes: FastifyPluginAsync = async (app) => {
           where: { id: request.params.id },
           data: { status: nextStatus, text: nextText },
           include: {
-            tenant: { select: { id: true, name: true, slug: true, plan: true } },
+            tenant: { select: { id: true, name: true, slug: true } },
             author: { select: { id: true, fullName: true, username: true } },
           },
         });
@@ -1178,140 +1161,6 @@ const platformOpsRoutes: FastifyPluginAsync = async (app) => {
       });
 
       return reply.send({ success: true, data: note });
-    },
-  );
-
-  // ═══ USAGE OVERRIDES ════════════════════════════════════════════════════
-
-  app.get<{ Querystring: { tenantId?: string; activeOnly?: string; limit?: string } }>(
-    '/usage-overrides',
-    { preHandler: SUPER_ADMIN_GATE },
-    async (request, reply) => {
-      const limit = toInt(request.query.limit, 100, 1, 500);
-      const now = new Date();
-      const where: Prisma.UsageOverrideWhereInput = {};
-      if (request.query.tenantId) where.tenantId = request.query.tenantId;
-      if (request.query.activeOnly === 'true') {
-        where.OR = [{ expiresAt: null }, { expiresAt: { gte: now } }];
-      }
-
-      const [overrides, activeCount] = await Promise.all([
-        prisma.usageOverride.findMany({
-          where,
-          orderBy: { createdAt: 'desc' },
-          take: limit,
-          include: {
-            tenant: { select: { id: true, name: true, slug: true, plan: true } },
-            grantedBy: { select: { id: true, fullName: true, username: true } },
-          },
-        }),
-        prisma.usageOverride.count({ where: { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] } }),
-      ]);
-
-      return reply.send({
-        success: true,
-        data: { overrides, metrics: USAGE_METRICS, pagination: { total: overrides.length, activeCount } },
-      });
-    },
-  );
-
-  app.post<{ Body: { tenantId: string; metric: string; extraAmount: number; reason?: string; expiresAt?: string } }>(
-    '/usage-overrides',
-    {
-      preHandler: SUPER_ADMIN_GATE,
-      schema: {
-        body: {
-          type: 'object',
-          required: ['tenantId', 'metric', 'extraAmount'],
-          additionalProperties: false,
-          properties: {
-            tenantId: { type: 'string', format: 'uuid' },
-            metric: { type: 'string', enum: [...USAGE_METRICS] },
-            extraAmount: { type: 'integer', minimum: 0, maximum: 1000000 },
-            reason: { type: 'string', minLength: 2, maxLength: 500 },
-            expiresAt: { type: 'string', minLength: 4, maxLength: 40 },
-          },
-        },
-      },
-    },
-    async (request, reply) => {
-      const { tenantId, metric, extraAmount, reason, expiresAt } = request.body;
-
-      const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, name: true } });
-      if (!tenant) return fail(reply, 404, 'CENTER_NOT_FOUND', 'المركز غير موجود.', 'Center not found.');
-
-      if (reason === undefined) {
-        return fail(reply, 400, 'REASON_REQUIRED', 'سبب الاستثناء مطلوب للتدقيق.', 'A reason is required for the audit trail.');
-      }
-
-      const parsedExpiry = expiresAt === undefined ? null : new Date(expiresAt);
-      if (parsedExpiry !== null && Number.isNaN(parsedExpiry.getTime())) {
-        return fail(reply, 400, 'INVALID_EXPIRY', 'تاريخ الانتهاء غير صالح.', 'Invalid expiry date.');
-      }
-
-      const override = await prisma.$transaction(async (tx) => {
-        const created = await tx.usageOverride.create({
-          data: {
-            tenantId,
-            metric: metric.trim(),
-            extraAmount,
-            reason: reason.trim(),
-            expiresAt: parsedExpiry,
-            grantedById: request.user.sub,
-          },
-          include: {
-            tenant: { select: { id: true, name: true, slug: true, plan: true } },
-            grantedBy: { select: { id: true, fullName: true, username: true } },
-          },
-        });
-
-        await recordSuperAdminAudit(
-          {
-            actorId: request.user.sub,
-            tenantId,
-            action: 'USAGE_OVERRIDE_GRANTED',
-            entityType: 'UsageOverride',
-            entityId: created.id,
-            afterJson: { metric: created.metric, extraAmount: created.extraAmount, expiresAt: created.expiresAt },
-            reason: reason.trim(),
-            ip: request.ip ?? null,
-          },
-          tx,
-        );
-
-        return created;
-      });
-
-      return reply.code(201).send({ success: true, data: override });
-    },
-  );
-
-  app.delete<{ Params: { id: string } }>(
-    '/usage-overrides/:id',
-    { preHandler: SUPER_ADMIN_GATE },
-    async (request, reply) => {
-      const existing = await prisma.usageOverride.findUnique({ where: { id: request.params.id } });
-      if (!existing) return fail(reply, 404, 'USAGE_OVERRIDE_NOT_FOUND', 'استثناء الاستخدام غير موجود.', 'Usage override not found.');
-
-      await prisma.$transaction(async (tx) => {
-        await tx.usageOverride.delete({ where: { id: request.params.id } });
-
-        await recordSuperAdminAudit(
-          {
-            actorId: request.user.sub,
-            tenantId: existing.tenantId,
-            action: 'USAGE_OVERRIDE_REVOKED',
-            entityType: 'UsageOverride',
-            entityId: existing.id,
-            beforeJson: { metric: existing.metric, extraAmount: existing.extraAmount, expiresAt: existing.expiresAt },
-            reason: 'revoked-by-owner',
-            ip: request.ip ?? null,
-          },
-          tx,
-        );
-      });
-
-      return reply.send({ success: true, data: { id: request.params.id } });
     },
   );
 

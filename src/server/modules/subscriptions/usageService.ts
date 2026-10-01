@@ -1,37 +1,17 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
-import {
-  getPlanConfig,
-  calculateUsageWarning,
-  canAddReceptionist,
-  canAddBranch,
-  canCheckIn,
-  type PlanDefinition,
-  type WarningLevel,
-} from '../../../shared/constants/plans.js';
-import { Role, AttendanceStatus, SubscriptionStatus } from '../../../shared/constants/index.js';
+import { AttendanceStatus, SubscriptionStatus } from '../../../shared/constants/index.js';
 
+/**
+ * Usage is recorded for reporting only. The single Madar subscription is
+ * unlimited, so nothing here may block, warn, or expose a limit.
+ */
 export interface TenantUsageSummary {
   tenantId: string;
   tenantName: string;
-  plan: PlanDefinition;
-  rawPlanKey: string;
   periodStart: string;
   periodEnd: string;
   usedVisits: number;
-  monthlyLimit: number;
-  remainingVisits: number;
-  percentage: number;
-  warningLevel: WarningLevel;
-  warningMessageAr: string | null;
-  warningMessageEn: string | null;
-  isBlocked: boolean;
-  receptionistCount: number;
-  receptionistLimit: number | null;
-  canAddReceptionist: boolean;
-  branchCount: number;
-  branchLimit: number | null;
-  canAddBranch: boolean;
   branchUsage: Array<{
     branchId: string | null;
     branchName: string;
@@ -68,23 +48,17 @@ export function computeBillingPeriod(
 }
 
 /**
- * Fetches the comprehensive usage and limit summary for a specific tenant.
+ * Fetches the visit usage summary for a tenant for the current billing period.
  */
 export async function getTenantUsageSummary(tenantId: string, now: Date = new Date()): Promise<TenantUsageSummary> {
-  const [tenant, activeSub, activeReceptionistsCount, branchesCount, branchRecords] = await Promise.all([
+  const [tenant, activeSub, branchRecords] = await Promise.all([
     prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { id: true, name: true, plan: true, createdAt: true },
+      select: { id: true, name: true },
     }),
     prisma.subscription.findFirst({
       where: { tenantId, status: SubscriptionStatus.ACTIVE, periodEnd: { gt: now } },
       orderBy: { periodEnd: 'desc' },
-    }),
-    prisma.user.count({
-      where: { tenantId, role: Role.RECEPTIONIST, isActive: true },
-    }),
-    prisma.branch.count({
-      where: { tenantId, isActive: true },
     }),
     prisma.branch.findMany({
       where: { tenantId, isActive: true },
@@ -97,7 +71,6 @@ export async function getTenantUsageSummary(tenantId: string, now: Date = new Da
   }
 
   const { periodStart, periodEnd } = computeBillingPeriod(now, activeSub);
-  const planConfig = getPlanConfig(tenant.plan);
 
   // Retrieve usage records for this billing cycle
   const usageRecords = await prisma.usageRecord.findMany({
@@ -124,9 +97,6 @@ export async function getTenantUsageSummary(tenantId: string, now: Date = new Da
     totalVisits = liveCount;
   }
 
-  const warning = calculateUsageWarning(totalVisits, planConfig.monthlyVisitLimit ?? 0);
-  const actualBranchCount = Math.max(1, branchesCount);
-
   const branchUsageList = branchRecords.map((b) => {
     const record = usageRecords.find((r) => r.branchId === b.id);
     return {
@@ -139,52 +109,28 @@ export async function getTenantUsageSummary(tenantId: string, now: Date = new Da
   return {
     tenantId: tenant.id,
     tenantName: tenant.name,
-    plan: planConfig,
-    rawPlanKey: tenant.plan,
     periodStart: periodStart.toISOString(),
     periodEnd: periodEnd.toISOString(),
     usedVisits: totalVisits,
-    monthlyLimit: planConfig.monthlyVisitLimit ?? 0,
-    remainingVisits: warning.remaining,
-    percentage: warning.percentage,
-    warningLevel: warning.warningLevel,
-    warningMessageAr: warning.messageAr,
-    warningMessageEn: warning.messageEn,
-    isBlocked: warning.isBlocked,
-    receptionistCount: activeReceptionistsCount,
-    receptionistLimit: planConfig.maxReceptionists,
-    canAddReceptionist: canAddReceptionist(activeReceptionistsCount, tenant.plan),
-    branchCount: actualBranchCount,
-    branchLimit: planConfig.maxBranches,
-    canAddBranch: canAddBranch(actualBranchCount, tenant.plan),
     branchUsage: branchUsageList,
   };
 }
 
 /**
- * Validates plan limits and increments monthly visit count atomically inside a Prisma transaction.
- * Throws VISIT_LIMIT_REACHED if tenant has reached their plan's monthly visit capacity.
+ * Increments the monthly visit count for reporting, inside a Prisma transaction.
+ * Never rejects: the subscription is unlimited, so a visit is always recorded.
  */
-export async function checkAndIncrementVisitUsage(
+export async function recordVisitUsage(
   tx: Prisma.TransactionClient,
   params: {
     tenantId: string;
     branchId?: string | null;
     now?: Date;
   }
-): Promise<{ newVisitCount: number; limit: number; remaining: number }> {
+): Promise<{ newVisitCount: number }> {
   const { tenantId, branchId, now = new Date() } = params;
 
-  // 1. Fetch tenant & plan
-  const tenant = await tx.tenant.findUnique({
-    where: { id: tenantId },
-    select: { plan: true },
-  });
-
-  const planKey = tenant?.plan || 'BASIC';
-  const planConfig = getPlanConfig(planKey);
-
-  // 2. Fetch active subscription for billing period
+  // Fetch active subscription for billing period
   const activeSub = await tx.subscription.findFirst({
     where: { tenantId, status: SubscriptionStatus.ACTIVE, periodEnd: { gt: now } },
     orderBy: { periodEnd: 'desc' },
@@ -192,7 +138,7 @@ export async function checkAndIncrementVisitUsage(
 
   const { periodStart, periodEnd } = computeBillingPeriod(now, activeSub);
 
-  // 3. Aggregate current visits for this billing period
+  // Aggregate current visits for this billing period
   const existingRecords = await tx.usageRecord.findMany({
     where: {
       tenantId,
@@ -215,14 +161,7 @@ export async function checkAndIncrementVisitUsage(
     currentTenantVisits = liveCount;
   }
 
-  // 4. Server-Side Limit Check
-  if (!canCheckIn(currentTenantVisits, planKey)) {
-    const error = new Error('VISIT_LIMIT_REACHED');
-    (error as unknown as { code: string }).code = 'VISIT_LIMIT_REACHED';
-    throw error;
-  }
-
-  // 5. Upsert / increment UsageRecord for this branch and period
+  // Upsert / increment UsageRecord for this branch and period
   const targetBranchId = branchId || null;
   const existingBranchRecord = existingRecords.find((r) => r.branchId === targetBranchId);
 
@@ -243,12 +182,5 @@ export async function checkAndIncrementVisitUsage(
     });
   }
 
-  const newTotal = currentTenantVisits + 1;
-  const remaining = Math.max(0, (planConfig.monthlyVisitLimit ?? 0) - newTotal);
-
-  return {
-    newVisitCount: newTotal,
-    limit: planConfig.monthlyVisitLimit ?? 0,
-    remaining,
-  };
+  return { newVisitCount: currentTenantVisits + 1 };
 }

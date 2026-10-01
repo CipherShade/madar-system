@@ -9,9 +9,8 @@ import {
   SettlementStatus,
   ShiftStatus,
   SubscriptionStatus,
-  TenantPlan,
 } from '../../shared/constants/index.js';
-import { getPlanConfig } from '../../shared/constants/plans.js';
+import { MONTHLY_PRICE_EGP, SUBSCRIPTION_CURRENCY } from '../../shared/constants/subscription.js';
 import * as argon2 from 'argon2';
 
 function norm(text: string | null | undefined): string {
@@ -273,12 +272,7 @@ async function seedMainCenter(
       slug: 'main-center',
       ownerName: 'أ/ محمود الشريف',
       ownerPhone: '01000000000',
-      plan: TenantPlan.ESSENTIAL,
       isActive: true,
-      maxDesks: 3,
-      maxBranches: 1,
-      maxUsers: getPlanConfig(TenantPlan.ESSENTIAL).limits.maxUsers ?? 2147483647,
-      visitLimit: getPlanConfig(TenantPlan.ESSENTIAL).limits.visitLimit,
       trialEndsAt: plusDays(7),
     },
   });
@@ -349,10 +343,9 @@ async function seedMainCenter(
     const previous = await prisma.subscription.create({
       data: {
         tenantId: tenant.id,
-        plan: TenantPlan.ESSENTIAL,
         status: SubscriptionStatus.EXPIRED,
-        amount: dec(499),
-        currency: 'EGP',
+        amount: dec(MONTHLY_PRICE_EGP),
+        currency: SUBSCRIPTION_CURRENCY,
         paymentMethod: PaymentMethod.CASH,
         paymentReference: 'REF-2026-08',
         periodStart: daysAgo(392),
@@ -365,16 +358,15 @@ async function seedMainCenter(
       action: 'SUBSCRIPTION_CREATED',
       entityType: 'SUBSCRIPTION',
       entityId: previous.id,
-      amount: 499,
-      metadata: { plan: TenantPlan.ESSENTIAL, paymentMethod: PaymentMethod.CASH },
+      amount: MONTHLY_PRICE_EGP,
+      metadata: { paymentMethod: PaymentMethod.CASH },
     });
     const active = await prisma.subscription.create({
       data: {
         tenantId: tenant.id,
-        plan: TenantPlan.ESSENTIAL,
         status: SubscriptionStatus.ACTIVE,
-        amount: dec(499),
-        currency: 'EGP',
+        amount: dec(MONTHLY_PRICE_EGP),
+        currency: SUBSCRIPTION_CURRENCY,
         paymentMethod: PaymentMethod.CASH,
         paymentReference: 'REF-DEMO-001',
         periodStart: daysAgo(30),
@@ -387,8 +379,8 @@ async function seedMainCenter(
       action: 'SUBSCRIPTION_RENEWED',
       entityType: 'SUBSCRIPTION',
       entityId: active.id,
-      amount: 499,
-      metadata: { plan: TenantPlan.ESSENTIAL, paymentMethod: PaymentMethod.CASH },
+      amount: MONTHLY_PRICE_EGP,
+      metadata: { paymentMethod: PaymentMethod.CASH },
     });
   }
 

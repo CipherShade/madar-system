@@ -83,14 +83,14 @@ const platformUsersRoutes: FastifyPluginAsync = async (app) => {
         orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }],
         select: {
           ...directoryUserSelect,
-          tenant: { select: { id: true, name: true, slug: true, plan: true, isActive: true } },
+          tenant: { select: { id: true, name: true, slug: true, isActive: true } },
         },
       }),
       prisma.user.count({ where }),
       prisma.tenant.findMany({
         where: { isActive: true },
         orderBy: { name: 'asc' },
-        select: { id: true, name: true, slug: true, plan: true },
+        select: { id: true, name: true, slug: true },
         take: 500,
       }),
     ]);
@@ -101,7 +101,6 @@ const platformUsersRoutes: FastifyPluginAsync = async (app) => {
         users: users.map((user) => ({
           ...user,
           centerName: user.tenant?.name ?? null,
-          centerPlan: user.tenant?.plan ?? null,
           tenant: undefined,
         })),
         centers,
@@ -124,8 +123,7 @@ const platformUsersRoutes: FastifyPluginAsync = async (app) => {
         updatedAt: true,
         tenant: {
           select: {
-            id: true, name: true, slug: true, plan: true, isActive: true,
-            maxUsers: true, visitLimit: true, maxDesks: true, maxBranches: true,
+            id: true, name: true, slug: true, isActive: true,
           },
         },
         _count: { select: { auditLogs: true, shiftRegisters: true, attendances: true } },
@@ -199,20 +197,11 @@ const platformUsersRoutes: FastifyPluginAsync = async (app) => {
 
       const center = await prisma.tenant.findUnique({
         where: { id: centerId },
-        select: { id: true, name: true, isActive: true, maxUsers: true, _count: { select: { users: true } } },
+        select: { id: true, name: true, isActive: true },
       });
       if (!center) return fail(reply, 404, 'CENTER_NOT_FOUND', 'المركز غير موجود.', 'Center not found.');
       if (!center.isActive) {
         return fail(reply, 409, 'CENTER_SUSPENDED', 'لا يمكن إضافة مستخدم لمركز موقوف.', 'Cannot add a user to a suspended center.');
-      }
-      if (center._count.users >= center.maxUsers) {
-        return fail(
-          reply,
-          409,
-          'CENTER_USER_LIMIT_REACHED',
-          `بلغ المركز حد المستخدمين المسموح به (${center.maxUsers}). زد الحد أو امنح استثناء استخدام أولًا.`,
-          `The center reached its user limit (${center.maxUsers}). Raise the limit or grant a usage override first.`,
-        );
       }
 
       const existing = await prisma.user.findFirst({
@@ -243,7 +232,7 @@ const platformUsersRoutes: FastifyPluginAsync = async (app) => {
             role: (role ?? Role.RECEPTIONIST) as Role,
             passwordHash,
           },
-          select: { ...directoryUserSelect, tenant: { select: { id: true, name: true, plan: true } } },
+          select: { ...directoryUserSelect, tenant: { select: { id: true, name: true } } },
         });
 
         await recordSuperAdminAudit(
@@ -335,7 +324,7 @@ const platformUsersRoutes: FastifyPluginAsync = async (app) => {
             ...(role === undefined ? {} : { role: role as Role }),
             ...(isActive === undefined ? {} : { isActive }),
           },
-          select: { ...directoryUserSelect, tenant: { select: { id: true, name: true, plan: true } } },
+          select: { ...directoryUserSelect, tenant: { select: { id: true, name: true } } },
         });
 
         const action = isActive === false
@@ -473,7 +462,7 @@ const platformUsersRoutes: FastifyPluginAsync = async (app) => {
         const updated = await tx.user.update({
           where: { id: before.id },
           data: { isActive: false },
-          select: { ...directoryUserSelect, tenant: { select: { id: true, name: true, plan: true } } },
+          select: { ...directoryUserSelect, tenant: { select: { id: true, name: true } } },
         });
 
         await recordSuperAdminAudit(

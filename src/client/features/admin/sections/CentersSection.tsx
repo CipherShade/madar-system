@@ -1,11 +1,10 @@
 import { Fragment, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CalendarPlus, ChevronDown, ChevronUp, Eye, Plus, Search, ShieldCheck, ShieldOff, SlidersHorizontal, X } from 'lucide-react';
+import { CalendarPlus, ChevronDown, ChevronUp, Eye, Plus, Search, ShieldCheck, ShieldOff, X } from 'lucide-react';
 import { Pill, notify } from '../../../components/ui/kit';
 import { api, money } from '../../../lib/api';
 import { ErrorBlock, FilterSelect, LoadingBlock, Pagination, SectionHeader, SectionTable, TemporaryPasswordNotice } from './primitives';
 import { formatDate, formatDateTime, formatNumber } from './format';
-import { planPill } from './plan';
 import type { CenterDetail, TenantRow } from './types';
 
 const LIMIT = 20;
@@ -18,27 +17,15 @@ type CentersSectionProps = {
 type Filters = {
   search: string;
   status: string;
-  plan: string;
   paymentStatus: string;
-  usageStatus: string;
   sort: string;
 };
 
 const EMPTY_FILTERS: Filters = {
   search: '',
   status: 'all',
-  plan: 'all',
   paymentStatus: 'all',
-  usageStatus: 'all',
   sort: 'newest',
-};
-
-const USAGE_TONE: Record<string, 'success' | 'warning' | 'danger' | 'muted'> = {
-  none: 'muted',
-  ok: 'success',
-  warning: 'warning',
-  strong: 'warning',
-  over: 'danger',
 };
 
 function NewCenterModal({ onClose, onCreated }: { onClose: () => void; onCreated: (temporaryPassword: string | null) => void }) {
@@ -47,7 +34,6 @@ function NewCenterModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const [ownerName, setOwnerName] = useState('');
   const [ownerPhone, setOwnerPhone] = useState('');
   const [username, setUsername] = useState('');
-  const [plan, setPlan] = useState('FREE_TRIAL');
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -65,7 +51,6 @@ function NewCenterModal({ onClose, onCreated }: { onClose: () => void; onCreated
           ownerName: ownerName.trim(),
           ownerPhone: ownerPhone.trim(),
           username: username.trim(),
-          plan,
           ...(reason.trim() ? { reason: reason.trim() } : {}),
         }),
       });
@@ -87,14 +72,6 @@ function NewCenterModal({ onClose, onCreated }: { onClose: () => void; onCreated
           <div>
             <label className="form-label" htmlFor="sa-center-name">{t('superAdmin.centers.fieldName')}</label>
             <input id="sa-center-name" className="form-input" value={name} onChange={(event) => setName(event.target.value)} maxLength={100} />
-          </div>
-          <div>
-            <label className="form-label" htmlFor="sa-center-plan">{t('superAdmin.centers.fieldPlan')}</label>
-            <select id="sa-center-plan" className="form-input" value={plan} onChange={(event) => setPlan(event.target.value)}>
-              <option value="FREE_TRIAL">{t('superAdmin.usage.plan.FREE_TRIAL')}</option>
-              <option value="ESSENTIAL">{t('superAdmin.usage.plan.ESSENTIAL')}</option>
-              <option value="CONTROL">{t('superAdmin.usage.plan.CONTROL')}</option>
-            </select>
           </div>
           <div>
             <label className="form-label" htmlFor="sa-center-owner-name">{t('superAdmin.centers.fieldOwnerName')}</label>
@@ -119,82 +96,6 @@ function NewCenterModal({ onClose, onCreated }: { onClose: () => void; onCreated
           <button className="btn btn--primary" style={{ gap: 6 }} onClick={() => void submit()} disabled={busy}>
             <Plus className="h-4 w-4" />
             {t(busy ? 'superAdmin.common.busy' : 'superAdmin.centers.create')}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LimitsModal({ tenant, onClose, onSaved }: { tenant: TenantRow; onClose: () => void; onSaved: () => void }) {
-  const { t } = useTranslation();
-  const [maxUsers, setMaxUsers] = useState(String(tenant.maxUsers));
-  const [maxDesks, setMaxDesks] = useState(String(tenant.maxDesks));
-  const [maxBranches, setMaxBranches] = useState(String(tenant.maxBranches));
-  const [visitLimit, setVisitLimit] = useState(tenant.visitLimit === null ? '' : String(tenant.visitLimit));
-  const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  const save = async () => {
-    const users = Number.parseInt(maxUsers, 10);
-    const desks = Number.parseInt(maxDesks, 10);
-    const branches = Number.parseInt(maxBranches, 10);
-    const visits = visitLimit.trim() === '' ? null : Number.parseInt(visitLimit, 10);
-    if (!Number.isFinite(users) || !Number.isFinite(desks) || !Number.isFinite(branches) || (visitLimit.trim() !== '' && !Number.isFinite(visits))) {
-      notify(t('superAdmin.centers.limitsInvalid'), 'error');
-      return;
-    }
-    if (reason.trim().length < 2) {
-      notify(t('superAdmin.common.reasonRequired'), 'error');
-      return;
-    }
-    setBusy(true);
-    try {
-      await api<unknown>(`/admin/tenants/${tenant.id}/limits`, {
-        method: 'PATCH',
-        body: JSON.stringify({ maxUsers: users, maxDesks: desks, maxBranches: branches, visitLimit: visits, reason: reason.trim() }),
-      });
-      notify(t('superAdmin.centers.limitsSaved', { name: tenant.name }), 'success');
-      onSaved();
-      onClose();
-    } catch {
-      notify(t('superAdmin.centers.limitsError'), 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true" aria-label={t('superAdmin.centers.limitsTitle')}>
-      <div className="modal-box" style={{ maxWidth: 480 }} onClick={(event) => event.stopPropagation()}>
-        <h3 className="page-title" style={{ fontSize: 17, marginBottom: 6 }}>{t('superAdmin.centers.limitsTitle')}</h3>
-        <p className="page-sub" style={{ fontSize: 13, marginBottom: 16 }}>{tenant.name}</p>
-        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
-          <div>
-            <label className="form-label" htmlFor="sa-limit-users">{t('superAdmin.plans.limitUsers')}</label>
-            <input id="sa-limit-users" className="form-input" type="number" min={1} value={maxUsers} onChange={(event) => setMaxUsers(event.target.value)} />
-          </div>
-          <div>
-            <label className="form-label" htmlFor="sa-limit-desks">{t('superAdmin.plans.limitDesks')}</label>
-            <input id="sa-limit-desks" className="form-input" type="number" min={1} value={maxDesks} onChange={(event) => setMaxDesks(event.target.value)} />
-          </div>
-          <div>
-            <label className="form-label" htmlFor="sa-limit-branches">{t('superAdmin.plans.limitBranches')}</label>
-            <input id="sa-limit-branches" className="form-input" type="number" min={1} value={maxBranches} onChange={(event) => setMaxBranches(event.target.value)} />
-          </div>
-          <div>
-            <label className="form-label" htmlFor="sa-limit-visits">{t('superAdmin.plans.limitVisits')}</label>
-            <input id="sa-limit-visits" className="form-input" type="number" min={0} placeholder={t('superAdmin.usage.unlimited')} value={visitLimit} onChange={(event) => setVisitLimit(event.target.value)} />
-          </div>
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <label className="form-label" htmlFor="sa-limit-reason">{t('superAdmin.common.reasonLabel')}</label>
-          <input id="sa-limit-reason" className="form-input" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={500} />
-        </div>
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
-          <button className="btn btn--ghost" onClick={onClose} disabled={busy}>{t('actions.cancel')}</button>
-          <button className="btn btn--primary" onClick={() => void save()} disabled={busy}>
-            {t(busy ? 'superAdmin.common.busy' : 'superAdmin.centers.limitsSave')}
           </button>
         </div>
       </div>
@@ -246,7 +147,6 @@ function CenterDetailModal({ id, onClose }: { id: string; onClose: () => void })
               <strong style={{ fontSize: 16 }}>{detail.tenant.name}</strong>
               <span className="page-sub" style={{ display: 'block', fontSize: 12, marginTop: 2 }} dir="ltr">{detail.tenant.slug}</span>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                <Pill tone={planPill(detail.tenant.plan).tone}>{planPill(detail.tenant.plan).label}</Pill>
                 <Pill tone={detail.tenant.isActive ? 'success' : 'danger'}>
                   {t(detail.tenant.isActive ? 'superAdmin.common.active' : 'superAdmin.common.suspended')}
                 </Pill>
@@ -268,8 +168,7 @@ function CenterDetailModal({ id, onClose }: { id: string; onClose: () => void })
                   {detail.usage.metrics.map((metric) => (
                     <div key={metric.metric} style={{ display: 'flex', gap: 8 }}>
                       <span style={{ minWidth: 110, color: 'var(--color-muted, #64748b)' }}>{t(`superAdmin.usage.metric.${metric.metric}`)}</span>
-                      <span>{formatNumber(metric.used)} / {metric.limit === null ? t('superAdmin.usage.unlimited') : formatNumber(metric.limit)}</span>
-                      <Pill tone={USAGE_TONE[metric.level] ?? 'muted'}>{t(`superAdmin.usage.level.${metric.level}`, metric.level)}</Pill>
+                      <span>{formatNumber(metric.used)}</span>
                     </div>
                   ))}
                 </div>
@@ -322,22 +221,6 @@ function CenterDetailModal({ id, onClose }: { id: string; onClose: () => void })
                       <strong>{money(Number(adjustment.amount))}</strong>
                       <span className="page-sub">{adjustment.reason ?? '—'}</span>
                       <span className="page-sub">{formatDate(adjustment.createdAt)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {detail.overrides.length > 0 && (
-              <div>
-                <h4 className="page-title" style={{ fontSize: 14, marginBottom: 8 }}>{t('superAdmin.centers.detail.overrides')}</h4>
-                <div style={{ display: 'grid', gap: 4, fontSize: 12 }}>
-                  {detail.overrides.map((override) => (
-                    <div key={override.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <code>{override.metric}</code>
-                      <strong>+{formatNumber(override.extraAmount)}</strong>
-                      <span className="page-sub">{override.expiresAt ? formatDate(override.expiresAt) : t('superAdmin.usage.noExpiry')}</span>
-                      <span className="page-sub">{override.reason ?? '—'}</span>
                     </div>
                   ))}
                 </div>
@@ -397,7 +280,6 @@ function CenterDetailModal({ id, onClose }: { id: string; onClose: () => void })
 export function CentersSection({ onExtendTrial, onViewAs }: CentersSectionProps) {
   const { t } = useTranslation();
   const [tenants, setTenants] = useState<TenantRow[]>([]);
-  const [plans, setPlans] = useState<string[]>([]);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(1);
   const [page, setPage] = useState(1);
@@ -407,7 +289,6 @@ export function CentersSection({ onExtendTrial, onViewAs }: CentersSectionProps)
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [limitsTarget, setLimitsTarget] = useState<TenantRow | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
 
@@ -418,13 +299,10 @@ export function CentersSection({ onExtendTrial, onViewAs }: CentersSectionProps)
       const params = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
       if (filters.search.trim()) params.set('search', filters.search.trim());
       if (filters.status !== 'all') params.set('status', filters.status);
-      if (filters.plan !== 'all') params.set('plan', filters.plan);
       if (filters.paymentStatus !== 'all') params.set('paymentStatus', filters.paymentStatus);
-      if (filters.usageStatus !== 'all') params.set('usageStatus', filters.usageStatus);
       if (filters.sort !== 'newest') params.set('sort', filters.sort);
-      const data = await api<{ tenants: TenantRow[]; plans: string[]; pagination: { total: number; pages: number } }>(`/admin/tenants?${params}`);
+      const data = await api<{ tenants: TenantRow[]; pagination: { total: number; pages: number } }>(`/admin/tenants?${params}`);
       setTenants(data.tenants);
-      setPlans(data.plans);
       setTotal(data.pagination.total);
       setPages(data.pagination.pages);
     } catch {
@@ -501,16 +379,6 @@ export function CentersSection({ onExtendTrial, onViewAs }: CentersSectionProps)
           ]}
         />
         <FilterSelect
-          id="sa-center-filter-plan"
-          labelKey="superAdmin.centers.filterPlan"
-          value={filters.plan}
-          onChange={(value) => updateFilter({ plan: value })}
-          options={[
-            { value: 'all', label: t('superAdmin.usage.allPlans') },
-            ...plans.map((value) => ({ value, label: t(`superAdmin.usage.plan.${value}`, value) })),
-          ]}
-        />
-        <FilterSelect
           id="sa-center-filter-payment"
           labelKey="superAdmin.centers.filterPayment"
           value={filters.paymentStatus}
@@ -523,17 +391,6 @@ export function CentersSection({ onExtendTrial, onViewAs }: CentersSectionProps)
           ]}
         />
         <FilterSelect
-          id="sa-center-filter-usage"
-          labelKey="superAdmin.centers.filterUsage"
-          value={filters.usageStatus}
-          onChange={(value) => updateFilter({ usageStatus: value })}
-          options={[
-            { value: 'all', label: t('superAdmin.usage.allLevels') },
-            { value: 'approaching', label: t('superAdmin.centers.usageApproaching') },
-            { value: 'over', label: t('superAdmin.centers.usageOver') },
-          ]}
-        />
-        <FilterSelect
           id="sa-center-filter-sort"
           labelKey="superAdmin.centers.filterSort"
           value={filters.sort}
@@ -542,7 +399,6 @@ export function CentersSection({ onExtendTrial, onViewAs }: CentersSectionProps)
             { value: 'newest', label: t('superAdmin.centers.sortNewest') },
             { value: 'oldest', label: t('superAdmin.centers.sortOldest') },
             { value: 'name', label: t('superAdmin.centers.sortName') },
-            { value: 'plan', label: t('superAdmin.centers.sortPlan') },
           ]}
         />
       </div>
@@ -571,7 +427,6 @@ export function CentersSection({ onExtendTrial, onViewAs }: CentersSectionProps)
           >
             <>{tenants.map((tenant) => {
               const isExpanded = expandedId === tenant.id;
-              const pill = planPill(tenant.plan);
               return (
                 <Fragment key={tenant.id}>
                   <tr style={{ opacity: tenant.isActive ? 1 : 0.55 }}>
@@ -596,9 +451,7 @@ export function CentersSection({ onExtendTrial, onViewAs }: CentersSectionProps)
                       )}
                     </td>
                     <td>
-                      <Pill tone={pill.tone}>{pill.label}</Pill>
-                      <br />
-                      <span className="page-sub" style={{ fontSize: 11 }}>{money(tenant.priceMonthly)}</span>
+                      <span style={{ fontSize: 11 }}>{money(tenant.priceMonthly)}</span>
                       {tenant.isTrialActive && (
                         <span style={{ display: 'block', fontSize: 11, marginTop: 4, color: 'var(--color-warning, #d97706)' }}>
                           {t('superAdmin.centers.trialDaysRemaining', { days: tenant.trialDaysRemaining })}
@@ -617,17 +470,11 @@ export function CentersSection({ onExtendTrial, onViewAs }: CentersSectionProps)
                     </td>
                     <td style={{ fontSize: 12 }}>{formatDate(tenant.renewalDate)}</td>
                     <td>
-                      <div style={{ display: 'grid', gap: 4 }}>
-                        <Pill tone={USAGE_TONE[tenant.usageLevel] ?? 'muted'}>
-                          {t(`superAdmin.usage.level.${tenant.usageLevel}`, tenant.usageLevel)}
-                        </Pill>
-                        <span style={{ fontSize: 11 }}>
-                          {t('superAdmin.centers.visitsUsage', {
-                            visits: formatNumber(tenant.visitsThisPeriod),
-                            percent: tenant.visitUsagePercent === null ? '—' : `${tenant.visitUsagePercent}%`,
-                          })}
-                        </span>
-                      </div>
+                      <span style={{ fontSize: 11 }}>
+                        {t('superAdmin.centers.visitsUsage', {
+                          visits: formatNumber(tenant.visitsThisPeriod),
+                        })}
+                      </span>
                     </td>
                     <td style={{ fontSize: 12 }}>
                       {t('superAdmin.centers.sizeLine', {
@@ -644,15 +491,6 @@ export function CentersSection({ onExtendTrial, onViewAs }: CentersSectionProps)
                           aria-label={t('superAdmin.centers.viewDetails', { name: tenant.name })}
                         >
                           {t('superAdmin.centers.details')}
-                        </button>
-                        <button
-                          className="btn btn--ghost"
-                          style={{ fontSize: 12, padding: '4px 10px', gap: 4 }}
-                          onClick={() => setLimitsTarget(tenant)}
-                          aria-label={t('superAdmin.centers.limitsFor', { name: tenant.name })}
-                        >
-                          <SlidersHorizontal className="h-3 w-3" />
-                          {t('superAdmin.centers.limits')}
                         </button>
                         {onExtendTrial && (
                           <button
@@ -695,9 +533,6 @@ export function CentersSection({ onExtendTrial, onViewAs }: CentersSectionProps)
                       <td colSpan={7} style={{ padding: '8px 24px 16px', background: 'var(--bg-surface-alt, rgba(0,0,0,0.04))' }}>
                         <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', fontSize: 13 }}>
                           <span><strong>{t('superAdmin.centers.detail.sessions')}:</strong> {formatNumber(tenant.sessionCount)}</span>
-                          <span><strong>{t('superAdmin.centers.detail.maxDesks')}:</strong> {formatNumber(tenant.maxDesks)}</span>
-                          <span><strong>{t('superAdmin.centers.detail.maxBranches')}:</strong> {formatNumber(tenant.maxBranches)}</span>
-                          <span><strong>{t('superAdmin.plans.limitUsers')}:</strong> {formatNumber(tenant.maxUsers)}</span>
                           {tenant.trialEndsAt && (
                             <span><strong>{t('superAdmin.centers.detail.trialEnds')}:</strong> {formatDate(tenant.trialEndsAt)}</span>
                           )}
@@ -723,10 +558,6 @@ export function CentersSection({ onExtendTrial, onViewAs }: CentersSectionProps)
             void load();
           }}
         />
-      )}
-
-      {limitsTarget && (
-        <LimitsModal tenant={limitsTarget} onClose={() => setLimitsTarget(null)} onSaved={() => void load()} />
       )}
 
       {detailId && <CenterDetailModal id={detailId} onClose={() => setDetailId(null)} />}

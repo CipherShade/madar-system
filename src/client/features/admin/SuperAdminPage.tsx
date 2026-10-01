@@ -7,7 +7,6 @@ import { OverviewSection } from './sections/OverviewSection';
 import { CentersSection } from './sections/CentersSection';
 import { UsersSection } from './sections/UsersSection';
 import { SubscriptionsSection } from './sections/SubscriptionsSection';
-import { PlansSection } from './sections/PlansSection';
 import { UsageSection } from './sections/UsageSection';
 import { RevenueSection } from './sections/RevenueSection';
 import { NotificationsSection } from './sections/NotificationsSection';
@@ -403,8 +402,7 @@ export function SuperAdminPage() {
           )}
           {activeSection === 'users' && <UsersSection {...sectionProps} />}
           {activeSection === 'subscriptions' && <SubscriptionsSection {...sectionProps} />}
-          {activeSection === 'plans' && <PlansSection {...sectionProps} />}
-          {activeSection === 'usage' && <UsageSection {...sectionProps} />}
+                    {activeSection === 'usage' && <UsageSection {...sectionProps} />}
           {activeSection === 'revenue' && <RevenueSection {...sectionProps} />}
           {activeSection === 'notifications' && <NotificationsSection {...sectionProps} />}
           {activeSection === 'featureFlags' && <FeatureFlagsSection {...sectionProps} />}

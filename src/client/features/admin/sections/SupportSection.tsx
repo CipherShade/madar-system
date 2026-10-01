@@ -5,7 +5,6 @@ import { Pill, notify } from '../../../components/ui/kit';
 import { api } from '../../../lib/api';
 import { SectionHeader, LoadingBlock, ErrorBlock, SectionTable } from './primitives';
 import { formatDateTime, shortId } from './format';
-import { planPill } from './plan';
 import type { SupportNote, TenantRow } from './types';
 
 type Status = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
@@ -174,14 +173,11 @@ export function SupportSection() {
         >
           {notes.length === 0 ? undefined : (
             notes.map((note) => {
-              const pill = planPill(note.tenant.plan);
               const busy = busyId === note.id;
               return (
                 <tr key={note.id}>
                   <td>
                     <strong>{note.tenant.name}</strong>
-                    <br />
-                    <Pill tone={pill.tone}>{pill.label}</Pill>
                   </td>
                   <td style={{ fontSize: 13 }}>{note.text}</td>
                   <td>

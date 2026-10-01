@@ -8,31 +8,25 @@ import { formatDateTime } from './format';
 import { useCenterOptions } from './hooks';
 import type { FeatureFlag } from './types';
 
-const PLAN_IDS = ['FREE_TRIAL', 'ESSENTIAL', 'CONTROL', 'MULTI_BRANCH'];
-
 function TargetingEditor({ flag, onSaved }: { flag: FeatureFlag; onSaved: () => void }) {
   const { t } = useTranslation();
   const centers = useCenterOptions();
-  const [plans, setPlans] = useState<Record<string, boolean>>(() => ({ ...flag.value.plans }));
   const [selectedCenters, setSelectedCenters] = useState<Record<string, boolean>>(() => ({ ...flag.value.centers }));
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
-    setPlans({ ...flag.value.plans });
     setSelectedCenters({ ...flag.value.centers });
-  }, [flag.value.plans, flag.value.centers]);
+  }, [flag.value.centers]);
 
-  const dirty =
-    JSON.stringify(plans) !== JSON.stringify(flag.value.plans) ||
-    JSON.stringify(selectedCenters) !== JSON.stringify(flag.value.centers);
+  const dirty = JSON.stringify(selectedCenters) !== JSON.stringify(flag.value.centers);
 
   const save = async () => {
     setBusy(true);
     try {
       await api<unknown>(`/admin/feature-flags/${flag.key}`, {
         method: 'PUT',
-        body: JSON.stringify({ plans, centers: selectedCenters }),
+        body: JSON.stringify({ centers: selectedCenters }),
       });
       notify(t('superAdmin.featureFlags.targetingSaved', { name: flag.labelAr }), 'success');
       onSaved();
@@ -44,7 +38,6 @@ function TargetingEditor({ flag, onSaved }: { flag: FeatureFlag; onSaved: () => 
   };
 
   const clearAll = () => {
-    setPlans({});
     setSelectedCenters({});
   };
 
@@ -65,23 +58,6 @@ function TargetingEditor({ flag, onSaved }: { flag: FeatureFlag; onSaved: () => 
   return (
     <div style={{ flexBasis: '100%', display: 'grid', gap: 14, borderTop: '1px solid var(--border-color, rgba(0,0,0,0.08))', paddingTop: 14 }}>
       <div>
-        <strong style={{ fontSize: 13, display: 'block' }}>{t('superAdmin.featureFlags.byPlan')}</strong>
-        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 6 }}>
-          {PLAN_IDS.map((plan) => (
-            <label key={plan} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
-              <input
-                type="checkbox"
-                checked={plans[plan] === true}
-                onChange={(event) => setPlans((prev) => ({ ...prev, [plan]: event.target.checked }))}
-              />
-              {t(`superAdmin.usage.plan.${plan}`, plan)}
-            </label>
-          ))}
-        </div>
-        <span className="page-sub" style={{ display: 'block', fontSize: 11, marginTop: 6 }}>{t('superAdmin.featureFlags.planHint')}</span>
-      </div>
-
-      <div>
         <strong style={{ fontSize: 13, display: 'block' }}>{t('superAdmin.featureFlags.byCenter')}</strong>
         {centers.length === 0 ? (
           <span className="page-sub" style={{ fontSize: 12 }}>{t('superAdmin.featureFlags.noCenters')}</span>
@@ -95,7 +71,6 @@ function TargetingEditor({ flag, onSaved }: { flag: FeatureFlag; onSaved: () => 
                   onChange={(event) => setSelectedCenters((prev) => ({ ...prev, [center.id]: event.target.checked }))}
                 />
                 <span>{center.name}</span>
-                <span className="page-sub" style={{ fontSize: 11 }}>{t(`superAdmin.usage.plan.${center.plan}`, center.plan)}</span>
               </label>
             ))}
           </div>
@@ -111,7 +86,7 @@ function TargetingEditor({ flag, onSaved }: { flag: FeatureFlag; onSaved: () => 
           className="btn btn--ghost"
           style={{ fontSize: 12, padding: '4px 12px' }}
           onClick={clearAll}
-          disabled={busy || Object.keys(plans).length + Object.keys(selectedCenters).length === 0}
+          disabled={busy || Object.keys(selectedCenters).length === 0}
         >
           {t('superAdmin.featureFlags.clearTargeting')}
         </button>
@@ -195,7 +170,6 @@ export function FeatureFlagsSection() {
           {flags.map((flag) => {
             const busy = busyKey === flag.key;
             const perCenter = Object.keys(flag.value.centers).length;
-            const perPlan = Object.keys(flag.value.plans).length;
             return (
               <div
                 key={flag.key}
@@ -214,11 +188,6 @@ export function FeatureFlagsSection() {
                     {perCenter > 0 && (
                       <Pill tone="accent">
                         {t('superAdmin.featureFlags.perCenterCount', { count: perCenter })}
-                      </Pill>
-                    )}
-                    {perPlan > 0 && (
-                      <Pill tone="primary">
-                        {t('superAdmin.featureFlags.perPlanCount', { count: perPlan })}
                       </Pill>
                     )}
                   </div>

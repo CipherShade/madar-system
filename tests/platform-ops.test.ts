@@ -13,7 +13,6 @@ const PLATFORM_READ_ROUTES = [
   '/api/admin/users',
   `/api/admin/users/${validUUID('12')}`,
   '/api/admin/usage',
-  '/api/admin/usage-overrides',
   '/api/admin/subscriptions',
   '/api/admin/billing/adjustments',
   '/api/admin/revenue',
@@ -51,10 +50,8 @@ const PLATFORM_WRITE_ROUTES: { method: 'POST' | 'PUT' | 'PATCH' | 'DELETE'; url:
       ownerPhone: '01011112222',
       username: 'gate_test_center',
       password: 'GatePass123',
-      plan: 'ESSENTIAL',
     },
   },
-  { method: 'PATCH', url: `/api/admin/tenants/${validUUID('11')}/limits`, payload: { maxUsers: 7, reason: 'Gate test' } },
   { method: 'PATCH', url: `/api/admin/tenants/${validUUID('11')}/extend-trial`, payload: { days: 7 } },
   { method: 'PATCH', url: `/api/admin/tenants/${validUUID('11')}/suspend`, payload: { isActive: false } },
   { method: 'POST', url: `/api/admin/tenants/${validUUID('11')}/view-as`, payload: { reason: 'Gate test' } },
@@ -74,19 +71,13 @@ const PLATFORM_WRITE_ROUTES: { method: 'POST' | 'PUT' | 'PATCH' | 'DELETE'; url:
   {
     method: 'POST',
     url: '/api/admin/subscriptions',
-    payload: { tenantId: validUUID('11'), plan: 'ESSENTIAL', paymentMethod: 'INSTAPAY', paymentReference: 'GATE-1' },
+    payload: { tenantId: validUUID('11'), paymentMethod: 'INSTAPAY', paymentReference: 'GATE-1' },
   },
   { method: 'POST', url: `/api/admin/subscriptions/${validUUID('13')}/cancel`, payload: { reason: 'Gate test', immediate: true } },
   { method: 'POST', url: `/api/admin/subscriptions/${validUUID('13')}/reactivate`, payload: { reason: 'Gate test' } },
   { method: 'POST', url: `/api/admin/subscriptions/${validUUID('13')}/discount`, payload: { kind: 'PERCENT', value: 10, reason: 'Gate test' } },
   { method: 'POST', url: `/api/admin/subscriptions/${validUUID('13')}/credit`, payload: { amount: 100, reason: 'Gate test' } },
   { method: 'POST', url: `/api/admin/subscriptions/${validUUID('13')}/refund`, payload: { amount: 100, reason: 'Gate test' } },
-  {
-    method: 'POST',
-    url: '/api/admin/usage-overrides',
-    payload: { tenantId: validUUID('11'), metric: 'VISITS', extraAmount: 10, reason: 'Gate test' },
-  },
-  { method: 'DELETE', url: `/api/admin/usage-overrides/${validUUID('14')}` },
   { method: 'POST', url: '/api/admin/support-notes', payload: { tenantId: validUUID('11'), text: 'Gate test note' } },
   { method: 'PATCH', url: `/api/admin/support-notes/${validUUID('15')}`, payload: { status: 'RESOLVED' } },
   { method: 'PATCH', url: '/api/admin/account/password', payload: { currentPassword: 'GatePass123', newPassword: 'GatePass456' } },
@@ -281,7 +272,7 @@ describe('PLATFORM OPS — input validation runs before any DB access', () => {
       method: 'POST',
       url: '/api/admin/notifications',
       headers: authHeaders(token),
-      payload: { titleAr: 'صيانة', bodyAr: 'سيتم التوقف المؤقت', audience: 'PLAN' },
+      payload: { titleAr: 'صيانة', bodyAr: 'سيتم التوقف المؤقت', audience: 'CENTER' },
     });
     assert.equal(res.statusCode, 400);
     assert.equal(errorCode(res.body), 'AUDIENCE_IDS_REQUIRED');
@@ -296,6 +287,20 @@ describe('PLATFORM OPS — input validation runs before any DB access', () => {
       url: '/api/admin/notifications',
       headers: authHeaders(token),
       payload: { titleAr: 'x', bodyAr: 'y', audience: 'EVERYONE_EVER' },
+    });
+    assert.equal(res.statusCode, 400);
+    assert.equal(errorCode(res.body), 'VALIDATION_ERROR');
+    await app.close();
+  });
+
+  test('a PLAN audience is rejected — there is no plan targeting any more', async () => {
+    const app = await createTestApp();
+    const { token } = superAdminAuth(app);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/admin/notifications',
+      headers: authHeaders(token),
+      payload: { titleAr: 'x', bodyAr: 'y', audience: 'PLAN' },
     });
     assert.equal(res.statusCode, 400);
     assert.equal(errorCode(res.body), 'VALIDATION_ERROR');

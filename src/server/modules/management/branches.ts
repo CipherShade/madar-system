@@ -1,7 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { Role } from '../../../shared/constants/index.js';
-import { canAddBranch } from '../../../shared/constants/plans.js';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
 import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
@@ -77,28 +76,6 @@ const branchRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(400).send(invalid('رقم الهاتف يجب أن يكون رقم محمول مصري صحيح.', 'Use a valid Egyptian mobile number.'));
     }
 
-    const tenant = await prisma.tenant.findUnique({
-      where: { id: tenantId },
-      select: { plan: true },
-    });
-
-    const currentCount = await prisma.branch.count({
-      where: { tenantId, isActive: true },
-    });
-
-    // Enforce server-side branch limit
-    if (!canAddBranch(currentCount, tenant?.plan)) {
-      return reply.code(403).send({
-        success: false,
-        error: {
-          code: 'BRANCH_LIMIT_REACHED',
-          message: 'إضافة أكثر من فرع متاحة في باقة Multi-Branch.',
-          messageEn: 'Adding more than 1 branch is only available on the Multi-Branch plan.',
-          cta: 'UPGRADE_PLAN',
-        },
-      });
-    }
-
     try {
       const branch = await prisma.$transaction(async (tx) => {
         const created = await tx.branch.create({
@@ -143,29 +120,8 @@ const branchRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(400).send(invalid('معرّف الفرع غير صالح.', 'The branch id is invalid.'));
     }
 
-    const tenantId = request.user?.tenantId;
     if (request.body.phoneNumber && !egyptianPhone.test(request.body.phoneNumber)) {
       return reply.code(400).send(invalid('رقم الهاتف يجب أن يكون رقم محمول مصري صحيح.', 'Use a valid Egyptian mobile number.'));
-    }
-
-    // If reactivating a branch, verify branch limits
-    if (tenantId && request.body.isActive === true) {
-      const existing = await prisma.branch.findUnique({ where: { id: request.params.id }, select: { isActive: true } });
-      if (existing && !existing.isActive) {
-        const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { plan: true } });
-        const currentCount = await prisma.branch.count({ where: { tenantId, isActive: true } });
-        if (!canAddBranch(currentCount, tenant?.plan)) {
-          return reply.code(403).send({
-            success: false,
-            error: {
-              code: 'BRANCH_LIMIT_REACHED',
-              message: 'إضافة أكثر من فرع متاحة في باقة Multi-Branch.',
-              messageEn: 'Adding more than 1 branch is only available on the Multi-Branch plan.',
-              cta: 'UPGRADE_PLAN',
-            },
-          });
-        }
-      }
     }
 
     try {

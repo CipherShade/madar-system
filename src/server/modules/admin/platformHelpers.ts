@@ -15,7 +15,7 @@ import { normalizeArabicText } from '../../../shared/utils/arabicNormalization.j
 import { prisma } from '../../lib/prisma.js';
 import { resolveUsagePeriodStart } from '../subscriptions/subscriptions.js';
 import { computeTenantUsage } from './billingMath.js';
-import type { UsageMetric, UsageMetricState } from './billingMath.js';
+import type { UsageMetricState } from './billingMath.js';
 
 export function fail(reply: FastifyReply, status: number, code: string, message: string, messageEn: string) {
   return reply.code(status).send({ success: false, error: { code, message, messageEn } });
@@ -79,12 +79,7 @@ export type UsageTenant = {
   id: string;
   name: string;
   slug: string;
-  plan: string;
   isActive: boolean;
-  maxDesks: number;
-  maxBranches: number;
-  maxUsers: number;
-  visitLimit: number | null;
   createdAt: Date;
 };
 
@@ -131,20 +126,17 @@ export type TenantUsageRow = {
   branchCount: number;
   subscriptionStatus: string;
   metrics: UsageMetricState[];
-  warningCount: number;
-  overCount: number;
-  highestLevel: UsageMetricState['level'];
 };
 
 /**
- * Full usage picture for the given centers: counts, effective limits (plan
- * limit + any active usage override) and the warning state per metric.
+ * Full usage picture for the given centers: counts per metric. The product is
+ * unlimited, so there is no effective limit and no warning state.
  */
 export async function computeUsageForTenants(tenants: UsageTenant[], now = new Date()): Promise<TenantUsageRow[]> {
   if (tenants.length === 0) return [];
 
   const tenantIds = tenants.map((tenant) => tenant.id);
-  const [activeSubscriptions, allSubscriptions, userCounts, receptionistCounts, studentCounts, branchCounts, overrides] = await Promise.all([
+  const [activeSubscriptions, allSubscriptions, userCounts, receptionistCounts, studentCounts, branchCounts] = await Promise.all([
     prisma.subscription.findMany({
       where: { tenantId: { in: tenantIds }, status: 'ACTIVE' },
       select: { tenantId: true, status: true, periodStart: true, periodEnd: true },
@@ -163,10 +155,6 @@ export async function computeUsageForTenants(tenants: UsageTenant[], now = new D
     }),
     prisma.student.groupBy({ by: ['tenantId'], where: { tenantId: { in: tenantIds } }, _count: { _all: true } }),
     prisma.branch.groupBy({ by: ['tenantId'], where: { tenantId: { in: tenantIds }, isActive: true }, _count: { _all: true } }),
-    prisma.usageOverride.findMany({
-      where: { tenantId: { in: tenantIds }, OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
-      select: { tenantId: true, metric: true, extraAmount: true },
-    }),
   ]);
 
   const byTenantSubscriptions = new Map<string, ActivePeriod[]>();
@@ -191,30 +179,15 @@ export async function computeUsageForTenants(tenants: UsageTenant[], now = new D
     );
   }
 
-  const [visitCounts, userByTenant, receptionistsByTenant, studentsByTenant, branchesByTenant, overridesByTenant] = await Promise.all([
+  const [visitCounts, userByTenant, receptionistsByTenant, studentsByTenant, branchesByTenant] = await Promise.all([
     countVisitsPerTenant(periodStarts, tenantIds),
     new Map(userCounts.map((row) => [row.tenantId, row._count._all])),
     new Map(receptionistCounts.map((row) => [row.tenantId, row._count._all])),
     new Map(studentCounts.map((row) => [row.tenantId, row._count._all])),
     new Map(branchCounts.map((row) => [row.tenantId, row._count._all])),
-    new Map<string, Map<string, number>>(
-      [...new Set(overrides.map((row) => row.tenantId))].map((tenantId) => [
-        tenantId,
-        new Map(
-          overrides
-            .filter((row) => row.tenantId === tenantId)
-            .map((row) => [row.metric.toUpperCase(), row.extraAmount] as [string, number]),
-        ),
-      ]),
-    ),
   ]);
 
   return tenants.map((tenant) => {
-    const activeOverrideExtra: Partial<Record<UsageMetric, number>> = {};
-    for (const [metric, extra] of overridesByTenant.get(tenant.id) ?? []) {
-      activeOverrideExtra[metric as UsageMetric] = extra;
-    }
-
     const branchCount = branchesByTenant.get(tenant.id) ?? 0;
     const subscriptionStatus = latestStatusByTenant.get(tenant.id) ?? (tenant.isActive ? 'ACTIVE' : 'TRIALING');
 
@@ -224,13 +197,6 @@ export async function computeUsageForTenants(tenants: UsageTenant[], now = new D
       studentCount: studentsByTenant.get(tenant.id) ?? 0,
       visitCount: visitCounts.get(tenant.id) ?? 0,
       branchCount,
-      limits: {
-        maxDesks: tenant.maxDesks,
-        maxBranches: tenant.maxBranches,
-        maxUsers: tenant.maxUsers,
-        visitLimit: tenant.visitLimit,
-      },
-      activeOverrideExtra,
     });
 
     return {

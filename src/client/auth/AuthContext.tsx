@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import type { Role, TenantPlan } from '../../shared/constants/index.js';
+import type { Role } from '../../shared/constants/index.js';
 import { apiUrl } from '../lib/config';
 
-type AuthTenant = { id: string; name: string; slug: string; plan: string; trialEndsAt: string | null; isActive: boolean };
+type AuthTenant = { id: string; name: string; slug: string; trialEndsAt: string | null; isActive: boolean };
 type AuthUser = { id: string; tenantId?: string | null; username: string; fullName: string; role: Role; preferredLanguage: string; phoneNumber: string | null; tenant?: AuthTenant | null };
 type Credentials = { username: string; password: string };
 export type RegisterCenterParams = {
@@ -11,7 +11,6 @@ export type RegisterCenterParams = {
   ownerPhone: string;
   username: string;
   password: string;
-  plan?: TenantPlan;
   paymentReference: string;
 };
 

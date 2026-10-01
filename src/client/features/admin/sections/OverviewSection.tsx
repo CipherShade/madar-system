@@ -73,7 +73,6 @@ export function OverviewSection({ onNavigate }: { onNavigate?: (section: Section
             <Metric label={t('superAdmin.overview.monthlyVisits')} value={formatNumber(data.monthlyVisits)} icon={Activity} />
             <Metric label={t('superAdmin.overview.activeCenters')} value={formatNumber(data.tenants.active)} icon={CheckCircle2} hint={`${t('superAdmin.overview.ofTotal', { total: formatNumber(data.tenants.total) })}`} />
             <Metric label={t('superAdmin.overview.trialCenters')} value={formatNumber(data.tenants.trial)} icon={Clock} />
-            <Metric label={t('superAdmin.overview.freeCenters')} value={formatNumber(data.tenants.free)} icon={Building2} />
             <Metric label={t('superAdmin.overview.suspendedCenters')} value={formatNumber(data.tenants.suspended)} icon={FileWarning} />
             <Metric label={t('superAdmin.overview.newThisMonth')} value={formatNumber(data.tenants.newThisMonth)} icon={CalendarClock} />
             <Metric label={t('superAdmin.overview.totalUsers')} value={formatNumber(data.users.total)} icon={Users} hint={t('superAdmin.overview.inactiveUsers', { count: data.users.inactive })} />
@@ -81,7 +80,6 @@ export function OverviewSection({ onNavigate }: { onNavigate?: (section: Section
             <Metric label={t('superAdmin.overview.stalePending')} value={formatNumber(data.billing.stalePending)} icon={CalendarClock} />
             <Metric label={t('superAdmin.overview.openNotes')} value={formatNumber(data.support.openNotes)} icon={LifeBuoy} />
             <Metric label={t('superAdmin.overview.pendingNotifications')} value={formatNumber(data.notifications.total)} icon={Wallet} />
-            <Metric label={t('superAdmin.overview.usageOverrides')} value={formatNumber(data.usageOverrides.active)} icon={Activity} />
             <Metric label={t('superAdmin.overview.openViewAsSessions')} value={formatNumber(data.viewAs.openSessions)} icon={Eye} />
           </div>
 
@@ -119,13 +117,8 @@ export function OverviewSection({ onNavigate }: { onNavigate?: (section: Section
                     style={{ padding: '10px 14px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}
                   >
                     <strong style={{ fontSize: 13 }}>{center.centerName}</strong>
-                    <Pill tone={center.level === 'over' ? 'danger' : 'warning'}>
-                      {t(`superAdmin.usage.level.${center.level}`, center.level)}
-                    </Pill>
                     <span className="page-sub" style={{ fontSize: 12 }}>
-                      {center.metrics
-                        .map((metric) => t(`superAdmin.usage.metric.${metric.metric}`, metric.metric))
-                        .join(' · ')}
+                      {t('superAdmin.usage.metric.VISITS')}: {formatNumber(center.visitsThisPeriod)}
                     </span>
                     {onNavigate && (
                       <button

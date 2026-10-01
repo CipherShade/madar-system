@@ -7,7 +7,7 @@ import { authenticate, requireRoles } from '../auth/auth.js';
 import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
 import { recordAuditEntry } from '../reports/audit.js';
 import { isValidMoneyAmount, isValidUUID, parsePagination } from '../../lib/http.js';
-import { checkAndIncrementVisitUsage } from '../subscriptions/usageService.js';
+import { recordVisitUsage } from '../subscriptions/usageService.js';
 
 export function calculateChangeOwed(amountReceived: number, fee: number): number {
   const change = amountReceived - fee;
@@ -211,9 +211,8 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
         const currentAttendanceCount = await transaction.attendance.count({ where: { sessionId, status: { not: AttendanceStatus.VOID } } });
         if (currentAttendanceCount >= session.room.capacity) throw new Error('SESSION_CAPACITY_REACHED');
 
-        // Server-side subscription monthly visit limit check and atomic usage tracking
         if (effectiveTenantId) {
-          await checkAndIncrementVisitUsage(transaction, {
+          await recordVisitUsage(transaction, {
             tenantId: effectiveTenantId,
             branchId: session.room.branchId,
           });
@@ -273,17 +272,6 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
         },
       });
     } catch (error) {
-      if (error instanceof Error && error.message === 'VISIT_LIMIT_REACHED') {
-        return reply.code(403).send({
-          success: false,
-          error: {
-            code: 'VISIT_LIMIT_REACHED',
-            message: 'وصلت للحد الشهري للزيارات. قم بترقية باقتك للاستمرار في تسجيل زيارات جديدة.',
-            messageEn: 'Monthly student visit limit reached. Please upgrade your plan to continue recording visits.',
-            cta: 'UPGRADE_PLAN',
-          },
-        });
-      }
       if (error instanceof Error && error.message === 'SHIFT_CLOSED_DURING_CHECKIN') {
         return reply.code(409).send(validation('تم إغلاق الوردية أثناء تسجيل الحضور.', 'The shift was closed while checking in.', 'SHIFT_CLOSED'));
       }

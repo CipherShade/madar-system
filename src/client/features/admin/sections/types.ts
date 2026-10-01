@@ -12,12 +12,6 @@ export type UsageMetricName = 'USERS' | 'RECEPTIONISTS' | 'STUDENTS' | 'VISITS' 
 export type UsageMetricState = {
   metric: UsageMetricName;
   used: number;
-  limit: number | null;
-  percent: number | null;
-  remaining: number | null;
-  level: UsageLevel;
-  overLimit: boolean;
-  warning: boolean;
 };
 
 export type PaymentState = 'paid' | 'trial' | 'due' | 'none';
@@ -35,18 +29,11 @@ export type TenantRow = {
   id: string;
   name: string;
   slug: string;
-  plan: string;
-  planNameAr: string;
-  planNameEn: string;
   priceMonthly: number;
   isActive: boolean;
   trialEndsAt: string | null;
   trialDaysRemaining: number;
   isTrialActive: boolean;
-  maxDesks: number;
-  maxBranches: number;
-  maxUsers: number;
-  visitLimit: number | null;
   discountBalance: string;
   creditBalance: string;
   createdAt: string;
@@ -54,12 +41,6 @@ export type TenantRow = {
   renewalAmount: string | null;
   paymentStatus: PaymentState;
   visitsThisPeriod: number;
-  visitLimitEffective: number | null;
-  visitUsagePercent: number | null;
-  userUsagePercent: number | null;
-  usageLevel: UsageLevel;
-  isApproachingLimit: boolean;
-  isOverLimit: boolean;
   userCount: number;
   receptionistCount: number;
   studentCount: number;
@@ -89,9 +70,6 @@ export type CenterUsage = {
   studentCount: number;
   visitCount: number;
   metrics: UsageMetricState[];
-  warningCount: number;
-  overCount: number;
-  highestLevel: UsageLevel;
 };
 
 export type CenterHealthAlert = {
@@ -123,14 +101,13 @@ export type BillingAdjustment = {
   createdAt: string;
   createdById: string;
   createdBy?: { id: string; fullName: string; username: string } | null;
-  tenant?: { id: string; name: string; slug: string; plan: string } | null;
-  subscription?: { id: string; plan: string; status: string; amount: string } | null;
+  tenant?: { id: string; name: string; slug: string } | null;
+  subscription?: { id: string; status: string; amount: string } | null;
 };
 
 export type SubscriptionRow = {
   id: string;
   tenantId: string;
-  plan: string;
   status: 'PENDING' | 'TRIALING' | 'ACTIVE' | 'PAST_DUE' | 'CANCELED' | 'EXPIRED' | string;
   amount: string;
   currency: string;
@@ -141,7 +118,7 @@ export type SubscriptionRow = {
   createdAt: string;
   isStale: boolean;
   adjustments: BillingAdjustment[];
-  tenant: { id: string; name: string; slug: string; plan: string; isActive: boolean; ownerName: string | null } | null;
+  tenant: { id: string; name: string; slug: string; isActive: boolean; ownerName: string | null } | null;
 };
 
 export type CenterDetail = {
@@ -155,7 +132,6 @@ export type CenterDetail = {
   usage: CenterUsage | null;
   users: CenterUserRow[];
   supportNotes: SupportNote[];
-  overrides: UsageOverride[];
   healthAlerts: CenterHealthAlert[];
   adjustments: BillingAdjustment[];
   subscriptions: SubscriptionRow[];
@@ -166,12 +142,7 @@ export type UsageRow = {
   id: string;
   name: string;
   slug: string;
-  plan: string;
   isActive: boolean;
-  maxDesks: number;
-  maxBranches: number;
-  maxUsers: number;
-  visitLimit: number | null;
   createdAt: string;
   periodStart: string;
   userCount: number;
@@ -181,9 +152,6 @@ export type UsageRow = {
   branchCount: number;
   subscriptionStatus: string;
   metrics: UsageMetricState[];
-  warningCount: number;
-  overCount: number;
-  highestLevel: UsageLevel;
 };
 
 export type PlatformUser = {
@@ -199,7 +167,6 @@ export type PlatformUser = {
   lastLoginAt: string | null;
   createdAt: string;
   centerName: string | null;
-  centerPlan: string | null;
 };
 
 export type PlatformUserActivity = {
@@ -230,17 +197,12 @@ export type PlatformUserDetail = {
     id: string;
     name: string;
     slug: string;
-    plan: string;
     isActive: boolean;
-    maxUsers: number;
-    visitLimit: number | null;
-    maxDesks: number;
-    maxBranches: number;
   } | null;
   _count: { auditLogs: number; shiftRegisters: number; attendances: number };
 };
 
-export type CenterOption = { id: string; name: string; slug: string; plan: string };
+export type CenterOption = { id: string; name: string; slug: string };
 
 export type RevenuePoint = { key: string; amount: number; count: number };
 
@@ -248,7 +210,6 @@ export type RevenueReport = {
   mrr: number;
   atRiskRevenue: number;
   revenueThisMonth: number;
-  mrrByPlan: Record<string, number>;
   history: RevenuePoint[];
   movements: {
     newSubscriptions: number;
@@ -262,13 +223,12 @@ export type RevenueReport = {
 
 export type PendingPayment = {
   id: string;
-  plan: string;
   amount: string;
   currency: string;
   paymentMethod: string | null;
   paymentReference: string | null;
   createdAt: string;
-  tenant: { id: string; name: string; slug: string; plan: string };
+  tenant: { id: string; name: string; slug: string };
 };
 
 export type HealthEvent = {
@@ -282,9 +242,8 @@ export type HealthEvent = {
 export type ApproachingLimitRow = {
   tenantId: string;
   centerName: string;
-  level: UsageLevel;
-  warningCount: number;
-  overCount: number;
+  visitsThisPeriod: number;
+  receptionistCount: number;
   metrics: UsageMetricState[];
 };
 
@@ -299,7 +258,6 @@ export type RecentActivityRow = {
 
 export type PlatformConsole = {
   mrrEgp: number;
-  mrrByPlan: Record<string, number>;
   revenueThisMonth: number;
   monthlyVisits: number;
   tenants: {
@@ -307,7 +265,6 @@ export type PlatformConsole = {
     active: number;
     trial: number;
     suspended: number;
-    free: number;
     newThisMonth: number;
   };
   users: { total: number; inactive: number };
@@ -318,7 +275,6 @@ export type PlatformConsole = {
     recentNotes: { id: string; status: string; createdAt: string; tenant: { id: string; name: string } | null }[];
   };
   notifications: { total: number };
-  usageOverrides: { active: number };
   viewAs: { openSessions: number };
   recentHealthEvents: HealthEvent[];
   recentActivity: RecentActivityRow[];
@@ -340,7 +296,7 @@ export type PlatformNotification = {
   id: string;
   titleAr: string;
   bodyAr: string;
-  audience: 'ALL_CENTERS' | 'PLAN' | 'CENTER' | 'USER' | string;
+  audience: 'ALL_CENTERS' | 'CENTER' | 'USER' | string;
   audienceIds: string[];
   status: 'DRAFT' | 'ACTIVE' | 'ARCHIVED' | string;
   scheduledAt: string | null;
@@ -352,7 +308,7 @@ export type FeatureFlag = {
   key: string;
   labelAr: string;
   descriptionAr: string;
-  value: { enabled: boolean; plans: Record<string, boolean>; centers: Record<string, boolean> };
+  value: { enabled: boolean; centers: Record<string, boolean> };
   updatedAt: string | null;
 };
 
@@ -451,30 +407,6 @@ export type SupportNote = {
   status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED' | string;
   createdAt: string;
   updatedAt: string;
-  tenant: { id: string; name: string; slug: string; plan: string };
+  tenant: { id: string; name: string; slug: string };
   author: { id: string; fullName: string; username: string };
-};
-
-export type UsageOverride = {
-  id: string;
-  metric: string;
-  extraAmount: number;
-  reason: string | null;
-  expiresAt: string | null;
-  createdAt: string;
-  tenant: { id: string; name: string; slug: string; plan: string };
-  grantedBy: { id: string; fullName: string; username: string };
-};
-
-export type PlanCatalogEntry = {
-  id: string;
-  nameAr: string;
-  nameEn: string;
-  priceMonthly: number;
-  public: boolean;
-  purchasable: boolean;
-  maxDesks: number | null;
-  maxUsers: number | null;
-  maxBranches: number | null;
-  visitLimit: number | null;
 };

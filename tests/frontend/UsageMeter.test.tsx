@@ -8,7 +8,7 @@ import { jsonRes, stubFetch } from './testUtils';
  *
  * `/subscriptions/current` builds its `usage` payload by spreading an optional
  * summary over a period/visits base. When the summary fails server-side the
- * object is still truthy but has no `plan`, and the usage meter used to
+ * object is still truthy but carries no counts, and the usage meter used to
  * dereference `plan.name` unguarded — which threw during render and, with no
  * error boundary mounted, unmounted the entire app: the owner saw their data
  * for a second and then an empty screen.
@@ -27,31 +27,72 @@ describe('UsageMeter with a degraded usage payload', () => {
     ).not.toThrow();
   });
 
+  it('renders nothing instead of throwing when usedVisits is not a number', () => {
+    stubFetch([]);
+    expect(() =>
+      render(
+        <UsageMeter
+          usage={{ periodStart: '2026-09-01T00:00:00.000Z', periodEnd: '2026-10-01T00:00:00.000Z' } as never}
+          loading={false}
+          onNavigateToBilling={() => {}}
+        />,
+      ),
+    ).not.toThrow();
+  });
+
   it('keeps rendering a summary that did load', () => {
     stubFetch([]);
     render(
       <UsageMeter
         usage={{
-          plan: {
-            id: 'BASIC', name: 'Basic', nameAr: 'أساسي', priceEgp: 1500,
-            monthlyVisitLimit: 2000, maxReceptionists: 5, maxBranches: 1,
-            positioningAr: '', positioningEn: '',
-          },
+          tenantId: 't1',
+          tenantName: 'Cairo Center',
+          periodStart: '2026-09-01T00:00:00.000Z',
+          periodEnd: '2026-10-01T00:00:00.000Z',
           usedVisits: 10,
-          monthlyLimit: 2000,
-          remainingVisits: 1990,
-          percentage: 0.5,
-          warningLevel: 'NONE',
-          receptionistCount: 1,
-          receptionistLimit: 5,
-          branchCount: 1,
-          branchLimit: 1,
-        } as never}
+          branchUsage: [{ branchId: 'b1', branchName: 'Maadi Branch', visitCount: 4 }],
+        }}
         loading={false}
         onNavigateToBilling={() => {}}
       />,
     );
-    expect(screen.getByText(/Basic/)).toBeInTheDocument();
+    expect(screen.getByText('Maadi Branch')).toBeInTheDocument();
+  });
+
+  it('shows a count, never a quota, a percentage or an upgrade prompt', () => {
+    stubFetch([]);
+    const { container } = render(
+      <UsageMeter
+        usage={{
+          periodStart: '2026-09-01T00:00:00.000Z',
+          periodEnd: '2026-10-01T00:00:00.000Z',
+          usedVisits: 10,
+        }}
+        loading={false}
+        onNavigateToBilling={() => {}}
+      />,
+    );
+    // No progress bar, no percentage, and no "x of y" — an unlimited product
+    // has nothing to fill.
+    expect(container.querySelector('[role="progressbar"]')).toBeNull();
+    expect(container.textContent).not.toMatch(/20\s*%/);
+    expect(container.textContent).not.toMatch(/\/\s*2\s*000/);
+  });
+
+  it('shows the billing period as a real date range', () => {
+    stubFetch([]);
+    const { container } = render(
+      <UsageMeter
+        usage={{
+          periodStart: '2026-09-01T00:00:00.000Z',
+          periodEnd: '2026-10-01T00:00:00.000Z',
+          usedVisits: 10,
+        }}
+        loading={false}
+        onNavigateToBilling={() => {}}
+      />,
+    );
+    expect(container.textContent).not.toMatch(/Invalid Date/);
   });
 });
 
@@ -63,7 +104,7 @@ describe('DashboardPage when the usage summary is unavailable', () => {
       { match: /\/api\/scheduling\/sessions/, handle: () => jsonRes({ sessions: [] }) },
       { match: /\/api\/shifts\/current/, handle: () => jsonRes({ shift: null }) },
       { match: /\/api\/reports\/daily/, handle: () => jsonRes({ data: { totalAttendees: 0, centerNetRevenue: 0, teacherPayouts: 0, digitalCollections: 0 } }) },
-      { match: /\/api\/subscriptions\/current/, handle: () => jsonRes({ data: { usage: { summaryAvailable: false, periodStart: '2026-09-01T00:00:00.000Z', visits: { used: 0, limit: 500, level: 'ok' } } } }) },
+      { match: /\/api\/subscriptions\/current/, handle: () => jsonRes({ data: { usage: { summaryAvailable: false, periodStart: '2026-09-01T00:00:00.000Z', visits: { used: 0 } } } }) },
     ]);
 
     const { DashboardPage } = await import('@client/features/dashboard/DashboardPage');

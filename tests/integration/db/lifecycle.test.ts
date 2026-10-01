@@ -192,7 +192,6 @@ describe(
       const subscription = await prisma.subscription.create({
         data: {
           tenantId,
-          plan: 'GROWTH',
           amount: 1199,
           status: 'ACTIVE',
           periodStart: new Date(now.getTime() - 5 * 24 * 60 * 60_000),
@@ -208,7 +207,6 @@ describe(
       // and the restore that follows has to bring it back.
       const data = {
         tenantId,
-        plan: 'GROWTH' as const,
         amount: 1199,
         status,
         periodStart: new Date(periodEnd.getTime() - 30 * 24 * 60 * 60_000),

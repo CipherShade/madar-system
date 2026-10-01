@@ -22,7 +22,6 @@ export type SectionId =
   | 'centers'
   | 'users'
   | 'subscriptions'
-  | 'plans'
   | 'usage'
   | 'revenue'
   | 'support'
@@ -60,7 +59,6 @@ export const SECTIONS: SectionDefinition[] = [
   { id: 'centers', labelKey: 'superAdmin.nav.centers', subtitleKey: 'superAdmin.centers.subtitle', icon: Building2, group: 'manage' },
   { id: 'users', labelKey: 'superAdmin.nav.users', subtitleKey: 'superAdmin.users.subtitle', icon: Users, group: 'manage' },
   { id: 'subscriptions', labelKey: 'superAdmin.nav.subscriptions', subtitleKey: 'superAdmin.subscriptions.subtitle', icon: CreditCard, group: 'manage' },
-  { id: 'plans', labelKey: 'superAdmin.nav.plans', subtitleKey: 'superAdmin.plans.subtitle', icon: SlidersHorizontal, group: 'manage' },
   { id: 'support', labelKey: 'superAdmin.nav.support', subtitleKey: 'superAdmin.support.subtitle', icon: LifeBuoy, group: 'manage' },
   { id: 'notifications', labelKey: 'superAdmin.nav.notifications', subtitleKey: 'superAdmin.notifications.subtitle', icon: SlidersHorizontal, group: 'configure' },
   { id: 'featureFlags', labelKey: 'superAdmin.nav.featureFlags', subtitleKey: 'superAdmin.featureFlags.subtitle', icon: Flag, group: 'configure' },

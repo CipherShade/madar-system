@@ -1,4 +1,4 @@
-import { KeyRound, Plus, Save, UserCog, X, Sparkles, AlertTriangle } from 'lucide-react';
+import { KeyRound, Plus, Save, UserCog, X } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../auth/AuthContext';
@@ -8,18 +8,6 @@ import { EmptyState, ErrorState, LoadingState, PermissionState } from '../../com
 import type { Role } from '../../../shared/constants/index';
 
 type UserRow = { id: string; username: string; fullName: string; role: Role; phoneNumber: string | null; preferredLanguage: string; isActive: boolean; createdAt: string };
-
-type SubscriptionData = {
-  plan: string;
-  usage?: {
-    receptionists?: {
-      current: number;
-      max: number;
-      isUnlimited: boolean;
-      canAdd: boolean;
-    };
-  };
-};
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(apiUrl(`/api${path}`), { ...options, credentials: 'include', headers: { 'Content-Type': 'application/json', ...options?.headers } });
@@ -35,7 +23,6 @@ export function UsersPage() {
   const { user: currentUser, hasRole } = useAuth();
   const isAdmin = hasRole('ADMIN');
   const [users, setUsers] = useState<UserRow[]>([]);
-  const [subData, setSubData] = useState<SubscriptionData | null>(null);
   const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -45,12 +32,8 @@ export function UsersPage() {
     setLoading(true);
     setError('');
     try {
-      const [usersRes, subRes] = await Promise.all([
-        request<{ users: UserRow[] }>('/users'),
-        request<SubscriptionData>('/subscriptions/current').catch(() => null),
-      ]);
+      const usersRes = await request<{ users: UserRow[] }>('/users');
       setUsers(usersRes.users);
-      if (subRes) setSubData(subRes);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('users.loadError'));
     } finally {
@@ -90,8 +73,7 @@ export function UsersPage() {
 
   if (!isAdmin) return <PermissionState />;
 
-  const recUsage = subData?.usage?.receptionists;
-  const isLimitReached = recUsage && !recUsage.isUnlimited && recUsage.current >= recUsage.max;
+  const receptionistCount = users.filter((item) => item.role === 'RECEPTIONIST').length;
 
   return (
     <section className="space-y-6">
@@ -99,11 +81,9 @@ export function UsersPage() {
         <div>
           <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold text-white">{t('users.title')}</h2>
-            {recUsage && (
-              <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${isLimitReached ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-slate-800 text-slate-300 border border-slate-700'}`}>
-                {t('usage.receptionists')}: {recUsage.current} / {recUsage.isUnlimited ? t('plans.limits.unlimited') : recUsage.max}
-              </span>
-            )}
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-800 px-3 py-1 text-xs font-bold text-slate-300">
+              {t('usage.receptionistsLabel')}: {receptionistCount}
+            </span>
           </div>
           <p className="mt-1 text-sm text-slate-400">{t('users.sectionLabel')}</p>
         </div>
@@ -116,25 +96,6 @@ export function UsersPage() {
           {adding ? t('actions.cancel') : t('users.add')}
         </button>
       </div>
-
-      {isLimitReached && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-amber-200">
-          <div className="flex items-center gap-2.5">
-            <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0" />
-            <div>
-              <p className="font-bold text-sm">لقد وصلت إلى الحد الأقصى لحسابات الاستقبال في باقتك ({recUsage.max} حساب).</p>
-              <p className="text-xs text-amber-300/80 mt-0.5">قم بترقية باقتك إلى Pro أو Multi-Branch للحصول على حسابات استقبال غير محدودة.</p>
-            </div>
-          </div>
-          <a
-            href="#subscription"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-400 transition"
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            {t('usage.upgradePlan')}
-          </a>
-        </div>
-      )}
 
       {error && <ErrorState message={error} onRetry={() => void load()} />}
       {success && <p role="status" className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">{success}</p>}

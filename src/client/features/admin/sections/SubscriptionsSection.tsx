@@ -6,7 +6,6 @@ import { api, money } from '../../../lib/api';
 import { EmptyBlock, ErrorBlock, FilterSelect, LoadingBlock, Pagination, SectionHeader, SectionTable } from './primitives';
 import { formatDate, formatDateTime } from './format';
 import { useCenterOptions } from './hooks';
-import { planPill } from './plan';
 import type { BillingAdjustment, CenterOption, SubscriptionRow } from './types';
 
 const LIMIT = 20;
@@ -156,7 +155,6 @@ function ActionModal({
 function NewSubscriptionModal({ centers, onClose, onCreated }: { centers: CenterOption[]; onClose: () => void; onCreated: () => void }) {
   const { t } = useTranslation();
   const [centerId, setCenterId] = useState('');
-  const [plan, setPlan] = useState('ESSENTIAL');
   const [paymentMethod, setPaymentMethod] = useState('INSTAPAY');
   const [paymentReference, setPaymentReference] = useState('');
   const [startImmediately, setStartImmediately] = useState(false);
@@ -174,7 +172,6 @@ function NewSubscriptionModal({ centers, onClose, onCreated }: { centers: Center
         method: 'POST',
         body: JSON.stringify({
           tenantId: centerId,
-          plan,
           paymentMethod,
           ...(paymentReference.trim() ? { paymentReference: paymentReference.trim() } : {}),
           startImmediately,
@@ -203,14 +200,6 @@ function NewSubscriptionModal({ centers, onClose, onCreated }: { centers: Center
               {centers.map((center) => (
                 <option key={center.id} value={center.id}>{center.name}</option>
               ))}
-            </select>
-          </div>
-          <div>
-            <label className="form-label" htmlFor="sa-new-sub-plan">{t('superAdmin.subscriptions.fieldPlan')}</label>
-            <select id="sa-new-sub-plan" className="form-input" value={plan} onChange={(event) => setPlan(event.target.value)}>
-              <option value="ESSENTIAL">{t('superAdmin.usage.plan.ESSENTIAL')}</option>
-              <option value="CONTROL">{t('superAdmin.usage.plan.CONTROL')}</option>
-              <option value="FREE_TRIAL">{t('superAdmin.usage.plan.FREE_TRIAL')}</option>
             </select>
           </div>
           <div>
@@ -253,7 +242,6 @@ export function SubscriptionsSection() {
   const [views, setViews] = useState<string[]>(['active']);
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [view, setView] = useState('all');
-  const [plan, setPlan] = useState('all');
   const [centerId, setCenterId] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -275,7 +263,6 @@ export function SubscriptionsSection() {
     setFailed(false);
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(LIMIT), view });
-      if (plan !== 'all') params.set('plan', plan);
       if (centerId) params.set('centerId', centerId);
       if (search.trim()) params.set('search', search.trim());
       const data = await api<{
@@ -312,7 +299,7 @@ export function SubscriptionsSection() {
 
   useEffect(() => {
     void load();
-  }, [page, view, plan, centerId, search]);
+  }, [page, view, centerId, search]);
 
   useEffect(() => {
     void loadAdjustments();
@@ -407,19 +394,6 @@ export function SubscriptionsSection() {
             ...centers.map((center) => ({ value: center.id, label: center.name })),
           ]}
         />
-        <FilterSelect
-          id="sa-sub-filter-plan"
-          labelKey="superAdmin.subscriptions.filterPlan"
-          value={plan}
-          onChange={(value) => { setPage(1); setPlan(value); }}
-          options={[
-            { value: 'all', label: t('superAdmin.usage.allPlans') },
-            { value: 'FREE_TRIAL', label: t('superAdmin.usage.plan.FREE_TRIAL') },
-            { value: 'ESSENTIAL', label: t('superAdmin.usage.plan.ESSENTIAL') },
-            { value: 'CONTROL', label: t('superAdmin.usage.plan.CONTROL') },
-            { value: 'MULTI_BRANCH', label: t('superAdmin.usage.plan.MULTI_BRANCH') },
-          ]}
-        />
       </div>
 
       {loading ? (
@@ -434,17 +408,15 @@ export function SubscriptionsSection() {
             labelKey="superAdmin.subscriptions.table"
             headers={[
               'superAdmin.subscriptions.col.center',
-              'superAdmin.subscriptions.col.plan',
               'superAdmin.subscriptions.col.amount',
               'superAdmin.subscriptions.col.status',
               'superAdmin.subscriptions.col.period',
               'superAdmin.common.actions',
             ]}
-            colSpan={6}
+            colSpan={5}
             emptyKey="superAdmin.subscriptions.empty"
           >
             {subscriptions.map((subscription) => {
-              const pill = planPill(subscription.plan);
               const busy = busyId === subscription.id;
               return (
                 <tr key={subscription.id}>
@@ -453,7 +425,6 @@ export function SubscriptionsSection() {
                     <br />
                     <span className="page-sub" style={{ fontSize: 12 }} dir="ltr">{subscription.paymentReference ?? subscription.tenant?.slug ?? ''}</span>
                   </td>
-                  <td><Pill tone={pill.tone}>{pill.label}</Pill></td>
                   <td><strong>{money(Number(subscription.amount))}</strong></td>
                   <td>
                     <div style={{ display: 'grid', gap: 4 }}>

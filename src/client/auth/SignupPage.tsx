@@ -4,9 +4,9 @@ import { useAuth } from './AuthContext';
 import { Banner } from '../components/ui/kit';
 import { InstapayQr } from '../components/ui/InstapayQr';
 import { EGYPTIAN_MOBILE_REGEX } from '../../shared/constants/index';
-import { PURCHASABLE_PLAN_IDS, PLANS } from '../../shared/constants/plans';
+import { MONTHLY_PRICE_EGP, SUBSCRIPTION_CURRENCY } from '../../shared/constants/subscription';
+import { MADAR_OFFER } from '../../shared/constants/offers';
 import { billingConfig } from '../lib/billingConfig';
-import type { TenantPlan } from '../../shared/constants/index';
 
 const INSTAPAY_ACCOUNT_REGEX = /^[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+$/;
 
@@ -20,7 +20,6 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [centerName, setCenterName] = useState('');
-  const [plan, setPlan] = useState<TenantPlan>(PURCHASABLE_PLAN_IDS[0]);
 
   const [ownerName, setOwnerName] = useState('');
   const [ownerPhone, setOwnerPhone] = useState('');
@@ -31,7 +30,6 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const selectedPlanConfig = PLANS[plan as TenantPlan];
   const instapayAccount = billingConfig.paymentAccounts.INSTAPAY;
   const instapayLink = 'paymentLink' in instapayAccount && instapayAccount.paymentLink ? instapayAccount.paymentLink : null;
 
@@ -102,7 +100,6 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
         ownerPhone: ownerPhone.trim(),
         username: username.trim().toLowerCase(),
         password,
-        plan,
         paymentReference: paymentReference.trim(),
       });
       // AuthProvider automatically sets user and redirects to AppShell
@@ -164,36 +161,18 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
 
             <div style={{ marginTop: 8 }}>
               <span className="field-label" style={{ display: 'block', marginBottom: 8 }}>
-                اختر باقتك — يُفعَّل اشتراكك بعد تأكيد دفعة إنستاباي
+                باقتك — يُفعَّل اشتراكك بعد تأكيد دفعة إنستاباي
               </span>
 
-               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))', gap: 10 }}>
-                 {PURCHASABLE_PLAN_IDS.map((planId) => {
-                   const planConfig = PLANS[planId as TenantPlan];
-                   const isSelected = plan === planId;
-                   return (
-                     <div
-                       key={planId}
-                       onClick={() => setPlan(planId)}
-                       style={{
-                         border: `2px solid ${isSelected ? '#0e7c56' : '#e2e0dc'}`,
-                         background: isSelected ? '#f0faf5' : '#fff',
-                         borderRadius: 12,
-                         padding: 12,
-                         cursor: 'pointer',
-                       }}
-                     >
-                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                         <b style={{ fontSize: 15 }}>{planConfig.nameAr}</b>
-                         {isSelected && <Check className="h-4 w-4 text-emerald-700" />}
-                       </div>
-                       <div style={{ fontSize: 13, fontWeight: 800, color: '#0e7c56', margin: '4px 0' }}>
-                         {planConfig.priceEgp} ج.م/شهر
-                       </div>
-                       <small style={{ fontSize: 10, color: '#6b7280' }}>{planConfig.taglineAr}</small>
-                     </div>
-                   );
-                 })}
+              <div style={{ border: '2px solid #0e7c56', background: '#f0faf5', borderRadius: 12, padding: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <b style={{ fontSize: 15 }}>{MADAR_OFFER.nameAr}</b>
+                  <Check className="h-4 w-4 text-emerald-700" />
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#0e7c56', margin: '4px 0' }}>
+                  {MONTHLY_PRICE_EGP} {SUBSCRIPTION_CURRENCY}/شهر
+                </div>
+                <small style={{ fontSize: 10, color: '#6b7280' }}>{MADAR_OFFER.taglineAr}</small>
               </div>
             </div>
 
@@ -290,8 +269,8 @@ export function SignupPage({ onNavigateLogin, onNavigateLanding }: SignupPagePro
           <form onSubmit={handleFinalSubmit} className="form-stack">
             <div style={{ background: '#f0faf5', border: '1px solid #c9e8db', borderRadius: 14, padding: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <b style={{ fontSize: 15 }}>باقة {selectedPlanConfig.nameAr}</b>
-                <span style={{ fontWeight: 800, color: '#0e7c56', fontSize: 15 }}>{selectedPlanConfig.priceEgp} ج.م / شهر</span>
+                <b style={{ fontSize: 15 }}>باقة {MADAR_OFFER.nameAr}</b>
+                <span style={{ fontWeight: 800, color: '#0e7c56', fontSize: 15 }}>{MONTHLY_PRICE_EGP} {SUBSCRIPTION_CURRENCY} / شهر</span>
               </div>
               <p style={{ fontSize: 12, color: '#0b6a4a', margin: 0 }}>
                 ادفع مبلغ الاشتراك عبر إنستاباي بإحدى الطريقتين، ثم أدخل اسم حسابك لإثبات الدفع.

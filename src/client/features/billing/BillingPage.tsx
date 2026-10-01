@@ -1,24 +1,25 @@
 import { useState, useEffect } from 'react';
-import { Check, Sparkles, History, TriangleAlert, TrendingUp, ExternalLink, Clock } from 'lucide-react';
-import { useAuth } from '../../auth/AuthContext';
+import { Check, Sparkles, History, ExternalLink, Clock, ShieldAlert, Snowflake } from 'lucide-react';
 import { notify } from '../../components/ui/kit';
 import { InstapayQr } from '../../components/ui/InstapayQr';
 import { apiUrl } from '../../lib/config';
 import { money } from '../../lib/api';
 import { billingConfig } from '../../lib/billingConfig';
-import { PURCHASABLE_PLAN_IDS, PLANS, getPlanConfig } from '../../../shared/constants/plans';
-import type { VisitUsage } from '../../../shared/constants/plans';
+import { MADAR_OFFER, foundingDiscountPercent } from '../../../shared/constants/offers';
+import { MONTHLY_PRICE_EGP, SUBSCRIPTION_CURRENCY, TRIAL_DAYS } from '../../../shared/constants/subscription';
+import type { TenantLifecycleState } from '../../../server/lib/tenantLifecycle';
 
 const INSTAPAY_ACCOUNT_REGEX = /^[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+$/;
 
 type SubscriptionItem = {
   id: string;
-  plan: string;
   status: string;
   amount: string;
   currency: string;
   paymentMethod: string;
   paymentReference: string;
+  periodStart: string;
+  periodEnd: string;
   createdAt: string;
 };
 
@@ -26,13 +27,23 @@ type TenantDetails = {
   id: string;
   name: string;
   slug: string;
-  plan: string;
   trialEndsAt: string | null;
   isActive: boolean;
-  maxDesks: number;
-  maxBranches: number;
-  maxUsers: number;
-  visitLimit: number | null;
+};
+
+type Lifecycle = {
+  state: TenantLifecycleState;
+  canWrite: boolean;
+  readOnly: boolean;
+  daysUntilExpiry: number | null;
+  freezesAt: string | null;
+  reminder: { code: string; severity: 'info' | 'warning' | 'critical'; messageAr: string } | null;
+};
+
+type Usage = {
+  periodStart: string;
+  usedVisits: number;
+  summaryAvailable: boolean;
 };
 
 const STATUS_LABELS: Record<string, { ar: string; ok: boolean }> = {
@@ -42,19 +53,26 @@ const STATUS_LABELS: Record<string, { ar: string; ok: boolean }> = {
   PAST_DUE: { ar: 'متأخر', ok: false },
   CANCELED: { ar: 'ملغي', ok: false },
   EXPIRED: { ar: 'منتهي', ok: false },
+  REJECTED: { ar: 'مرفوض', ok: false },
+};
+
+const LIFECYCLE_BANNER: Partial<Record<TenantLifecycleState, { bg: string; border: string; color: string; icon: typeof Clock }>> = {
+  EXPIRING: { bg: '#fffbeb', border: '#fde68a', color: '#78350f', icon: Clock },
+  GRACE: { bg: '#fff7ed', border: '#fed7aa', color: '#9a3412', icon: ShieldAlert },
+  FROZEN: { bg: '#fef2f2', border: '#fecaca', color: '#7f1d1d', icon: Snowflake },
+  AWAITING_APPROVAL: { bg: '#eef2ff', border: '#c7d2fe', color: '#3730a3', icon: Clock },
 };
 
 export function BillingPage() {
-  const { user } = useAuth();
   const [tenant, setTenant] = useState<TenantDetails | null>(null);
   const [trialDaysRemaining, setTrialDaysRemaining] = useState<number>(0);
   const [isTrialActive, setIsTrialActive] = useState<boolean>(false);
-  const [usage, setUsage] = useState<VisitUsage | null>(null);
+  const [lifecycle, setLifecycle] = useState<Lifecycle | null>(null);
+  const [usage, setUsage] = useState<Usage | null>(null);
   const [subscriptions, setSubscriptions] = useState<SubscriptionItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedPlan, setSelectedPlan] = useState<(typeof PURCHASABLE_PLAN_IDS)[number]>(PURCHASABLE_PLAN_IDS[0]);
   const [paymentReference, setPaymentReference] = useState('');
-  const [isUpgrading, setIsUpgrading] = useState(false);
+  const [isRenewing, setIsRenewing] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   const fetchSubscriptionDetails = async () => {
@@ -66,7 +84,8 @@ export function BillingPage() {
           tenant: TenantDetails;
           trialDaysRemaining: number;
           isTrialActive: boolean;
-          usage?: { periodStart: string; visits: VisitUsage };
+          lifecycle?: Lifecycle;
+          usage?: Usage;
           subscriptions: SubscriptionItem[];
         };
       };
@@ -74,11 +93,12 @@ export function BillingPage() {
         setTenant(json.data.tenant);
         setTrialDaysRemaining(json.data.trialDaysRemaining);
         setIsTrialActive(json.data.isTrialActive);
-        setUsage(json.data.usage?.visits ?? null);
+        setLifecycle(json.data.lifecycle ?? null);
+        setUsage(json.data.usage ?? null);
         setSubscriptions(json.data.subscriptions);
       }
     } catch {
-      // fallback: page renders from shared plan config only
+      notify('تعذر تحميل بيانات الاشتراك', 'error');
     } finally {
       setLoading(false);
     }
@@ -88,41 +108,35 @@ export function BillingPage() {
     void fetchSubscriptionDetails();
   }, []);
 
-  const handleUpgradeSubmit = async () => {
+  const handleRenewSubmit = async () => {
     const instapayRef = paymentReference.trim();
     if (!INSTAPAY_ACCOUNT_REGEX.test(instapayRef)) {
       notify('أدخل اسم حسابك في إنستاباي بالصيغة الصحيحة (مثل: name@instapay)', 'error');
       return;
     }
-    setIsUpgrading(true);
+    setIsRenewing(true);
     try {
-      const res = await fetch(apiUrl('/api/subscriptions/upgrade'), {
+      const res = await fetch(apiUrl('/api/subscriptions/renew'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          plan: selectedPlan,
           paymentMethod: 'INSTAPAY',
           paymentReference: instapayRef,
         }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error?.message || 'فشلت عملية الترقية');
-      notify('تم تفعيل الاشتراك بنجاح! ✓', 'success');
+      if (!res.ok) throw new Error(json.error?.message || json.error?.messageEn || 'فشلت عملية الدفع');
+      notify('تم استلام طلب الدفع، وهو الآن قيد التأكيد من إدارة المنصة.', 'success');
       setShowPaymentModal(false);
       setPaymentReference('');
       void fetchSubscriptionDetails();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'حدث خطأ أثناء الترقية';
+      const msg = err instanceof Error ? err.message : 'حدث خطأ أثناء الدفع';
       notify(msg, 'error');
     } finally {
-      setIsUpgrading(false);
+      setIsRenewing(false);
     }
-  };
-
-  const openPaymentModal = (planId: (typeof PURCHASABLE_PLAN_IDS)[number]) => {
-    setSelectedPlan(planId);
-    setShowPaymentModal(true);
   };
 
   if (loading) {
@@ -133,24 +147,23 @@ export function BillingPage() {
     );
   }
 
-  const currentPlanKey = tenant?.plan || user?.tenant?.plan || 'FREE_TRIAL';
-  const currentConfig = getPlanConfig(currentPlanKey);
-  const selectedConfig = PLANS[selectedPlan];
-  const usageBanner = usage && usage.limit !== null && usage.level !== 'ok' ? usage : null;
   const instapayAccount = billingConfig.paymentAccounts.INSTAPAY;
   const instapayLink = 'paymentLink' in instapayAccount && instapayAccount.paymentLink ? instapayAccount.paymentLink : null;
-  const pendingSubscription = subscriptions[0]?.status === 'PENDING' ? subscriptions[0] : null;
+  const pendingSubscription = subscriptions.find((sub) => sub.status === 'PENDING') ?? null;
+  const discountPercent = foundingDiscountPercent(MADAR_OFFER);
+  const lifecycleBanner = lifecycle ? LIFECYCLE_BANNER[lifecycle.state] : undefined;
+  const needsPayment = !lifecycle || lifecycle.state === 'AWAITING_APPROVAL' || lifecycle.state === 'GRACE' || lifecycle.state === 'FROZEN' || lifecycle.state === 'EXPIRING';
+  const isPaid = lifecycle?.state === 'ACTIVE' || lifecycle?.state === 'EXPIRING';
 
   return (
     <div className="page">
       <div className="page-head">
         <div>
           <h1 className="page-title">إدارة الاشتراك والفوترة</h1>
-          <p className="page-sub">تفاصيل باقة السنتر الحالية، ترقية الاشتراك، وسجل المدفوعات بالجنيه المصري.</p>
+          <p className="page-sub">اشتراك واحد غير محدود، وسجل مدفوعات الاشتراك بالجنيه المصري.</p>
         </div>
       </div>
 
-      {/* Pending INSTAPAY payment banner (payment awaiting verification) */}
       {pendingSubscription && (
         <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 14, padding: 18, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
           <div style={{ width: 44, height: 44, borderRadius: 12, background: '#f59e0b', color: '#3b2400', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
@@ -160,7 +173,7 @@ export function BillingPage() {
             <b style={{ fontSize: 15 }}>دفعتك قيد التأكيد</b>
             <p style={{ fontSize: 13, color: '#78350f', margin: '2px 0 0' }}>
               مبلغ {money(Number(pendingSubscription.amount))} عبر إنستاباي (المرجع: <code dir="ltr">{pendingSubscription.paymentReference}</code>).
-              سيُفعَّل اشتراكك وتُفتح حدود الباقة فور تأكيد استلام الدفعة — وقبل ذلك يعمل المركز على حدود التجربة المجانية فقط.
+              لن يُفعَّل الشهر المدفوع ولا يتغيّر ما يعمل في المركز قبل تأكيد استلام الدفعة يدويًا.
             </p>
           </div>
           <span style={{ fontSize: 12, background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', borderRadius: 99, padding: '4px 12px', fontWeight: 700 }}>
@@ -169,7 +182,18 @@ export function BillingPage() {
         </div>
       )}
 
-      {/* Trial Alert Banner */}
+      {lifecycleBanner && lifecycle?.reminder && (
+        <div style={{ background: lifecycleBanner.bg, border: `1px solid ${lifecycleBanner.border}`, color: lifecycleBanner.color, borderRadius: 14, padding: 18, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+          <lifecycleBanner.icon className="h-6 w-6 shrink-0" aria-hidden="true" />
+          <p style={{ fontSize: 14, margin: 0, flex: 1, minWidth: 220 }}>{lifecycle.reminder.messageAr}</p>
+          {needsPayment && (
+            <button type="button" className="btn btn--primary" onClick={() => setShowPaymentModal(true)}>
+              ادفع الآن
+            </button>
+          )}
+        </div>
+      )}
+
       {isTrialActive && (
         <div className="billing-banner" style={{ background: '#e8f5ef', border: '1px solid #c9e8db', borderRadius: 14, padding: 18, marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1, minWidth: 220 }}>
@@ -177,162 +201,98 @@ export function BillingPage() {
               <Sparkles className="h-6 w-6" />
             </div>
             <div>
-              <b style={{ fontSize: 16, color: '#043128' }}>أنت الآن في فترة التجربة المجانية (14 يوم)</b>
+              <b style={{ fontSize: 16, color: '#043128' }}>أنت الآن في فترة التجربة المجانية ({TRIAL_DAYS} يوم)</b>
               <p style={{ fontSize: 13, color: '#0b6a4a', margin: '2px 0 0' }}>
-                متبقي {trialDaysRemaining} يوم على انتهاء التجربة. جميع ميزات النظام متاحة لك ولطاقم العمل.
+                متبقي {trialDaysRemaining} يوم على انتهاء التجربة. الاشتراك غير محدود: لا يوجد حد على عدد الطلاب أو الزيارات أو الفروع أو موظفي الاستقبال.
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            className="btn btn--primary cta-full"
-            onClick={() => openPaymentModal(PURCHASABLE_PLAN_IDS[0])}
-          >
-            تفعيل الاشتراك الدائم
+          <button type="button" className="btn btn--primary cta-full" onClick={() => setShowPaymentModal(true)}>
+            تفعيل الاشتراك
           </button>
         </div>
       )}
 
-      {/* Current Plan Summary */}
-      {tenant && (
-        <div className="card" style={{ padding: 18, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-          <div style={{ width: 44, height: 44, borderRadius: 12, background: '#043128', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-            <TrendingUp className="h-6 w-6" />
-          </div>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <b style={{ fontSize: 16 }}>باقتك الحالية: {currentConfig.nameAr}</b>
-            <p style={{ fontSize: 13, color: '#6b7280', margin: '2px 0 0' }}>{currentConfig.taglineAr}</p>
-          </div>
-          <div style={{ display: 'flex', gap: 24, fontSize: 13 }}>
-            <div>
-              <span style={{ color: '#6b7280' }}>مكاتب الاستقبال</span>
-              <b style={{ display: 'block' }}>{tenant.maxDesks} مكاتب</b>
-            </div>
-            <div>
-              <span style={{ color: '#6b7280' }}>موظفو الاستقبال</span>
-              <b style={{ display: 'block' }}>{tenant.maxUsers} موظفين</b>
-            </div>
-          </div>
+      <div className="card" style={{ padding: 18, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ width: 44, height: 44, borderRadius: 12, background: '#043128', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+          <Sparkles className="h-6 w-6" />
         </div>
-      )}
-
-      {/* Visit Usage Banner (advisory only) */}
-      {usageBanner && (
-        <div
-          style={{
-            background: usageBanner.level === 'over' ? '#fef2f2' : usageBanner.level === 'strong' ? '#fff7ed' : '#fffbeb',
-            border: `1px solid ${usageBanner.level === 'over' ? '#fecaca' : usageBanner.level === 'strong' ? '#fed7aa' : '#fde68a'}`,
-            borderRadius: 14,
-            padding: 18,
-            marginBottom: 24,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <TriangleAlert className={`h-5 w-5 ${usageBanner.level === 'over' ? 'text-red-600' : usageBanner.level === 'strong' ? 'text-orange-600' : 'text-amber-500'}`} />
-            <div style={{ fontSize: 13, flex: 1 }}>
-              {usageBanner.level === 'over' ? (
-                <p>
-                  <b>تجاوزت الاستخدام الشهري للباقة ({usageBanner.used.toLocaleString('ar-EG')} زيارة).</b>{' '}
-                  النظام يستمر في العمل بشكل طبيعي — لا توجد أي قيود على الاستقبال. يُنصح بالترقية لباقة أعلى لضمان سعة أكبر.
-                </p>
-              ) : usageBanner.level === 'strong' ? (
-                <p>
-                  <b>اقتربت من الحد الشهري للزيارات ({usageBanner.percent}٪).</b>{' '}
-                  متبقي {usageBanner.remaining?.toLocaleString('ar-EG')} زيارة هذا الشهر. يُنصح بالترقية لباقة أعلى لضمان سعة أكبر.
-                </p>
-              ) : (
-                <p>
-                  <b>استهلكت {usageBanner.percent}٪ من سعة الزيارات الشهرية.</b>{' '}
-                  متبقي {usageBanner.remaining?.toLocaleString('ar-EG')} زيارة للشهر الحالي.
-                </p>
-              )}
-            </div>
-            <button
-              type="button"
-              className="btn btn--primary"
-              style={{ fontSize: 12, padding: '8px 14px', flexShrink: 0 }}
-              onClick={() => openPaymentModal(PURCHASABLE_PLAN_IDS[PURCHASABLE_PLAN_IDS.length - 1])}
-            >
-              الترقية الآن
-            </button>
-          </div>
-          <div style={{ marginTop: 12, height: 8, borderRadius: 99, background: '#eee', overflow: 'hidden' }}>
-            <div
-              style={{
-                height: '100%',
-                width: `${Math.min((usageBanner.percent ?? 0), 100)}%`,
-                background: usageBanner.level === 'over' ? '#dc2626' : usageBanner.level === 'strong' ? '#ea580c' : '#f59e0b',
-                borderRadius: 99,
-              }}
-            />
-          </div>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <b style={{ fontSize: 16 }}>اشتراك {MADAR_OFFER.nameAr}</b>
+          <p style={{ fontSize: 13, color: '#6b7280', margin: '2px 0 0' }}>{MADAR_OFFER.taglineAr}</p>
         </div>
-      )}
-
-      {/* Plans Comparison — priced from the shared plan config */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 20, marginBottom: 32 }}>
-        {PURCHASABLE_PLAN_IDS.map((planId) => {
-          const planConfig = PLANS[planId];
-          const isCurrent = currentConfig.id === planId;
-          const isFeatured = planConfig.featured;
-          const allowSubscribe = !isCurrent || isTrialActive;
-          const cardDark = isFeatured;
-
-          return (
-            <div
-              key={planId}
-              style={{
-                background: cardDark ? '#043128' : '#fff',
-                color: cardDark ? '#fff' : 'inherit',
-                border: isCurrent ? '2px solid #0e7c56' : `1px solid ${cardDark ? '#0e7c56' : '#e2e0dc'}`,
-                borderRadius: 18,
-                padding: 24,
-                display: 'flex',
-                flexDirection: 'column',
-                boxShadow: cardDark ? '0 12px 32px -8px rgba(4, 49, 40, 0.4)' : undefined,
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <h3 style={{ fontSize: 20, fontWeight: 800, color: cardDark ? '#fff' : undefined }}>{planConfig.nameAr}</h3>
-                {isCurrent && (
-                  <span style={{ background: '#e8f5ef', color: '#0e7c56', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 99 }}>
-                    باقتك الحالية
-                  </span>
-                )}
-                {isFeatured && !isCurrent && (
-                  <span style={{ background: '#f59e0b', color: '#3b2400', fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 99 }}>
-                    الأكثر طلباً للسناتر الكبيرة
-                  </span>
-                )}
-              </div>
-              <p style={{ fontSize: 13, color: cardDark ? '#a3d9c1' : '#6b7280', minHeight: 40 }}>{planConfig.taglineAr}</p>
-              <div style={{ fontSize: 32, fontWeight: 800, margin: '14px 0', color: cardDark ? '#fff' : undefined }}>
-                {money(planConfig.priceEgp)} <span style={{ fontSize: 14, color: cardDark ? '#a3d9c1' : '#6b7280' }}>/ شهرياً</span>
-              </div>
-
-              <ul style={{ display: 'grid', gap: 10, margin: '14px 0 24px', flex: 1, fontSize: 13 }}>
-                {planConfig.featuresAr.map((feature) => (
-                  <li key={feature} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Check className={`h-4 w-4 ${cardDark ? 'text-emerald-400' : 'text-emerald-700'}`} /> {feature}
-                  </li>
-                ))}
-              </ul>
-
-              <button
-                type="button"
-                className={`btn ${cardDark ? 'btn--primary' : 'btn--secondary'}`}
-                style={cardDark ? { background: '#fff', color: '#043128', fontWeight: 800 } : undefined}
-                disabled={!allowSubscribe}
-                onClick={() => openPaymentModal(planId)}
-              >
-                {isCurrent ? (isTrialActive ? `تفعيل باقة ${planConfig.nameAr}` : 'باقتك الحالية') : `الاشتراك في ${planConfig.nameAr}`}
-              </button>
-            </div>
-          );
-        })}
+        <div style={{ fontSize: 13, textAlign: 'end' }}>
+          <b style={{ display: 'block', fontSize: 18 }}>{money(MONTHLY_PRICE_EGP)} / شهرياً</b>
+          {discountPercent !== null && (
+            <s style={{ color: '#6b7280' }}>{money(MADAR_OFFER.listPriceEgp)}</s>
+          )}
+        </div>
+        <div style={{ width: '100%', fontSize: 13, color: '#6b7280' }}>
+          {tenant ? `مركزك: ${tenant.name} · ` : ''}
+          {isPaid ? 'اشتراكك مدفوع وساري.' : isTrialActive ? 'التجربة المجانية سارية.' : 'لا يوجد اشتراك مدفوع ساري بعد.'}
+        </div>
       </div>
 
-      {/* Subscription Invoices History */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 20, marginBottom: 32 }}>
+        <div
+          style={{
+            background: '#043128',
+            color: '#fff',
+            border: `2px solid ${isPaid ? '#0e7c56' : '#0e7c56'}`,
+            borderRadius: 18,
+            padding: 24,
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 12px 32px -8px rgba(4, 49, 40, 0.4)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8, flexWrap: 'wrap' }}>
+            <h3 style={{ fontSize: 20, fontWeight: 800, color: '#fff' }}>{MADAR_OFFER.nameAr}</h3>
+            {isPaid ? (
+              <span style={{ background: '#e8f5ef', color: '#0e7c56', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 99 }}>
+                اشتراكك الحالي
+              </span>
+            ) : (
+              <span style={{ background: '#f59e0b', color: '#3b2400', fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 99 }}>
+                {MADAR_OFFER.highlightAr}
+              </span>
+            )}
+          </div>
+          <p style={{ fontSize: 13, color: '#a3d9c1', minHeight: 40 }}>{MADAR_OFFER.taglineAr}</p>
+          <div style={{ fontSize: 32, fontWeight: 800, margin: '14px 0', color: '#fff' }}>
+            {money(MADAR_OFFER.foundingPriceEgp)} <span style={{ fontSize: 14, color: '#a3d9c1' }}>/ شهرياً · {SUBSCRIPTION_CURRENCY}</span>
+          </div>
+
+          <ul style={{ display: 'grid', gap: 10, margin: '14px 0 24px', flex: 1, fontSize: 13 }}>
+            {MADAR_OFFER.featuresAr.map((feature) => (
+              <li key={feature} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Check className="h-4 w-4 shrink-0 text-emerald-400" /> {feature}
+              </li>
+            ))}
+          </ul>
+
+          <button
+            type="button"
+            className="btn btn--primary"
+            style={{ background: '#fff', color: '#043128', fontWeight: 800 }}
+            onClick={() => setShowPaymentModal(true)}
+          >
+            {isPaid ? 'تجديد الاشتراك' : 'الاشتراك الآن'}
+          </button>
+        </div>
+      </div>
+
+      {usage && (
+        <div className="card" style={{ padding: 18, marginBottom: 24 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>استخدامك هذا الشهر</h3>
+          <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 10px' }}>
+            عدد الزيارات منذ {new Date(usage.periodStart).toLocaleDateString('ar-EG')} — معلومة إرشادية فقط، ولا يوجد حد يمنع العمل عند تجاوزها.
+          </p>
+          <b style={{ fontSize: 24 }}>{usage.usedVisits.toLocaleString('ar-EG')}</b>
+          <span style={{ fontSize: 13, color: '#6b7280' }}> زيارة</span>
+        </div>
+      )}
+
       <div className="card" style={{ padding: 20 }}>
         <h3 style={{ fontSize: 17, fontWeight: 800, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
           <History className="h-5 w-5 text-emerald-700" /> سجل مدفوعات الاشتراك
@@ -345,9 +305,9 @@ export function BillingPage() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>تاريخ الدفعة</th>
-                  <th>الباقة</th>
+                  <th>تاريخ الطلب</th>
                   <th>المبلغ</th>
+                  <th>الفترة المدفوعة</th>
                   <th>طريقة الدفع</th>
                   <th>المرجع</th>
                   <th>الحالة</th>
@@ -359,10 +319,12 @@ export function BillingPage() {
                   return (
                     <tr key={sub.id}>
                       <td>{new Date(sub.createdAt).toLocaleDateString('ar-EG')}</td>
-                      <td><b>{getPlanConfig(sub.plan).nameAr}</b></td>
-                      <td>{sub.amount} ج.م</td>
+                      <td>{money(Number(sub.amount))}</td>
+                      <td style={{ fontSize: 12 }}>
+                        {new Date(sub.periodStart).toLocaleDateString('ar-EG')} — {new Date(sub.periodEnd).toLocaleDateString('ar-EG')}
+                      </td>
                       <td>{sub.paymentMethod === 'VODAFONE_CASH' ? 'فودافون كاش' : sub.paymentMethod === 'INSTAPAY' ? 'إنستاباي' : 'كاش'}</td>
-                      <td><code style={{ fontSize: 11 }}>{sub.paymentReference}</code></td>
+                      <td><code style={{ fontSize: 11 }} dir="ltr">{sub.paymentReference}</code></td>
                       <td><span className={`badge ${status.ok ? 'badge--ok' : 'badge--warn'}`}>{status.ar}</span></td>
                     </tr>
                   );
@@ -373,15 +335,14 @@ export function BillingPage() {
         )}
       </div>
 
-      {/* Payment Modal */}
       {showPaymentModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'grid', placeItems: 'center', zIndex: 100, padding: 16 }}>
           <div className="card" style={{ maxWidth: 460, width: '100%', padding: 24, maxHeight: 'min(88vh, 680px)', overflowY: 'auto' }}>
             <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 6 }}>
-              تأكيد تفعيل الاشتراك في باقة {selectedConfig.nameAr}
+              تأكيد الدفع لاشتراك {MADAR_OFFER.nameAr}
             </h3>
             <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 18 }}>
-              المبلغ المطلوب: <b>{money(selectedConfig.priceEgp)} / شهر</b>
+              المبلغ المطلوب: <b>{money(MONTHLY_PRICE_EGP)} / شهر</b>
             </p>
 
             <div style={{ display: 'grid', gap: 14 }}>
@@ -419,13 +380,17 @@ export function BillingPage() {
                 </small>
               </label>
 
+              <p style={{ fontSize: 12, color: '#6b7280', margin: 0 }}>
+                الاشتراك لا يُفعَّل تلقائياً. تُراجع كل دفعة يدوياً قبل أن يبدأ الشهر المدفوع.
+              </p>
+
               <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
                 <button
                   type="button"
                   className="btn btn--secondary"
                   style={{ flex: 1 }}
                   onClick={() => setShowPaymentModal(false)}
-                  disabled={isUpgrading}
+                  disabled={isRenewing}
                 >
                   إلغاء
                 </button>
@@ -433,10 +398,10 @@ export function BillingPage() {
                   type="button"
                   className="btn btn--primary"
                   style={{ flex: 2 }}
-                  onClick={handleUpgradeSubmit}
-                  disabled={isUpgrading}
+                  onClick={handleRenewSubmit}
+                  disabled={isRenewing}
                 >
-                  {isUpgrading ? 'جاري التفعيل...' : 'تأكيد ودفع الاشتراك'}
+                  {isRenewing ? 'جاري الإرسال...' : 'تأكيد الدفع'}
                 </button>
               </div>
             </div>

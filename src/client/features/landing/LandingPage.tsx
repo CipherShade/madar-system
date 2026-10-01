@@ -246,9 +246,9 @@ function LobbyFrame({ locale, compact = false }: { locale: Locale; compact?: boo
   );
 }
 
-/* ══════════════════════════ PLANS ══════════════════════════ */
+/* ══════════════════════════ OFFER ══════════════════════════ */
 
-function PrimaryPlan({
+function PrimaryOffer({
   offer,
   locale,
   arrow,
@@ -668,7 +668,7 @@ export function LandingPage({ onNavigateLogin, onNavigateSignup }: LandingPagePr
           )}
 
           <div className="lp-reveal">
-            <PrimaryPlan offer={MADAR_OFFER} locale={locale} arrow={arrow} onChoose={goSignup} />
+            <PrimaryOffer offer={MADAR_OFFER} locale={locale} arrow={arrow} onChoose={goSignup} />
           </div>
 
           <div className="lp-reveal">

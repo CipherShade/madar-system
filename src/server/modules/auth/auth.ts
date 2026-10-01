@@ -2,8 +2,8 @@ import argon2 from 'argon2';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { FastifyPluginAsync } from 'fastify';
 import { Prisma } from '@prisma/client';
-import { PaymentMethod, Role, SubscriptionStatus, TenantPlan } from '../../../shared/constants/index.js';
-import { PURCHASABLE_PLAN_IDS, PENDING_PAYMENT_LIMITS, getPlanConfig } from '../../../shared/constants/plans.js';
+import { PaymentMethod, Role, SubscriptionStatus } from '../../../shared/constants/index.js';
+import { MONTHLY_PRICE_EGP, SUBSCRIPTION_CURRENCY, TRIAL_DAYS } from '../../../shared/constants/subscription.js';
 import { prisma } from '../../lib/prisma.js';
 import { config } from '../../config/index.js';
 import { recordAuditEntry } from '../reports/audit.js';
@@ -30,7 +30,6 @@ type RegisterCenterBody = {
   ownerPhone: string;
   username: string;
   password: string;
-  plan?: 'ESSENTIAL' | 'CONTROL';
   /** The tenant's Instapay account name (e.g. name@instapay) used as proof of the subscription payment. */
   paymentReference: string;
 };
@@ -119,7 +118,6 @@ const authRoutes: FastifyPluginAsync = async (app) => {
           ownerPhone: { type: 'string', pattern: '^(010|011|012|015)[0-9]{8}$' },
           username: { type: 'string', minLength: 3, maxLength: 50, pattern: '^[a-zA-Z0-9_-]+$' },
           password: { type: 'string', minLength: 8, maxLength: 200 },
-          plan: { type: 'string', enum: PURCHASABLE_PLAN_IDS as string[] },
           paymentReference: { type: 'string', pattern: '^[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+$', minLength: 3, maxLength: 100 },
         },
         additionalProperties: false,
@@ -138,10 +136,6 @@ const authRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    const plan = request.body.plan && PURCHASABLE_PLAN_IDS.includes(request.body.plan)
-      ? request.body.plan
-      : TenantPlan.ESSENTIAL;
-    const planConfig = getPlanConfig(plan);
     const slugSuffix = Math.random().toString(36).substring(2, 7);
     const slug = `center-${slugSuffix}`;
 
@@ -153,22 +147,17 @@ const authRoutes: FastifyPluginAsync = async (app) => {
     });
 
     const result = await prisma.$transaction(async (tx) => {
-      // The paid plan is recorded on the PENDING subscription, not on the
-      // tenant. The tenant itself starts on the capped trial tier and stays
-      // inactive until a SUPER_ADMIN verifies the transfer, so a self-declared
-      // payment reference can never hand out a paid plan's limits.
+      // The paid month is recorded on the PENDING subscription, not on the tenant.
+      // The tenant itself starts inactive until a SUPER_ADMIN verifies the
+      // transfer, so a self-declared payment reference can never grant access.
       const tenant = await tx.tenant.create({
         data: {
           name: request.body.centerName,
           slug,
           ownerName: request.body.ownerName,
           ownerPhone: request.body.ownerPhone,
-          plan: TenantPlan.FREE_TRIAL,
           isActive: false,
-          maxDesks: PENDING_PAYMENT_LIMITS.maxDesks,
-          maxBranches: PENDING_PAYMENT_LIMITS.maxBranches ?? 2147483647,
-          maxUsers: PENDING_PAYMENT_LIMITS.maxUsers ?? 2147483647,
-          visitLimit: PENDING_PAYMENT_LIMITS.visitLimit,
+          trialEndsAt: new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000),
         },
       });
 
@@ -176,13 +165,12 @@ const authRoutes: FastifyPluginAsync = async (app) => {
       // starts when the payment is verified, not when the form is submitted.
       const periodStart = new Date();
       const periodEnd = new Date(Date.now() + SUBSCRIPTION_PERIOD_DAYS * 24 * 60 * 60 * 1000);
-      const subscription = await tx.subscription.create({
+      await tx.subscription.create({
         data: {
           tenantId: tenant.id,
-          plan: plan as TenantPlan,
           status: SubscriptionStatus.PENDING,
-          amount: new Prisma.Decimal(planConfig.priceEgp ?? 0),
-          currency: 'EGP',
+          amount: new Prisma.Decimal(MONTHLY_PRICE_EGP),
+          currency: SUBSCRIPTION_CURRENCY,
           paymentMethod: PaymentMethod.INSTAPAY,
           paymentReference: request.body.paymentReference.trim(),
           periodStart,
@@ -222,7 +210,7 @@ const authRoutes: FastifyPluginAsync = async (app) => {
         action: 'TENANT_REGISTERED',
         entityType: 'TENANT',
         entityId: tenant.id,
-        metadata: { centerName: tenant.name, plan: subscription.plan },
+        metadata: { centerName: tenant.name },
       }, tx);
 
       return { user, tenant };
@@ -259,7 +247,6 @@ const authRoutes: FastifyPluginAsync = async (app) => {
             id: true,
             name: true,
             slug: true,
-            plan: true,
             trialEndsAt: true,
             isActive: true,
           },

@@ -137,10 +137,10 @@ describe('WRITE GUARD EXEMPTIONS: a blocked center can still pay and manage itse
     assert.ok(!src.includes('requireTenantWritable'), 'auth routes must never be gated');
   });
 
-  test('the upgrade/pay endpoint stays open — a frozen center must be able to pay', () => {
+  test('the renew/pay endpoint stays open — a frozen center must be able to pay', () => {
     const src = read('subscriptions/subscriptions.ts');
     assert.ok(!src.includes('requireTenantWritable'), 'paying must never require write access');
-    assert.match(src, /app\.post<\{ Body: UpgradeBody \}>\('\/upgrade'/, 'the upgrade route moved');
+    assert.match(src, /app\.post<\{ Body: RenewBody \}>\('\/renew'/, 'the renew route moved');
   });
 
   test('no superadmin route is gated, so the owner can always approve or unblock', () => {

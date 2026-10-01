@@ -13,23 +13,6 @@ enum Role {
   RECEPTIONIST
 }
 
-enum TenantPlan {
-  FREE_TRIAL
-  BASIC
-  GROWTH
-  PRO
-  MULTI_BRANCH
-  BUSINESS
-  ENTERPRISE
-  ESSENTIAL
-  CONTROL
-}
-
-/// Enum values are append-only in PostgreSQL; legacy values (GROWTH/BUSINESS/
-/// ENTERPRISE) must stay ABOVE the new values so the database order matches the
-/// migration's ADD VALUE appends. The migration backfills GROWTH→ESSENTIAL,
-/// BUSINESS→CONTROL, ENTERPRISE→MULTI_BRANCH.
-
 enum SubscriptionStatus {
   PENDING
   TRIALING
@@ -89,13 +72,8 @@ model Tenant {
   searchName  String?    @map("search_name")
   ownerName   String?    @map("owner_name")
   ownerPhone  String?    @map("owner_phone")
-  plan        TenantPlan @default(FREE_TRIAL)
   trialEndsAt DateTime?  @map("trial_ends_at")
   isActive    Boolean    @default(true) @map("is_active")
-  maxDesks    Int        @default(1) @map("max_desks")
-  maxBranches Int        @default(1) @map("max_branches")
-  maxUsers    Int        @default(3) @map("max_users")
-  visitLimit  Int?       @map("visit_limit")
   discountBalance Decimal @default(0) @map("discount_balance")
   creditBalance   Decimal @default(0) @map("credit_balance")
   createdAt   DateTime   @default(now()) @map("created_at")
@@ -117,7 +95,6 @@ model Tenant {
   subscriptions          Subscription[]
   SupportNote            SupportNote[]
   SuperAdminAuditLog     SuperAdminAuditLog[]
-  UsageOverride          UsageOverride[]
   SuperAdminSession      SuperAdminSession[]
   SystemHealthEvent      SystemHealthEvent[]
   SubscriptionAdjustment SubscriptionAdjustment[]
@@ -129,7 +106,6 @@ model Tenant {
 model Subscription {
   id               String             @id @default(uuid())
   tenantId         String             @map("tenant_id")
-  plan             TenantPlan
   status           SubscriptionStatus @default(ACTIVE)
   amount           Decimal
   currency         String             @default("EGP")
@@ -216,7 +192,6 @@ model User {
   platformNotifications     PlatformNotification[]
   superAdminAuditLogs       SuperAdminAuditLog[]
   systemSettingsUpdated     SystemSetting[]
-  usageOverridesGranted     UsageOverride[]
   superAdminSessions        SuperAdminSession[]
   superAdminUserPermissions SuperAdminUserPermission[]
   subscriptionAdjustments    SubscriptionAdjustment[]
@@ -498,7 +473,6 @@ enum SupportNoteStatus {
 
 enum PlatformNotificationAudience {
   ALL_CENTERS
-  PLAN
   CENTER
   USER
 }
@@ -587,24 +561,6 @@ model SystemSetting {
   updatedBy User? @relation(fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@map("system_settings")
-}
-
-model UsageOverride {
-  id          String    @id @default(uuid())
-  tenantId    String    @map("tenant_id")
-  metric      String
-  extraAmount Int       @default(0) @map("extra_amount")
-  reason      String?
-  expiresAt   DateTime? @map("expires_at")
-  grantedById String    @map("granted_by_id")
-  createdAt   DateTime  @default(now()) @map("created_at")
-
-  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  grantedBy User   @relation(fields: [grantedById], references: [id])
-
-  @@index([tenantId])
-  @@index([metric])
-  @@map("usage_overrides")
 }
 
 model SubscriptionAdjustment {

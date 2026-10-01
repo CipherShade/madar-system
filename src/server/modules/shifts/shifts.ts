@@ -1,7 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { PaymentMethod, Role, ShiftStatus } from '../../../shared/constants/index.js';
-import { getPlanConfig } from '../../../shared/constants/plans.js';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
 import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
@@ -183,24 +182,6 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
         success: false,
         error: { code: 'SHIFT_ALREADY_OPEN', message: 'لديك وردية مفتوحة بالفعل، أغلقها أولاً.', messageEn: 'You already have an active shift open. Close it before opening a new one.' },
       });
-    }
-
-    if (request.user.tenantId) {
-      const [activeShiftsCount, tenant] = await Promise.all([
-        prisma.shiftRegister.count({ where: { tenantId: request.user.tenantId, status: ShiftStatus.OPEN } }),
-        prisma.tenant.findUnique({ where: { id: request.user.tenantId }, select: { maxDesks: true, plan: true } }),
-      ]);
-      if (tenant && activeShiftsCount >= tenant.maxDesks) {
-        const planConfig = getPlanConfig(tenant.plan);
-        return reply.code(403).send({
-          success: false,
-          error: {
-            code: 'PLAN_DESK_LIMIT_REACHED',
-            message: `لقد بلغت الحد الأقصى لعدد مكاتب الاستقبال المفتوحة معاً (${tenant.maxDesks} مكتب) لباقة ${planConfig.nameAr}. يمكنك إغلاق وردية أولاً أو الترقية لفتح مكاتب أكثر.`,
-            messageEn: `Active desk limit (${tenant.maxDesks}) reached for plan ${planConfig.nameEn}. Close a shift first or upgrade to open more desks.`,
-          },
-        });
-      }
     }
 
     const shift = await prisma.$transaction(async (transaction) => {

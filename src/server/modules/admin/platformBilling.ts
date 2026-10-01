@@ -2,8 +2,8 @@
  * Platform subscriptions & billing (super-admin console).
  *
  * Owns the money decisions the platform owner makes: cancel/reactivate a
- * subscription, open a new one for a center (plan change), grant a discount
- * or credit, and refund a payment. Every mutation is a single transaction
+ * subscription, open a new one for a center, grant a discount or credit, and
+ * refund a payment. Every mutation is a single transaction
  * that also writes SuperAdminAuditLog — no money row changes without a ledger
  * entry next to it.
  *
@@ -12,10 +12,10 @@
  * and balances are only ever spent when a NEW pending amount is computed.
  */
 
-import { Prisma, SubscriptionStatus, PaymentMethod, TenantPlan } from '@prisma/client';
+import { Prisma, SubscriptionStatus, PaymentMethod } from '@prisma/client';
 import type { FastifyPluginAsync } from 'fastify';
 import { Role } from '../../../shared/constants/index.js';
-import { PURCHASABLE_PLAN_IDS, getPlanConfig } from '../../../shared/constants/plans.js';
+import { MONTHLY_PRICE_EGP, SUBSCRIPTION_CURRENCY } from '../../../shared/constants/subscription.js';
 import { normalizeArabicText } from '../../../shared/utils/arabicNormalization.js';
 import { prisma } from '../../lib/prisma.js';
 import { isValidUUID } from '../../lib/http.js';
@@ -51,7 +51,6 @@ const platformBillingRoutes: FastifyPluginAsync = async (app) => {
   app.get<{
     Querystring: {
       view?: string;
-      plan?: string;
       centerId?: string;
       search?: string;
       page?: string;
@@ -65,7 +64,6 @@ const platformBillingRoutes: FastifyPluginAsync = async (app) => {
 
     const where: Prisma.SubscriptionWhereInput = {
       ...(request.query.centerId ? { tenantId: request.query.centerId } : {}),
-      ...(request.query.plan && request.query.plan !== 'all' ? { plan: request.query.plan as TenantPlan } : {}),
       ...(view !== 'all' && view in VIEW_STATUSES
         ? { status: { in: VIEW_STATUSES[view as Exclude<SubscriptionView, 'all'>] } }
         : {}),
@@ -87,7 +85,7 @@ const platformBillingRoutes: FastifyPluginAsync = async (app) => {
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
-          tenant: { select: { id: true, name: true, slug: true, plan: true, isActive: true, ownerName: true } },
+          tenant: { select: { id: true, name: true, slug: true, isActive: true, ownerName: true } },
           adjustments: { orderBy: { createdAt: 'desc' }, take: 5 },
         },
       }),
@@ -119,7 +117,6 @@ const platformBillingRoutes: FastifyPluginAsync = async (app) => {
   app.post<{
     Body: {
       tenantId: string;
-      plan: string;
       paymentMethod?: string;
       paymentReference?: string;
       startImmediately?: boolean;
@@ -132,11 +129,10 @@ const platformBillingRoutes: FastifyPluginAsync = async (app) => {
       schema: {
         body: {
           type: 'object',
-          required: ['tenantId', 'plan'],
+          required: ['tenantId'],
           additionalProperties: false,
           properties: {
             tenantId: { type: 'string', format: 'uuid' },
-            plan: { type: 'string', enum: [...PURCHASABLE_PLAN_IDS, 'FREE_TRIAL', 'ESSENTIAL', 'CONTROL', 'BUSINESS', 'ENTERPRISE'] },
             paymentMethod: { type: 'string', enum: Object.values(PaymentMethod) },
             paymentReference: { type: 'string', minLength: 2, maxLength: 200 },
             startImmediately: { type: 'boolean' },
@@ -146,30 +142,27 @@ const platformBillingRoutes: FastifyPluginAsync = async (app) => {
       },
     },
     async (request, reply) => {
-      const { tenantId, plan, paymentMethod, paymentReference, startImmediately } = request.body;
+      const { tenantId, paymentMethod, paymentReference, startImmediately } = request.body;
 
       const tenant = await prisma.tenant.findUnique({
         where: { id: tenantId },
-        select: { id: true, name: true, plan: true, isActive: true, maxDesks: true, maxBranches: true, maxUsers: true, visitLimit: true, discountBalance: true, creditBalance: true },
+        select: { id: true, name: true, isActive: true, discountBalance: true, creditBalance: true },
       });
       if (!tenant) return fail(reply, 404, 'CENTER_NOT_FOUND', 'المركز غير موجود.', 'Center not found.');
 
-      const planConfig = getPlanConfig(plan);
       const now = new Date();
       const periodStart = now;
       const periodEnd = new Date(now.getTime() + SUBSCRIPTION_PERIOD_DAYS * 24 * 60 * 60 * 1000);
-      const baseAmount = planConfig.priceEgp ?? 0;
-      const billing = applyBillingBalances(baseAmount, tenant.discountBalance, tenant.creditBalance);
+      const billing = applyBillingBalances(MONTHLY_PRICE_EGP, tenant.discountBalance, tenant.creditBalance);
       const status = startImmediately ? SubscriptionStatus.ACTIVE : SubscriptionStatus.PENDING;
 
       const result = await prisma.$transaction(async (tx) => {
         const subscription = await tx.subscription.create({
           data: {
             tenantId,
-            plan: plan as TenantPlan,
             status,
             amount: new Prisma.Decimal(billing.amountDue),
-            currency: 'EGP',
+            currency: SUBSCRIPTION_CURRENCY,
             paymentMethod: (paymentMethod ?? PaymentMethod.INSTAPAY) as PaymentMethod,
             paymentReference: paymentReference?.trim() ?? null,
             periodStart,
@@ -180,11 +173,6 @@ const platformBillingRoutes: FastifyPluginAsync = async (app) => {
         const updatedTenant = await tx.tenant.update({
           where: { id: tenantId },
           data: {
-            plan: plan as TenantPlan,
-            maxDesks: planConfig.limits.maxDesks,
-            maxBranches: planConfig.limits.maxBranches ?? 2147483647,
-            maxUsers: planConfig.limits.maxUsers ?? 2147483647,
-            visitLimit: planConfig.limits.visitLimit,
             discountBalance: new Prisma.Decimal(billing.remainingDiscount),
             creditBalance: new Prisma.Decimal(billing.remainingCredit),
             ...(startImmediately ? { isActive: true } : {}),
@@ -198,9 +186,8 @@ const platformBillingRoutes: FastifyPluginAsync = async (app) => {
             action: 'PLATFORM_SUBSCRIPTION_CREATED',
             entityType: 'Subscription',
             entityId: subscription.id,
-            beforeJson: { plan: tenant.plan, discountBalance: tenant.discountBalance.toString(), creditBalance: tenant.creditBalance.toString() },
+            beforeJson: { discountBalance: tenant.discountBalance.toString(), creditBalance: tenant.creditBalance.toString() },
             afterJson: {
-              plan,
               status,
               baseAmount: billing.baseAmount,
               amountDue: billing.amountDue,
@@ -625,8 +612,8 @@ const platformBillingRoutes: FastifyPluginAsync = async (app) => {
         orderBy: { createdAt: 'desc' },
         take: limit,
         include: {
-          tenant: { select: { id: true, name: true, slug: true, plan: true } },
-          subscription: { select: { id: true, plan: true, status: true, amount: true } },
+          tenant: { select: { id: true, name: true, slug: true } },
+          subscription: { select: { id: true, status: true, amount: true } },
           createdBy: { select: { id: true, fullName: true, username: true } },
         },
       });
@@ -652,7 +639,7 @@ const platformBillingRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  // ── GET /revenue — MRR, revenue this month, per plan, trends ───────────
+  // ── GET /revenue — MRR, revenue this month, trends ───────────
   app.get<{ Querystring: { months?: string } }>('/revenue', { preHandler: SUPER_ADMIN_GATE }, async (request, reply) => {
     const now = new Date();
     const months = paginationFromQuery({ limit: request.query.months }, 6).limit;
@@ -661,7 +648,7 @@ const platformBillingRoutes: FastifyPluginAsync = async (app) => {
     const [subscriptions, newThisMonth, canceledThisMonth, refunds, discounts, credits, stalePending] = await Promise.all([
       prisma.subscription.findMany({
         where: { status: { notIn: [SubscriptionStatus.PENDING, SubscriptionStatus.CANCELED] } },
-        select: { id: true, tenantId: true, plan: true, status: true, amount: true, periodStart: true, periodEnd: true, createdAt: true },
+        select: { id: true, tenantId: true, status: true, amount: true, periodStart: true, periodEnd: true, createdAt: true },
       }),
       prisma.subscription.count({ where: { createdAt: { gte: monthStart }, status: { not: SubscriptionStatus.CANCELED } } }),
       prisma.subscription.count({ where: { updatedAt: { gte: monthStart }, status: SubscriptionStatus.CANCELED } }),
@@ -684,7 +671,6 @@ const platformBillingRoutes: FastifyPluginAsync = async (app) => {
         mrr: report.mrr,
         atRiskRevenue: report.atRisk,
         revenueThisMonth: Math.round(revenueThisMonth * 100) / 100,
-        mrrByPlan: report.byPlan,
         history: report.history,
         movements: {
           newSubscriptions: newThisMonth,

@@ -1,11 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { Prisma } from '@prisma/client';
-import { AttendanceStatus, PaymentMethod, Role, SubscriptionStatus, TenantPlan } from '../../../shared/constants/index.js';
-import {
-  PURCHASABLE_PLAN_IDS,
-  computeVisitUsage,
-  getPlanConfig,
-} from '../../../shared/constants/plans.js';
+import { AttendanceStatus, PaymentMethod, Role, SubscriptionStatus } from '../../../shared/constants/index.js';
+import { MONTHLY_PRICE_EGP, SUBSCRIPTION_CURRENCY } from '../../../shared/constants/subscription.js';
 import { prisma } from '../../lib/prisma.js';
 import { isValidUUID } from '../../lib/http.js';
 import { applyBillingBalances, verifiedEntitlements } from '../admin/billingMath.js';
@@ -14,9 +10,8 @@ import { authenticate, requireRoles } from '../auth/auth.js';
 import { recordAuditEntry } from '../reports/audit.js';
 import { getTenantUsageSummary } from './usageService.js';
 
-type UpgradeBody = {
-  plan: TenantPlan;
-  /** Upgrades are Instapay-only, matching the signup payment flow. */
+type RenewBody = {
+  /** Renewals are Instapay-only, matching the signup payment flow. */
   paymentMethod: PaymentMethod;
   /** The payer's Instapay account name (e.g. name@instapay), used as payment proof. */
   paymentReference: string;
@@ -75,13 +70,8 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
           id: true,
           name: true,
           slug: true,
-          plan: true,
           trialEndsAt: true,
           isActive: true,
-          maxDesks: true,
-          maxBranches: true,
-          maxUsers: true,
-          visitLimit: true,
           createdAt: true,
         },
       }),
@@ -105,10 +95,6 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
       : 0;
 
     const periodStart = resolveUsagePeriodStart(tenant.createdAt, subscriptions, now);
-    // A failed summary must not be laundered into a half-filled object: the
-    // client reads this payload to build the usage meter, and a truthy `usage`
-    // that is missing its plan/limit fields crashes the dashboard. Flag the
-    // summary as unavailable instead, and log it so the cause is visible.
     const usageSummary = await getTenantUsageSummary(tenantId, now).catch((error: unknown) => {
       request.log.error({ error, tenantId }, 'tenant usage summary unavailable');
       return null;
@@ -130,7 +116,7 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
         usage: {
           ...(usageSummary || {}),
           periodStart,
-          visits: computeVisitUsage(usedVisits, tenant.visitLimit),
+          usedVisits,
           summaryAvailable: usageSummary !== null,
         },
         subscriptions: subscriptions.map((sub) => ({
@@ -141,14 +127,13 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
-  app.post<{ Body: UpgradeBody }>('/upgrade', {
+  app.post<{ Body: RenewBody }>('/renew', {
     preHandler: [authenticate, requireRoles(Role.ADMIN, Role.SUPER_ADMIN)],
     schema: {
       body: {
         type: 'object',
-        required: ['plan', 'paymentMethod', 'paymentReference'],
+        required: ['paymentMethod', 'paymentReference'],
         properties: {
-          plan: { type: 'string', enum: PURCHASABLE_PLAN_IDS as string[] },
           paymentMethod: { type: 'string', enum: [PaymentMethod.INSTAPAY] },
           paymentReference: { type: 'string', pattern: '^[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+$', minLength: 3, maxLength: 100 },
         },
@@ -164,16 +149,6 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    const selectedPlan = request.body.plan;
-    if (!PURCHASABLE_PLAN_IDS.includes(selectedPlan)) {
-      return reply.code(400).send({
-        success: false,
-        error: { code: 'INVALID_PLAN', message: 'الباقة المختارة غير متاحة للترقية.', messageEn: 'The selected plan is not available for upgrade.' },
-      });
-    }
-
-    const planConfig = getPlanConfig(selectedPlan);
-    const baseAmount = planConfig.priceEgp ?? 0;
     // Quoted on the same day boundaries `verify` will actually grant, so the
     // dates shown on the invoice are the dates the owner gets.
     const periodStart = startOfEgyptDay(new Date());
@@ -181,22 +156,21 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
 
     const result = await prisma.$transaction(async (tx) => {
       // The invoice is priced against the tenant's wallets so the customer
-      // knows exactly what to pay, but the wallets are NOT spent and the plan
-      // is NOT granted here. Both happen in `verify`, which is the only place
-      // a PENDING payment can become an entitlement.
+      // knows exactly what to pay, but the wallets are NOT spent and the paid
+      // month is NOT granted here. Both happen in `verify`, which is the only
+      // place a PENDING payment can become an entitlement.
       const tenantForWallet = await prisma.tenant.findUniqueOrThrow({
         where: { id: tenantId },
         select: { discountBalance: true, creditBalance: true },
       });
-      const billing = applyBillingBalances(baseAmount, tenantForWallet.discountBalance, tenantForWallet.creditBalance);
+      const billing = applyBillingBalances(MONTHLY_PRICE_EGP, tenantForWallet.discountBalance, tenantForWallet.creditBalance);
 
       const subscription = await tx.subscription.create({
         data: {
           tenantId,
-          plan: selectedPlan as TenantPlan,
           status: SubscriptionStatus.PENDING,
           amount: new Prisma.Decimal(billing.amountDue),
-          currency: 'EGP',
+          currency: SUBSCRIPTION_CURRENCY,
           paymentMethod: request.body.paymentMethod,
           paymentReference: request.body.paymentReference.trim(),
           periodStart,
@@ -207,12 +181,11 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
       await recordAuditEntry({
         actorId: request.user.sub,
         shiftRegisterId: null,
-        action: 'SUBSCRIPTION_UPGRADED',
+        action: 'SUBSCRIPTION_RENEWED',
         entityType: 'SUBSCRIPTION',
         entityId: subscription.id,
         amount: billing.amountDue,
         metadata: {
-          plan: selectedPlan,
           paymentMethod: request.body.paymentMethod,
           baseAmount: billing.baseAmount,
           discountApplied: billing.discountApplied,
@@ -239,9 +212,9 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
   // ── Super Admin: pending-payment verification queue ─────────────────────────
   //
   // Every INSTAPAY subscription is recorded as PENDING and grants no paid
-  // entitlements. Verification is the ONLY transition that hands the purchased
-  // plan to a tenant and spends its discount/credit wallets, so rejecting a
-  // payment can never leave a center holding an unpaid plan.
+  // entitlements. Verification is the ONLY transition that activates the paid
+  // month and spends its discount/credit wallets, so rejecting a payment can
+  // never leave a center holding an unpaid month.
   app.get('/pending', {
     preHandler: [authenticate, requireRoles(Role.SUPER_ADMIN)],
   }, async (_request, reply) => {
@@ -249,7 +222,7 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
       where: { status: SubscriptionStatus.PENDING },
       orderBy: { createdAt: 'desc' },
       take: 100,
-      include: { tenant: { select: { id: true, name: true, slug: true, plan: true } } },
+      include: { tenant: { select: { id: true, name: true, slug: true } } },
     });
 
     return reply.send({
@@ -257,7 +230,6 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
       data: {
         subscriptions: subscriptions.map((sub) => ({
           id: sub.id,
-          plan: sub.plan,
           amount: sub.amount.toString(),
           currency: sub.currency,
           paymentMethod: sub.paymentMethod,
@@ -308,7 +280,7 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
         where: { id: subscription.tenantId },
         select: { discountBalance: true, creditBalance: true },
       });
-      const granted = verifiedEntitlements(subscription.plan, tenant.discountBalance, tenant.creditBalance);
+      const granted = verifiedEntitlements(tenant.discountBalance, tenant.creditBalance);
 
       const updated = await tx.subscription.update({
         where: { id: subscription.id },
@@ -317,12 +289,7 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
       await tx.tenant.update({
         where: { id: subscription.tenantId },
         data: {
-          plan: granted.plan as TenantPlan,
           isActive: granted.isActive,
-          maxDesks: granted.limits.maxDesks,
-          maxBranches: granted.limits.maxBranches ?? 2147483647,
-          maxUsers: granted.limits.maxUsers ?? 2147483647,
-          visitLimit: granted.limits.visitLimit,
           discountBalance: new Prisma.Decimal(granted.discountBalance),
           creditBalance: new Prisma.Decimal(granted.creditBalance),
         },
@@ -335,7 +302,6 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
         entityId: subscription.id,
         amount: Number(subscription.amount),
         metadata: {
-          plan: subscription.plan,
           paymentMethod: subscription.paymentMethod,
           paymentReference: subscription.paymentReference,
           // The invoice quoted at upgrade time vs. what the wallets actually
@@ -381,10 +347,9 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    // Nothing to unwind: the pending payment never granted a plan and never
-    // spent a wallet, so the tenant simply keeps the entitlements it already
-    // had (the trial tier at signup, or the current paid plan after a rejected
-    // upgrade).
+    // Nothing to unwind: the pending payment never granted the paid month and never
+    // spent a wallet, so the tenant simply keeps the access it already had (the
+    // trial at signup, or the current paid month after a rejected renewal).
     const result = await prisma.$transaction(async (tx) => {
       const updated = await tx.subscription.update({
         where: { id: subscription.id },
@@ -397,7 +362,7 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
         entityType: 'SUBSCRIPTION',
         entityId: subscription.id,
         amount: Number(subscription.amount),
-        metadata: { plan: subscription.plan, paymentReference: subscription.paymentReference },
+        metadata: { paymentReference: subscription.paymentReference },
       }, tx);
       return updated;
     });

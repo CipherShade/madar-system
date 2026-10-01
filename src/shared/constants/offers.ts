@@ -1,8 +1,6 @@
-import { PLANS, TenantPlan } from './plans.js';
+import { MONTHLY_PRICE_EGP } from './subscription.js';
 
 export type LandingOffer = {
-  planId: TenantPlan;
-  slug: 'madar';
   nameAr: string;
   nameEn: string;
   badgeAr: string | null;
@@ -17,10 +15,12 @@ export type LandingOffer = {
   featuresEn: string[];
 };
 
-/** The only public subscription. Legacy plans remain in plans.ts for existing tenants. */
+/**
+ * The only subscription on sale. `listPriceEgp` is the anchor the founding
+ * discount is measured against; `foundingPriceEgp` is what is actually charged
+ * and must always track MONTHLY_PRICE_EGP.
+ */
 export const MADAR_OFFER: LandingOffer = {
-  planId: TenantPlan.PRO,
-  slug: 'madar',
   nameAr: 'مَدار',
   nameEn: 'Madar',
   badgeAr: 'النظام كامل',
@@ -30,16 +30,18 @@ export const MADAR_OFFER: LandingOffer = {
   taglineAr: 'كل ما تحتاجه لإدارة السنتر من مكان واحد.',
   taglineEn: 'Everything you need to run your center, in one place.',
   listPriceEgp: 1999,
-  foundingPriceEgp: PLANS[TenantPlan.PRO].priceEgp,
+  foundingPriceEgp: MONTHLY_PRICE_EGP,
   featuresAr: [
     'إدارة الطلاب', 'الحضور والغياب', 'الحصص والجداول', 'الريسبشن',
     'التحصيل والمدفوعات', 'أرصدة الطلاب', 'إدارة المدرسين', 'تسويات المدرسين',
-    'التقارير', 'المستخدمين والصلاحيات', 'تشغيل أكثر من مكتب استقبال', 'المتابعة اللحظية للتشغيل',
+    'التقارير', 'المستخدمين والصلاحيات', 'عدد غير محدود من موظفي الريسبشن', 'عدد غير محدود من الفروع',
+    'عدد غير محدود من مكاتب الاستقبال', 'المتابعة اللحظية للتشغيل',
   ],
   featuresEn: [
     'Student management', 'Attendance', 'Sessions and schedules', 'Reception',
     'Collections and payments', 'Student balances', 'Teacher management', 'Teacher settlements',
-    'Reports', 'Users and permissions', 'Multiple reception desks', 'Live operational visibility',
+    'Reports', 'Users and permissions', 'Unlimited reception staff', 'Unlimited branches',
+    'Unlimited reception desks', 'Live operational visibility',
   ],
 };
 
