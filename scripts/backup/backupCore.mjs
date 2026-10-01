@@ -5,13 +5,26 @@ const DUMP_SUFFIX = '.dump';
 const EXTENSION_SIDECAR_SUFFIX = '.extensions.sql';
 const PORTABLE_EXTENSION_DENYLIST = /^(supabase_|pgsodium|pg_graphql|pg_stat_statements|plpgsql)/;
 const SAFE_SQL_IDENTIFIER = /^[a-z_][a-z0-9_-]*$/;
-const DUMP_STAMP = /^erp-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\.dump$/;
+const DUMP_STAMP = /^erp-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})Z\.dump$/;
 const MS_PER_HOUR = 3600000;
 const SIGV4_ALGORITHM = 'AWS4-HMAC-SHA256';
 const S3_SERVICE = 's3';
 
 export function buildDumpName(stamp) {
   return `${DUMP_PREFIX}${stamp}${DUMP_SUFFIX}`;
+}
+
+/**
+ * The UTC timestamp that goes inside a dump name, e.g. `20260930-030418Z`.
+ *
+ * It lives here rather than in runBackup.mjs so that `buildDumpName(stampFor(d))`
+ * and `parseDumpStamp` cannot drift apart. They did once: the real name carries a
+ * trailing `Z` that the stamp pattern did not allow, so every dump the job wrote
+ * was invisible to its own freshness check, and the job reported failure on every
+ * single run while quietly uploading a good dump each time.
+ */
+export function stampFor(date) {
+  return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z').replace('T', '-');
 }
 
 export function buildExtensionSidecarName(dumpName) {

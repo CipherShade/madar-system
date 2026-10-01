@@ -24,6 +24,7 @@ import {
   selectPortableExtensions,
   sha256Hex,
   signS3Request,
+  stampFor,
 } from './backupCore.mjs';
 import { normalizeS3Endpoint } from './backupCore.mjs';
 
@@ -62,10 +63,6 @@ function parseBooleanEnv(name) {
   if (value === 'true' || value === '1' || value === 'yes') return true;
   if (value === 'false' || value === '0' || value === 'no') return false;
   throw new Error(`${name} must be true or false, got ${JSON.stringify(raw)}`);
-}
-
-function stampFor(date) {
-  return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z').replace('T', '-');
 }
 
 function runTool(bin, args, what, database) {

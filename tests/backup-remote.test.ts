@@ -18,11 +18,11 @@ const read = (p: string) => readFileSync(join(root, p), 'utf8');
  */
 
 test('a dump and its extension sidecar are told apart', () => {
-  const dump = core.buildDumpName('20260927-140000');
+  const dump = core.buildDumpName('20260927-140000Z');
   const sidecar = core.buildExtensionSidecarName(dump);
 
-  assert.equal(dump, 'erp-20260927-140000.dump');
-  assert.equal(sidecar, 'erp-20260927-140000.dump.extensions.sql');
+  assert.equal(dump, 'erp-20260927-140000Z.dump');
+  assert.equal(sidecar, 'erp-20260927-140000Z.dump.extensions.sql');
   assert.ok(core.isDumpName(dump));
   assert.ok(!core.isDumpName(sidecar), 'a sidecar must never be counted as a dump');
   assert.ok(core.isExtensionSidecarName(sidecar));
@@ -33,25 +33,42 @@ test('a dump and its extension sidecar are told apart', () => {
 
 test('dump stamps sort chronologically as plain names', () => {
   const names = [
-    'erp-20260927-140000.dump',
-    'erp-20260101-000000.dump',
-    'erp-20261231-235959.dump',
+    'erp-20260927-140000Z.dump',
+    'erp-20260101-000000Z.dump',
+    'erp-20261231-235959Z.dump',
   ];
   assert.deepEqual(names.slice().sort().reverse(), [
-    'erp-20261231-235959.dump',
-    'erp-20260927-140000.dump',
-    'erp-20260101-000000.dump',
+    'erp-20261231-235959Z.dump',
+    'erp-20260927-140000Z.dump',
+    'erp-20260101-000000Z.dump',
   ]);
 
-  assert.equal(core.parseDumpStamp('erp-20260927-140000.dump'), Date.UTC(2026, 8, 27, 14, 0, 0));
-  assert.equal(core.parseDumpStamp('erp-20260101-000000.dump'), Date.UTC(2026, 0, 1, 0, 0, 0));
+  assert.equal(core.parseDumpStamp('erp-20260927-140000Z.dump'), Date.UTC(2026, 8, 27, 14, 0, 0));
+  assert.equal(core.parseDumpStamp('erp-20260101-000000Z.dump'), Date.UTC(2026, 0, 1, 0, 0, 0));
+});
+
+test('the name the runner writes is a name the freshness check can read', () => {
+  // The runner stamps a dump with stampFor() and later decides whether it is
+  // fresh by parsing the listing with parseDumpStamp(). If those two disagree
+  // the job uploads a perfectly good dump and then declares the bucket empty,
+  // failing every run while appearing to be a storage outage. It did exactly
+  // that: stampFor() writes a trailing UTC `Z` that the pattern did not allow.
+  const now = new Date('2026-09-30T03:04:18.000Z');
+  const name = core.buildDumpName(core.stampFor(now));
+
+  assert.equal(name, 'erp-20260930-030418Z.dump');
+  assert.ok(core.isDumpName(name), 'the runner\'s own output must count as a dump');
+  assert.equal(core.parseDumpStamp(name), now.getTime());
+
+  const freshness = core.evaluateFreshness({ dumpNames: [name], now: now.getTime() + 3600000, maxAgeHours: 48 });
+  assert.equal(freshness.ok, true, freshness.message);
 });
 
 test('impossible stamps are rejected instead of becoming a bogus date', () => {
-  assert.equal(core.parseDumpStamp('erp-20261327-140000.dump'), null, 'month 13 does not exist');
-  assert.equal(core.parseDumpStamp('erp-20260230-140000.dump'), null, 'February 30th does not exist');
-  assert.equal(core.parseDumpStamp('erp-20260927-250000.dump'), null, 'hour 25 does not exist');
-  assert.equal(core.parseDumpStamp('erp-20260927-140000.dump.extensions.sql'), null);
+  assert.equal(core.parseDumpStamp('erp-20261327-140000Z.dump'), null, 'month 13 does not exist');
+  assert.equal(core.parseDumpStamp('erp-20260230-140000Z.dump'), null, 'February 30th does not exist');
+  assert.equal(core.parseDumpStamp('erp-20260927-250000Z.dump'), null, 'hour 25 does not exist');
+  assert.equal(core.parseDumpStamp('erp-20260927-140000Z.dump.extensions.sql'), null);
   assert.equal(core.parseDumpStamp('not-a-dump.dump'), null);
 });
 
@@ -148,35 +165,35 @@ test('an unexpected extension name cannot inject SQL into the sidecar', () => {
 
 test('retention keeps the newest dumps and takes their sidecars with them', () => {
   const objects = [
-    'erp-20260925-140000.dump',
-    'erp-20260925-140000.dump.extensions.sql',
-    'erp-20260926-140000.dump',
-    'erp-20260926-140000.dump.extensions.sql',
-    'erp-20260927-140000.dump',
-    'erp-20260927-140000.dump.extensions.sql',
+    'erp-20260925-140000Z.dump',
+    'erp-20260925-140000Z.dump.extensions.sql',
+    'erp-20260926-140000Z.dump',
+    'erp-20260926-140000Z.dump.extensions.sql',
+    'erp-20260927-140000Z.dump',
+    'erp-20260927-140000Z.dump.extensions.sql',
   ];
   const plan = core.planRetention(objects, 2);
-  assert.deepEqual(plan.retained, ['erp-20260927-140000.dump', 'erp-20260926-140000.dump']);
-  assert.ok(plan.toDelete.includes('erp-20260925-140000.dump'));
-  assert.ok(plan.toDelete.includes('erp-20260925-140000.dump.extensions.sql'));
-  assert.ok(!plan.toDelete.includes('erp-20260927-140000.dump'), 'the newest dump must never be deleted');
-  assert.ok(!plan.toDelete.includes('erp-20260927-140000.dump.extensions.sql'));
-  assert.ok(!plan.toDelete.includes('erp-20260926-140000.dump.extensions.sql'));
+  assert.deepEqual(plan.retained, ['erp-20260927-140000Z.dump', 'erp-20260926-140000Z.dump']);
+  assert.ok(plan.toDelete.includes('erp-20260925-140000Z.dump'));
+  assert.ok(plan.toDelete.includes('erp-20260925-140000Z.dump.extensions.sql'));
+  assert.ok(!plan.toDelete.includes('erp-20260927-140000Z.dump'), 'the newest dump must never be deleted');
+  assert.ok(!plan.toDelete.includes('erp-20260927-140000Z.dump.extensions.sql'));
+  assert.ok(!plan.toDelete.includes('erp-20260926-140000Z.dump.extensions.sql'));
 });
 
 test('an orphaned sidecar is cleaned up, unrelated objects are left alone', () => {
   const objects = [
-    'erp-20260927-140000.dump',
-    'erp-20260927-140000.dump.extensions.sql',
-    'erp-20260101-140000.dump.extensions.sql',
+    'erp-20260927-140000Z.dump',
+    'erp-20260927-140000Z.dump.extensions.sql',
+    'erp-20260101-140000Z.dump.extensions.sql',
     'README.txt',
   ];
   const plan = core.planRetention(objects, 5);
-  assert.deepEqual(plan.toDelete, ['erp-20260101-140000.dump.extensions.sql']);
+  assert.deepEqual(plan.toDelete, ['erp-20260101-140000Z.dump.extensions.sql']);
 });
 
 test('a retention count below one is refused rather than emptying the bucket', () => {
-  const objects = ['erp-20260927-140000.dump', 'erp-20260926-140000.dump'];
+  const objects = ['erp-20260927-140000Z.dump', 'erp-20260926-140000Z.dump'];
   assert.throws(() => core.planRetention(objects, 0), /at least 1/i);
   assert.throws(() => core.planRetention(objects, -1), /at least 1/i);
   assert.throws(() => core.planRetention(objects, 1.5), /at least 1/i);
@@ -184,15 +201,15 @@ test('a retention count below one is refused rather than emptying the bucket', (
 });
 
 test('nothing is deleted while there are fewer dumps than the keep count', () => {
-  const objects = ['erp-20260927-140000.dump', 'erp-20260927-140000.dump.extensions.sql'];
+  const objects = ['erp-20260927-140000Z.dump', 'erp-20260927-140000Z.dump.extensions.sql'];
   assert.deepEqual(core.planRetention(objects, 14), {
-    retained: ['erp-20260927-140000.dump'],
+    retained: ['erp-20260927-140000Z.dump'],
     toDelete: [],
   });
 });
 
 test('staleness is measured from the newest stored dump', () => {
-  const names = ['erp-20260925-140000.dump', 'erp-20260927-140000.dump', 'garbage.dump'];
+  const names = ['erp-20260925-140000Z.dump', 'erp-20260927-140000Z.dump', 'garbage.dump'];
   const now = Date.parse('2026-09-27T16:00:00Z');
 
   const fresh = core.evaluateFreshness({ dumpNames: names, now, maxAgeHours: 48 });
@@ -256,12 +273,12 @@ test('path-style is detected from the endpoint, and can be forced', () => {
 test('object URLs are built for both addressing styles', () => {
   const endpoint = core.normalizeS3Endpoint('https://iad1.railwayappstorage.com');
 
-  const virtual = core.buildS3Url({ endpoint, bucket: 'erp-backups', key: 'erp-20260927-140000.dump', pathStyle: false });
-  assert.equal(virtual.url, 'https://erp-backups.iad1.railwayappstorage.com/erp-20260927-140000.dump');
+  const virtual = core.buildS3Url({ endpoint, bucket: 'erp-backups', key: 'erp-20260927-140000Z.dump', pathStyle: false });
+  assert.equal(virtual.url, 'https://erp-backups.iad1.railwayappstorage.com/erp-20260927-140000Z.dump');
   assert.equal(virtual.host, 'erp-backups.iad1.railwayappstorage.com', 'the signed host must be the host actually dialled');
 
-  const pathStyle = core.buildS3Url({ endpoint, bucket: 'erp-backups', key: 'erp-20260927-140000.dump', pathStyle: true });
-  assert.equal(pathStyle.url, 'https://iad1.railwayappstorage.com/erp-20260927-140000.dump');
+  const pathStyle = core.buildS3Url({ endpoint, bucket: 'erp-backups', key: 'erp-20260927-140000Z.dump', pathStyle: true });
+  assert.equal(pathStyle.url, 'https://iad1.railwayappstorage.com/erp-20260927-140000Z.dump');
 
   const root = core.buildS3Url({ endpoint, bucket: 'erp-backups', key: '', pathStyle: true });
   assert.equal(root.url, 'https://iad1.railwayappstorage.com/', 'listing must hit the bucket root');
@@ -304,7 +321,7 @@ test('the canonical query string is sorted and encoded, because S3 signs the ord
 test('the SigV4 signature is deterministic and changes when anything signed changes', () => {
   const request = {
     method: 'PUT',
-    url: 'https://erp-backups.s3.example.com/erp-20260927-140000.dump',
+    url: 'https://erp-backups.s3.example.com/erp-20260927-140000Z.dump',
     payloadHash: core.sha256Hex('payload'),
     accessKeyId: 'AKIDEXAMPLE',
     secretAccessKey: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY',
@@ -332,7 +349,7 @@ test('the SigV4 signature is deterministic and changes when anything signed chan
 test('the signed headers and credential scope are exactly what S3 requires', () => {
   const signed = core.signS3Request({
     method: 'PUT',
-    url: 'https://erp-backups.s3.example.com/erp-20260927-140000.dump',
+    url: 'https://erp-backups.s3.example.com/erp-20260927-140000Z.dump',
     headers: { 'content-type': 'application/octet-stream' },
     payloadHash: core.sha256Hex('payload'),
     accessKeyId: 'AKIDEXAMPLE',
@@ -365,15 +382,15 @@ test('the list response is parsed into names, including entity escapes', () => {
 <ListBucketResult>
   <Name>erp-backups</Name>
   <IsTruncated>false</IsTruncated>
-  <Contents><Key>erp-20260926-030000.dump</Key></Contents>
-  <Contents><Key>erp-20260927-030000.dump</Key></Contents>
-  <Contents><Key>erp-20260927-030000.dump.extensions.sql</Key></Contents>
+  <Contents><Key>erp-20260926-030000Z.dump</Key></Contents>
+  <Contents><Key>erp-20260927-030000Z.dump</Key></Contents>
+  <Contents><Key>erp-20260927-030000Z.dump.extensions.sql</Key></Contents>
 </ListBucketResult>`;
   const result = core.parseListObjectsResult(xml);
   assert.deepEqual(result.names, [
-    'erp-20260926-030000.dump',
-    'erp-20260927-030000.dump',
-    'erp-20260927-030000.dump.extensions.sql',
+    'erp-20260926-030000Z.dump',
+    'erp-20260927-030000Z.dump',
+    'erp-20260927-030000Z.dump.extensions.sql',
   ]);
   assert.equal(result.isTruncated, false);
   assert.equal(result.nextContinuationToken, null);
@@ -389,7 +406,7 @@ test('the list response is parsed into names, including entity escapes', () => {
 });
 
 test('an S3 error names the likely cause, because the usual one is a wrong region', () => {
-  const mismatch = core.describeS3Failure('Uploading erp-20260927-030000.dump', 403,
+  const mismatch = core.describeS3Failure('Uploading erp-20260927-030000Z.dump', 403,
     '<Error><Code>SignatureDoesNotMatch</Code><Message>The request signature we calculated does not match.</Message></Error>', []);
   assert.match(mismatch, /SignatureDoesNotMatch/);
   assert.match(mismatch, /BACKUP_S3_REGION/, 'a wrong region is the most likely cause and the hardest to guess');
@@ -406,7 +423,7 @@ test('secrets are scrubbed from any text that gets logged', () => {
   assert.ok(!scrubbed.includes('s3cr3t-password'));
   assert.ok(scrubbed.includes('***'));
 
-  const failure = core.describeS3Failure('Uploading erp-20260927-030000.dump', 500, `boom ${key}`, [key]);
+  const failure = core.describeS3Failure('Uploading erp-20260927-030000Z.dump', 500, `boom ${key}`, [key]);
   assert.match(failure, /HTTP 500/);
   assert.ok(!failure.includes(key), 'the secret access key must never reach the cron log');
 });
