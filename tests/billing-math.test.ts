@@ -1,12 +1,19 @@
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { Prisma } from '@prisma/client';
-import { MONTHLY_PRICE_EGP } from '../src/shared/constants/subscription.js';
+import {
+  BOOKS_INVENTORY_ADDON,
+  MONTHLY_PRICE_EGP,
+  totalMonthlyPriceEgp,
+} from '../src/shared/constants/subscription.js';
 import {
   USAGE_METRICS,
   applyBillingBalances,
   buildRevenueReport,
+  buildSubscriptionLineItems,
   computeDiscountAmount,
+  computeInvoicePreview,
+  computeInvoiceTotal,
   computeMetricUsage,
   computeRevenueSnapshot,
   computeTenantUsage,
@@ -352,5 +359,88 @@ describe('SUBSCRIPTION ENTITLEMENTS — no paid month before payment is verified
     assert.equal(granted.billing?.fullyCovered, true);
     assert.equal(granted.billing?.amountDue, 0);
     assert.equal(granted.creditBalance, 801);
+  });
+});
+
+describe('BILLING MATH — add-on invoice lines', () => {
+  test('a center with no add-ons is charged exactly the base price', () => {
+    const preview = computeInvoicePreview([]);
+
+    assert.equal(preview.baseAmount, MONTHLY_PRICE_EGP);
+    assert.deepEqual(preview.addonLines, []);
+    assert.equal(preview.total, 1199);
+  });
+
+  test('the Books & Inventory add-on is a recurring 300 EGP line item on top of the base', () => {
+    const preview = computeInvoicePreview([BOOKS_INVENTORY_ADDON]);
+
+    assert.equal(preview.baseAmount, 1199);
+    assert.equal(preview.addonLines.length, 1);
+    assert.equal(preview.addonLines[0].code, BOOKS_INVENTORY_ADDON);
+    assert.equal(preview.addonLines[0].amount, 300);
+    assert.equal(preview.total, 1499);
+    assert.equal(totalMonthlyPriceEgp([BOOKS_INVENTORY_ADDON]), 1499);
+  });
+
+  test('the add-on line is labelled in both languages for the invoice', () => {
+    const [line] = computeInvoicePreview([BOOKS_INVENTORY_ADDON]).addonLines;
+
+    assert.equal(line.labelEn, 'Books & Inventory');
+    assert.equal(line.labelAr, 'الكتب والمخزون');
+  });
+
+  test('an unknown or disabled add-on code is dropped rather than priced at zero', () => {
+    const preview = computeInvoicePreview(['NOT_A_REAL_ADDON']);
+
+    assert.deepEqual(preview.addonLines, []);
+    assert.equal(preview.total, 1199, 'an unknown code must never silently grant a free add-on');
+  });
+
+  test('duplicate codes collapse to one line so a repeated join cannot double-bill', () => {
+    const preview = computeInvoicePreview([BOOKS_INVENTORY_ADDON, BOOKS_INVENTORY_ADDON, BOOKS_INVENTORY_ADDON]);
+
+    assert.equal(preview.addonLines.length, 1);
+    assert.equal(preview.total, 1499);
+  });
+
+  test('null, undefined and non-iterable inputs all fall back to the base price', () => {
+    for (const input of [null, undefined]) {
+      assert.equal(computeInvoiceTotal(input), 1199);
+    }
+    assert.equal(computeInvoiceTotal([]), 1199);
+  });
+
+  test('the frozen line items total the same figure that is charged', () => {
+    const codes = [BOOKS_INVENTORY_ADDON];
+    const items = buildSubscriptionLineItems(codes);
+    const summed = items.reduce((sum, item) => sum + item.amount, 0);
+
+    assert.equal(items[0].code, 'BASE');
+    assert.equal(items[0].amount, 1199);
+    assert.equal(items.length, 2);
+    assert.equal(summed, computeInvoiceTotal(codes), 'snapshot lines must reconcile with the invoice total');
+    assert.equal(summed, 1499);
+  });
+
+  test('wallets are applied to the add-on total, not to the base price', () => {
+    // A 300 EGP discount against a 1,499 EGP invoice leaves 1,199 due.
+    const withAddon = verifiedEntitlements(300, 0, [BOOKS_INVENTORY_ADDON]);
+    assert.equal(withAddon.billing?.baseAmount, 1499);
+    assert.equal(withAddon.billing?.discountApplied, 300);
+    assert.equal(withAddon.billing?.amountDue, 1199);
+
+    // The same wallet without the add-on is worth EGP 300 more of invoice.
+    const withoutAddon = verifiedEntitlements(300, 0, []);
+    assert.equal(withoutAddon.billing?.amountDue, 899);
+  });
+
+  test('verification prices the add-ons on the invoice, not the add-ons enabled today', () => {
+    // The center cancelled the add-on after paying for a period that included it.
+    // The wallets must still be settled against what was actually invoiced.
+    const settled = verifiedEntitlements(1499, 0, [BOOKS_INVENTORY_ADDON]);
+
+    assert.equal(settled.billing?.baseAmount, 1499);
+    assert.equal(settled.billing?.amountDue, 0);
+    assert.equal(settled.billing?.fullyCovered, true);
   });
 });

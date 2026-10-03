@@ -116,6 +116,11 @@ const branchRoutes: FastifyPluginAsync = async (app) => {
     preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable],
     schema: { body: { ...branchSchema, required: [] } },
   }, async (request, reply) => {
+    const tenantId = request.user?.tenantId;
+    if (!tenantId) {
+      return reply.code(400).send(invalid('الحساب غير مرتبط بمركز تعليمي.', 'Account has no tenant assigned.', 'TENANT_REQUIRED'));
+    }
+
     if (!isValidUUID(request.params.id)) {
       return reply.code(400).send(invalid('معرّف الفرع غير صالح.', 'The branch id is invalid.'));
     }
@@ -127,7 +132,11 @@ const branchRoutes: FastifyPluginAsync = async (app) => {
     try {
       const branch = await prisma.$transaction(async (tx) => {
         const updated = await tx.branch.update({
-          where: { id: request.params.id },
+          // Scoped by tenant as well as id: an unguessable UUID is not an
+          // authorization check, so a branch belonging to another center must
+          // simply not match. A miss raises P2025 and becomes a 404 below,
+          // which is also what a genuinely missing branch returns.
+          where: { id: request.params.id, tenantId },
           data: {
             ...(request.body.name === undefined ? {} : { name: request.body.name.trim() }),
             ...(request.body.address === undefined ? {} : { address: request.body.address?.trim() || null }),
@@ -163,13 +172,18 @@ const branchRoutes: FastifyPluginAsync = async (app) => {
   app.delete<{ Params: { id: string } }>('/:id', {
     preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable],
   }, async (request, reply) => {
+    const tenantId = request.user?.tenantId;
+    if (!tenantId) {
+      return reply.code(400).send(invalid('الحساب غير مرتبط بمركز تعليمي.', 'Account has no tenant assigned.', 'TENANT_REQUIRED'));
+    }
+
     if (!isValidUUID(request.params.id)) {
       return reply.code(400).send(invalid('معرّف الفرع غير صالح.', 'The branch id is invalid.'));
     }
 
     try {
       await prisma.$transaction(async (tx) => {
-        await tx.branch.delete({ where: { id: request.params.id } });
+        await tx.branch.delete({ where: { id: request.params.id, tenantId } });
         await recordAuditEntry({
           actorId: request.user.sub,
           shiftRegisterId: null,

@@ -6,6 +6,28 @@ export const ROLES = {
 export const Role = ROLES;
 export type Role = (typeof ROLES)[keyof typeof ROLES];
 
+/**
+ * Roles that may be assigned to an account through any API.
+ *
+ * SUPER_ADMIN is deliberately excluded, and that exclusion is load-bearing: it
+ * is the platform owner's role, it spans every center, and it can read and
+ * change any tenant's data. It is only ever established at first boot from
+ * `SUPER_ADMIN_USERNAME` / `SUPER_ADMIN_PASSWORD`, or by the demo seeder. No
+ * route — tenant-facing or platform console — can grant it, because every
+ * assignment path reads this one list.
+ *
+ * Both a center's own user screen (`/api/users`) and the platform console
+ * (`/api/admin/users/:id`) must use this. A local copy in either module is how
+ * a center admin ends up able to promote a second login they control and take
+ * over the platform.
+ */
+export const ASSIGNABLE_ROLES = [Role.ADMIN, Role.RECEPTIONIST] as const;
+export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
+
+export function isAssignableRole(role: unknown): role is AssignableRole {
+  return typeof role === 'string' && (ASSIGNABLE_ROLES as readonly string[]).includes(role);
+}
+
 export * from './subscription.js';
 export * from './offers.js';
 

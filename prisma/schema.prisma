@@ -58,6 +58,36 @@ enum SettlementStatus {
   DISBURSED
 }
 
+/// Optional capabilities a center can buy on top of the single Madar
+/// subscription. An add-on is priced into the same invoice as the base
+/// subscription; it is never a second product or a tier.
+enum AddonCode {
+  BOOKS_INVENTORY
+}
+
+/// Why a stock quantity changed. Every change to `branch_stocks.quantity`
+/// must be explainable by one of these, so the on-hand figure is always
+/// reconstructible from the movement ledger.
+enum StockMovementType {
+  /// Stock received from a supplier. Increases quantity.
+  PURCHASE
+  /// Items sold to a student. Decreases quantity.
+  SALE
+  /// Manual correction of a miscount. Signed by the recorded delta.
+  ADJUSTMENT
+  /// Damaged, lost or expired stock written off. Decreases quantity.
+  WRITE_OFF
+  /// Items returned to the shelf by a voided sale. Increases quantity.
+  RETURN
+}
+
+/// Lifecycle of a recorded sale. A sale is a financial record: it is never
+/// edited or deleted, only voided, and voiding writes a reversing movement.
+enum SaleStatus {
+  RECORDED
+  VOIDED
+}
+
 enum SchoolType {
   GENERAL
   LANGUAGES
@@ -98,6 +128,11 @@ model Tenant {
   SuperAdminSession      SuperAdminSession[]
   SystemHealthEvent      SystemHealthEvent[]
   SubscriptionAdjustment SubscriptionAdjustment[]
+  addons                 TenantAddon[]
+  products               Product[]
+  branchStocks           BranchStock[]
+  stockMovements         StockMovement[]
+  bookSales              BookSale[]
 
   @@map("tenants")
 }
@@ -119,9 +154,38 @@ model Subscription {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   adjustments SubscriptionAdjustment[]
+  lineItems   SubscriptionLineItem[]
 
   @@index([tenantId])
   @@map("subscriptions")
+}
+
+/// The priced lines of one subscription period, frozen at the moment it was
+/// invoiced: one BASE line plus one line per enabled add-on.
+///
+/// This is a snapshot, not a live view. A center that buys the Books & Inventory
+/// add-on in March must still see a March invoice that says EGP 1,199, and a
+/// February invoice that still says EGP 1,499 after they cancel in April — so
+/// the prices and labels are copied here rather than read back from the current
+/// price list. `subscriptions.amount` remains the authoritative total.
+///
+/// Rows are absent for periods invoiced before this table existed; readers
+/// synthesize a single BASE line from `amount` in that case rather than showing
+/// a broken invoice.
+model SubscriptionLineItem {
+  id             String       @id @default(uuid())
+  subscriptionId String       @map("subscription_id")
+  /// 'BASE' for the platform itself, or an AddonCode value.
+  code           String
+  labelEn        String       @map("label_en")
+  labelAr        String       @map("label_ar")
+  amount         Decimal
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@map("subscription_line_items")
 }
 
 // 0.2 SaaS Tenant Branches
@@ -138,6 +202,9 @@ model Branch {
   tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   usageRecords          UsageRecord[]
   rooms                 Room[]
+  branchStocks          BranchStock[]
+  stockMovements        StockMovement[]
+  bookSales             BookSale[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -161,6 +228,177 @@ model UsageRecord {
   @@unique([tenantId, branchId, periodStart, periodEnd])
   @@index([tenantId, periodStart, periodEnd])
   @@map("usage_records")
+}
+
+// ─── Books & Inventory add-on ───────────────────────────────────────────────
+//
+// Everything below is only reachable by a center that has paid for the
+// BOOKS_INVENTORY add-on (see `TenantAddon`). The gate is enforced in the route
+// module, not here: these tables stay in the same schema so that enabling the
+// add-on never requires a migration.
+
+// Which optional capabilities a center has bought. An enabled add-on is priced
+// into every subsequent invoice; disabling one stops the next invoice, and
+// never touches a period that has already been paid for.
+model TenantAddon {
+  id           String     @id @default(uuid())
+  tenantId     String     @map("tenant_id")
+  code         AddonCode
+  enabled      Boolean    @default(true)
+  enabledAt    DateTime   @default(now()) @map("enabled_at")
+  disabledAt   DateTime?  @map("disabled_at")
+  updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at")
+
+  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("tenant_addons")
+}
+
+/// A book or supply the center stocks. `salePrice` is what a student pays and
+/// `costPrice` is what the center paid; both are copied onto the sale line at
+/// the moment of sale so that editing a product later cannot rewrite the
+/// center's historical revenue or profit.
+model Product {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  nameAr        String    @map("name_ar")
+  nameEn        String?   @map("name_en")
+  /// Normalized Arabic name for trigram search, mirroring `Student.searchName`.
+  searchName    String    @map("search_name")
+  sku           String?
+  categoryAr    String?   @map("category_ar")
+  salePrice     Decimal   @map("sale_price")
+  costPrice     Decimal   @default(0) @map("cost_price")
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branchStocks  BranchStock[]
+  movements     StockMovement[]
+  saleLines     BookSaleLine[]
+
+  @@unique([tenantId, sku])
+  @@index([tenantId, searchName])
+  @@index([tenantId, isActive])
+  @@map("products")
+}
+
+/// On-hand quantity for one product at one branch. Stock is per branch because
+/// two branches are two physical shelves; a single pooled figure would let one
+/// site sell what another site owns.
+model BranchStock {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  branchId      String   @map("branch_id")
+  productId     String   @map("product_id")
+  quantity      Int      @default(0)
+  /// Quantity at or below which the branch should reorder. 0 disables the alert.
+  reorderLevel  Int      @default(0) @map("reorder_level")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch        Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, productId])
+  @@index([tenantId, branchId])
+  @@map("branch_stocks")
+}
+
+/// The append-only ledger of every quantity change. `branch_stocks.quantity` is
+/// a cached running total of these rows, never an independently edited number,
+/// so the on-hand figure can always be re-derived and audited.
+model StockMovement {
+  id            String            @id @default(uuid())
+  tenantId      String            @map("tenant_id")
+  branchId      String            @map("branch_id")
+  productId     String            @map("product_id")
+  type          StockMovementType
+  /// Always positive. The direction of the change is implied by `type`, except
+  /// for ADJUSTMENT where the sign of the applied delta is recorded in `delta`.
+  quantity      Int
+  /// Signed change actually applied to the on-hand quantity. Equal to `quantity`
+  /// for every type except ADJUSTMENT.
+  delta         Int
+  /// What one unit cost the center, captured from the product at the time.
+  unitCost      Decimal?          @map("unit_cost")
+  note          String?
+  saleId        String?           @map("sale_id")
+  createdById   String?           @map("created_by_id")
+  createdAt     DateTime          @default(now()) @map("created_at")
+
+  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch        Branch            @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  product       Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sale          BookSale?         @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  createdBy     User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, branchId, productId])
+  @@index([tenantId, createdAt])
+  @@index([saleId])
+  @@map("stock_movements")
+}
+
+/// A sale of books/supplies to a student. This is a financial record, so it is
+/// immutable once written: correcting a mistake means voiding it and recording a
+/// replacement, never editing the totals. `total`/`costTotal` are snapshots of
+/// the line maths at the moment of sale.
+model BookSale {
+  id              String        @id @default(uuid())
+  tenantId        String        @map("tenant_id")
+  branchId        String        @map("branch_id")
+  studentId       String        @map("student_id")
+  status          SaleStatus    @default(RECORDED)
+  /// What the student paid, summed from the lines.
+  total           Decimal
+  /// What those same items cost the center, so profit stays reportable even
+  /// after a product's costPrice is edited.
+  costTotal       Decimal       @map("cost_total")
+  paymentMethod   PaymentMethod @map("payment_method")
+  /// The open shift this cash should be found in at reconciliation. Nullable so
+  /// a sale recorded outside a desk register still has somewhere to go.
+  shiftRegisterId String?       @map("shift_register_id")
+  voidedAt        DateTime?     @map("voided_at")
+  voidReason      String?       @map("void_reason")
+  note            String?
+  createdById     String?       @map("created_by_id")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch          Branch         @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  student         Student        @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  shiftRegister   ShiftRegister? @relation(fields: [shiftRegisterId], references: [id], onDelete: SetNull)
+  createdBy       User?          @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  lines           BookSaleLine[]
+  movements       StockMovement[]
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, studentId])
+  @@index([tenantId, branchId])
+  @@index([shiftRegisterId])
+  @@map("book_sales")
+}
+
+/// One product on one sale, with the prices frozen at sale time.
+model BookSaleLine {
+  id            String    @id @default(uuid())
+  saleId        String    @map("sale_id")
+  productId     String    @map("product_id")
+  quantity      Int
+  unitPrice     Decimal   @map("unit_price")
+  unitCost      Decimal   @map("unit_cost")
+  lineTotal     Decimal   @map("line_total")
+
+  sale          BookSale  @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product       Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([saleId])
+  @@index([productId])
+  @@map("book_sale_lines")
 }
 
 // 1. Center Staff Internal Accounts
@@ -195,6 +433,8 @@ model User {
   superAdminSessions        SuperAdminSession[]
   superAdminUserPermissions SuperAdminUserPermission[]
   subscriptionAdjustments    SubscriptionAdjustment[]
+  stockMovements            StockMovement[]
+  bookSales                 BookSale[]
 
   @@index([tenantId])
   @@map("users")
@@ -262,6 +502,7 @@ model Student {
 
   tenant      Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   attendances Attendance[]
+  bookSales   BookSale[]
 
   @@unique([tenantId, studentCode])
   @@index([tenantId, searchName])
@@ -323,6 +564,7 @@ model ShiftRegister {
   attendances          Attendance[]
   disbursedSettlements SessionSettlement[]
   expenses             Expense[]
+  bookSales            BookSale[]
   auditLogs            AuditLog[]
 
   @@index([tenantId, receptionistId, status])

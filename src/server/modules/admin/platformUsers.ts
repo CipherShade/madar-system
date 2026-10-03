@@ -15,7 +15,7 @@
 import argon2 from 'argon2';
 import { Prisma } from '@prisma/client';
 import type { FastifyPluginAsync } from 'fastify';
-import { Role } from '../../../shared/constants/index.js';
+import { Role, ASSIGNABLE_ROLES } from '../../../shared/constants/index.js';
 import { normalizeArabicText } from '../../../shared/utils/arabicNormalization.js';
 import { prisma } from '../../lib/prisma.js';
 import { isValidUUID } from '../../lib/http.js';
@@ -25,7 +25,6 @@ import { buildUserSearchWhere, fail, paginationFromQuery, paginationPayload } fr
 
 const SUPER_ADMIN_GATE = [authenticate, requireRoles(Role.SUPER_ADMIN)];
 
-const ASSIGNABLE_ROLES = [Role.ADMIN, Role.RECEPTIONIST] as const;
 const TEMP_PASSWORD_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
 
 /** Temporary password for a reset: readable, random, and returned only once. */

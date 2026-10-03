@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { Prisma } from '@prisma/client';
 import argon2 from 'argon2';
-import { Role } from '../../../shared/constants/index.js';
+import { Role, ASSIGNABLE_ROLES, isAssignableRole } from '../../../shared/constants/index.js';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
 import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
@@ -38,7 +38,7 @@ const createSchema = {
     username: { type: 'string', pattern: '^[a-zA-Z0-9_.-]{3,50}$' },
     password: { type: 'string', minLength: 8, maxLength: 200 },
     fullName: { type: 'string', minLength: 2, maxLength: 100 },
-    role: { type: 'string', enum: Object.values(Role) },
+    role: { type: 'string', enum: ASSIGNABLE_ROLES },
     phoneNumber: { type: ['string', 'null'], pattern: '^(010|011|012|015)[0-9]{8}$' },
     preferredLanguage: { type: 'string', enum: ['ar', 'en'] },
     isActive: { type: 'boolean' },
@@ -50,7 +50,7 @@ const updateSchema = {
   additionalProperties: false,
   properties: {
     fullName: { type: 'string', minLength: 2, maxLength: 100 },
-    role: { type: 'string', enum: Object.values(Role) },
+    role: { type: 'string', enum: ASSIGNABLE_ROLES },
     phoneNumber: { type: ['string', 'null'], pattern: '^(010|011|012|015)[0-9]{8}$' },
     preferredLanguage: { type: 'string', enum: ['ar', 'en'] },
     isActive: { type: 'boolean' },
@@ -87,8 +87,16 @@ const publicUserSelect = {
 } as const;
 
 const userRoutes: FastifyPluginAsync = async (app) => {
-  app.get('/', { preHandler: [authenticate, requireRoles(Role.ADMIN)] }, async (_request, reply) => {
-    const users = await prisma.user.findMany({ select: publicUserSelect, orderBy: { createdAt: 'asc' } });
+  app.get('/', { preHandler: [authenticate, requireRoles(Role.ADMIN)] }, async (request, reply) => {
+    // Scoped to the caller's center. Without this, every admin on the platform
+    // could list every username, full name, role and phone number in one call.
+    const tenantId = request.user.tenantId;
+    if (!tenantId) return reply.code(403).send(invalid('لا يوجد مركز مرتبط بحسابك.', 'Your account is not attached to a center.', 'TENANT_CONTEXT_MISSING'));
+    const users = await prisma.user.findMany({
+      where: { tenantId },
+      select: publicUserSelect,
+      orderBy: { createdAt: 'asc' },
+    });
     return reply.send({ success: true, data: { users: users.map(serializeUser) } });
   });
 
@@ -97,6 +105,14 @@ const userRoutes: FastifyPluginAsync = async (app) => {
     if (!USERNAME_RE.test(username)) {
       return reply.code(400).send(invalid('اسم المستخدم يجب أن يكون من 3 إلى 50 حرفاً (أحرف/أرقام/_.-).', 'Username must be 3-50 characters (letters, digits, _ . -).'));
     }
+    // Defence in depth: the schema already rejects SUPER_ADMIN, but if that enum
+    // is ever widened this guard is what stops a center admin minting one.
+    if (!isAssignableRole(request.body.role)) {
+      return reply.code(403).send(invalid('لا يمكنك منح هذا الدور.', 'You cannot assign that role.', 'ROLE_NOT_ASSIGNABLE'));
+    }
+    // A center-scoped user list must not silently create a platform-level account.
+    const tenantId = request.user.tenantId;
+    if (!tenantId) return reply.code(403).send(invalid('لا يوجد مركز مرتبط بحسابك.', 'Your account is not attached to a center.', 'TENANT_CONTEXT_MISSING'));
     const exists = await prisma.user.findUnique({ where: { username }, select: { id: true } });
     if (exists) {
       return reply.code(409).send(invalid('اسم المستخدم مستخدم بالفعل.', 'This username is already taken.', 'USERNAME_TAKEN'));
@@ -104,12 +120,11 @@ const userRoutes: FastifyPluginAsync = async (app) => {
     if (request.body.phoneNumber && !egyptianPhone.test(request.body.phoneNumber)) {
       return reply.code(400).send(invalid('رقم الهاتف يجب أن يكون رقم محمول مصري صحيح.', 'Use a valid Egyptian mobile number.'));
     }
-    const tenantId = request.user.tenantId;
     const passwordHash = await argon2.hash(request.body.password, { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 4 });
     const user = await prisma.$transaction(async (transaction) => {
       const created = await transaction.user.create({
         data: {
-          tenantId: tenantId || null,
+          tenantId,
           username,
           passwordHash,
           fullName: request.body.fullName.trim(),
@@ -128,11 +143,19 @@ const userRoutes: FastifyPluginAsync = async (app) => {
 
   app.patch<{ Params: { id: string }; Body: UpdateUserBody }>('/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable], schema: { body: updateSchema } }, async (request, reply) => {
     if (!isValidUUID(request.params.id)) return reply.code(400).send(invalid('معرّف المستخدم غير صالح.', 'The user id is invalid.'));
+    // A center admin manages their own staff, full stop. Undefined tenantId
+    // would drop the scope from the filter entirely, so it must fail closed
+    // rather than fall back to "any tenant".
+    const tenantId = request.user.tenantId;
+    if (!tenantId) return reply.code(403).send(invalid('لا يوجد مركز مرتبط بحسابك.', 'Your account is not attached to a center.', 'TENANT_CONTEXT_MISSING'));
     if (request.params.id === request.user.sub && request.body.isActive === false) {
       return reply.code(400).send(invalid('لا يمكنك تعطيل حسابك الخاص.', 'You cannot deactivate your own account.', 'SELF_DEACTIVATE'));
     }
     if (request.params.id === request.user.sub && request.body.role && request.body.role !== request.user.role) {
       return reply.code(400).send(invalid('لا يمكنك تعديل دور حسابك الخاص.', 'You cannot change your own role.', 'SELF_ROLE_CHANGE'));
+    }
+    if (request.body.role !== undefined && !isAssignableRole(request.body.role)) {
+      return reply.code(403).send(invalid('لا يمكنك منح هذا الدور.', 'You cannot assign that role.', 'ROLE_NOT_ASSIGNABLE'));
     }
     if (request.body.phoneNumber && !egyptianPhone.test(request.body.phoneNumber)) {
       return reply.code(400).send(invalid('رقم الهاتف يجب أن يكون رقم محمول مصري صحيح.', 'Use a valid Egyptian mobile number.'));
@@ -142,7 +165,11 @@ const userRoutes: FastifyPluginAsync = async (app) => {
       const user = await prisma.$transaction(async (transaction) => {
         const passwordHash = request.body.password ? await argon2.hash(request.body.password, { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 4 }) : undefined;
         const updated = await transaction.user.update({
-          where: { id: request.params.id },
+          // Compound where: a row belonging to another center simply does not
+          // match, so it falls into the P2025 → 404 below instead of being
+          // renamed, re-roled, or having its password reset. Scoping the id
+          // alone is what let an admin take over any login on the platform.
+          where: { id: request.params.id, tenantId },
           data: {
             ...(request.body.fullName === undefined ? {} : { fullName: request.body.fullName.trim() }),
             ...(request.body.role === undefined ? {} : { role: request.body.role }),
@@ -167,14 +194,16 @@ const userRoutes: FastifyPluginAsync = async (app) => {
 
   app.delete<{ Params: { id: string } }>('/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable] }, async (request, reply) => {
     if (!isValidUUID(request.params.id)) return reply.code(400).send(invalid('معرّف المستخدم غير صالح.', 'The user id is invalid.'));
+    const tenantId = request.user.tenantId;
+    if (!tenantId) return reply.code(403).send(invalid('لا يوجد مركز مرتبط بحسابك.', 'Your account is not attached to a center.', 'TENANT_CONTEXT_MISSING'));
     if (request.params.id === request.user.sub) {
       return reply.code(400).send(invalid('لا يمكنك حذف حسابك الخاص.', 'You cannot delete your own account.', 'SELF_DELETE'));
     }
     try {
       const user = await prisma.$transaction(async (transaction) => {
-        const current = await transaction.user.findUnique({ where: { id: request.params.id }, select: { username: true } });
+        const current = await transaction.user.findFirst({ where: { id: request.params.id, tenantId }, select: { username: true } });
         const updated = await transaction.user.update({
-          where: { id: request.params.id },
+          where: { id: request.params.id, tenantId },
           data: { isActive: false, username: `${current?.username ?? 'user'}-disabled-${Date.now()}` },
           select: publicUserSelect,
         });

@@ -21,6 +21,7 @@ import settlementRoutes from './modules/settlements/settlements.js';
 import reportRoutes from './modules/reports/reports.js';
 import userRoutes from './modules/users/users.js';
 import branchRoutes from './modules/management/branches.js';
+import inventoryRoutes from './modules/inventory/inventory.js';
 import subscriptionRoutes from './modules/subscriptions/subscriptions.js';
 import publicPricingRoutes from './modules/subscriptions/publicPricing.js';
 import adminRoutes from './modules/admin/admin.js';
@@ -117,6 +118,7 @@ export function buildApp(options?: BuildAppOptions): FastifyInstance {
   app.register(reportRoutes, { prefix: '/api/reports' });
   app.register(userRoutes, { prefix: '/api/users' });
   app.register(branchRoutes, { prefix: '/api/branches' });
+app.register(inventoryRoutes, { prefix: '/api/inventory' });
   app.register(subscriptionRoutes, { prefix: '/api/subscriptions' });
   app.register(publicPricingRoutes, { prefix: '/api' });
   app.register(adminRoutes, { prefix: '/api/admin' });

@@ -38,17 +38,22 @@ export function calculateDailyReportTotals(input: {
 
 const reportRoutes: FastifyPluginAsync = async (app) => {
   app.get<{ Querystring: { date?: string } }>('/daily', { preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST)] }, async (request, reply) => {
+    const tenantId = request.user.tenantId;
+    if (!tenantId) {
+      return reply.status(403).send(validationError('لا يوجد مركز مرتبط بحسابك.', 'Your account is not attached to a center.', 'TENANT_CONTEXT_MISSING'));
+    }
     const date = request.query.date ?? new Date().toISOString().slice(0, 10);
     const bounds = dateBounds(date);
     if (!bounds) {
-      return reply.status(400).send(validationError('صيغة التاريخ غير صحيحة.', 'Date must use YYYY-MM-DD format.', 'INVALID_REPORT_DATE'));
+      return reply.status(400).send(validationError('صيغة التاريخ غير صالحة.', 'Date must use YYYY-MM-DD format.', 'INVALID_REPORT_DATE'));
     }
 
-    const attendanceWhere = { checkInTime: { gte: bounds.start, lt: bounds.end }, status: { not: AttendanceStatus.VOID } };
+    const attendanceWhere = { tenantId, checkInTime: { gte: bounds.start, lt: bounds.end }, status: { not: AttendanceStatus.VOID } };
+    const settlementWhere = { tenantId, settledAt: { gte: bounds.start, lt: bounds.end }, status: SettlementStatus.DISBURSED };
     const [attendanceCount, attendanceTotals, settlementTotals] = await Promise.all([
       prisma.attendance.count({ where: attendanceWhere }),
       prisma.attendance.groupBy({ by: ['paymentMethod'], where: attendanceWhere, _sum: { amountPaid: true } }),
-      prisma.sessionSettlement.aggregate({ where: { settledAt: { gte: bounds.start, lt: bounds.end }, status: SettlementStatus.DISBURSED }, _sum: { centerRevenue: true, teacherPayout: true } }),
+      prisma.sessionSettlement.aggregate({ where: settlementWhere, _sum: { centerRevenue: true, teacherPayout: true } }),
     ]);
 
     const digital = (method: PaymentMethod) => number(attendanceTotals.find((row) => row.paymentMethod === method)?._sum.amountPaid);

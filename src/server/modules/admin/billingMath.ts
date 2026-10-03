@@ -8,11 +8,22 @@
  *
  * The subscription is a single unlimited product, so nothing here knows about
  * plans, caps, or usage overrides. Usage is reported as counts, never as a
- * percentage of a limit.
+ * percentage of a limit. Optional capabilities appear only as extra invoice
+ * lines (computeInvoicePreview) — they never introduce a second product.
  */
 
 import { Prisma } from '@prisma/client';
-import { MONTHLY_PRICE_EGP } from '../../../shared/constants/subscription.js';
+import {
+  ADDON_LABEL_AR,
+  ADDON_LABEL_EN,
+  ADDON_MONTHLY_PRICE_EGP,
+  BASE_LINE_CODE,
+  BASE_LINE_LABEL_AR,
+  BASE_LINE_LABEL_EN,
+  BILLABLE_ADDONS,
+  MONTHLY_PRICE_EGP,
+  type BillableAddonCode,
+} from '../../../shared/constants/subscription.js';
 
 export type MoneyInput = Prisma.Decimal | number | string | null | undefined;
 
@@ -113,6 +124,84 @@ export function computeWalletMutation(type: WalletAction, amount: MoneyInput): W
   return { type, discountDelta: 0, creditDelta: value };
 }
 
+// ─── Add-on invoice math ──────────────────────────────────────────────────────
+
+export type InvoiceLine = {
+  code: string;
+  labelEn: string;
+  labelAr: string;
+  amount: number;
+};
+
+export type InvoicePreview = {
+  /** The platform line, always first. */
+  baseAmount: number;
+  /** One line per enabled add-on, in BILLABLE_ADDONS order. */
+  addonLines: InvoiceLine[];
+  /** baseAmount + every add-on line. This is what the center pays. */
+  total: number;
+};
+
+/** Keeps only codes that are actually billable, de-duplicated, in catalogue order. */
+export function normalizeAddonCodes(codes: Iterable<string> | null | undefined): BillableAddonCode[] {
+  const wanted = new Set<string>();
+  for (const code of codes ?? []) {
+    if (typeof code === 'string') wanted.add(code);
+  }
+  return BILLABLE_ADDONS.filter((code) => wanted.has(code));
+}
+
+/**
+ * The priced lines of one invoice period: the base platform plus one line per
+ * enabled add-on.
+ *
+ * Every billing path — signup, renewal, verification, and the console preview —
+ * must derive the amount it charges from here, so a center can never be quoted
+ * one total and charged another. Unknown codes are dropped rather than priced at
+ * zero: a code that is not in the catalogue has no agreed price, and silently
+ * billing it EGP 0 would hand out a paid add-on for free.
+ */
+export function computeInvoicePreview(
+  addonCodes: Iterable<string> | null | undefined,
+  baseAmount: MoneyInput = MONTHLY_PRICE_EGP,
+): InvoicePreview {
+  const base = roundMoney(Math.max(0, toMoneyNumber(baseAmount)));
+  const addonLines = normalizeAddonCodes(addonCodes).map((code) => ({
+    code,
+    labelEn: ADDON_LABEL_EN[code],
+    labelAr: ADDON_LABEL_AR[code],
+    amount: roundMoney(ADDON_MONTHLY_PRICE_EGP[code]),
+  }));
+  const total = roundMoney(base + addonLines.reduce((sum, line) => sum + line.amount, 0));
+  return { baseAmount: base, addonLines, total };
+}
+
+/**
+ * What this period costs, ignoring wallets. Convenience wrapper over
+ * computeInvoicePreview for the many call sites that only need a number.
+ */
+export function computeInvoiceTotal(addonCodes: Iterable<string> | null | undefined): number {
+  return computeInvoicePreview(addonCodes).total;
+}
+
+/**
+ * The rows to freeze onto a subscription when it is invoiced. Callers persist
+ * this so a later price change or add-on cancellation cannot rewrite a period
+ * that has already been billed.
+ */
+export function buildSubscriptionLineItems(addonCodes: Iterable<string> | null | undefined) {
+  const preview = computeInvoicePreview(addonCodes);
+  return [
+    {
+      code: BASE_LINE_CODE,
+      labelEn: BASE_LINE_LABEL_EN,
+      labelAr: BASE_LINE_LABEL_AR,
+      amount: preview.baseAmount,
+    },
+    ...preview.addonLines,
+  ];
+}
+
 // ─── Subscription entitlements ───────────────────────────────────────────────
 
 /**
@@ -153,12 +242,17 @@ export function pendingEntitlements(
  * the owner wallets spent against this invoice. The wallet math is recomputed
  * here from the tenant's live balances so a discount granted while the payment
  * was pending is honoured.
+ *
+ * `addonCodes` must be the add-ons that were on the invoice being verified, not
+ * the tenant's add-ons as they stand now: the amount the center transferred is
+ * the amount the wallets must be applied to.
  */
 export function verifiedEntitlements(
   discountBalance: MoneyInput,
   creditBalance: MoneyInput,
+  addonCodes: Iterable<string> | null | undefined = [],
 ): TenantEntitlements {
-  const billing = applyBillingBalances(MONTHLY_PRICE_EGP, discountBalance, creditBalance);
+  const billing = applyBillingBalances(computeInvoiceTotal(addonCodes), discountBalance, creditBalance);
   return {
     isActive: true,
     discountBalance: billing.remainingDiscount,
