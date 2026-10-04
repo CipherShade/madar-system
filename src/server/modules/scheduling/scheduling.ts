@@ -120,7 +120,7 @@ const schedulingRoutes: FastifyPluginAsync = async (app) => {
           endTime: checked.times!.end,
           sessionPrice: new Prisma.Decimal(request.body.sessionPrice),
           centerFeePerStudent: new Prisma.Decimal(request.body.centerFeePerStudent),
-          status: request.body.status ?? SessionStatus.SCHEDULED,
+          status: (request.body.status ?? SessionStatus.SCHEDULED) as any,
           createdById: request.user.sub,
         },
       });
@@ -139,11 +139,11 @@ const schedulingRoutes: FastifyPluginAsync = async (app) => {
       if (!current) return { kind: 'notFound' as const };
       const statusCheck = validateSessionStatusChange(current.status, request.body.status);
       if (!statusCheck.ok) return { kind: 'statusError' as const, check: statusCheck };
-      const body: SessionBody = { teacherId: request.body.teacherId ?? current.teacherId, roomId: request.body.roomId ?? current.roomId, title: request.body.title ?? current.title, academicStage: request.body.academicStage ?? current.academicStage, startTime: request.body.startTime ?? current.startTime.toISOString(), endTime: request.body.endTime ?? current.endTime.toISOString(), sessionPrice: request.body.sessionPrice ?? Number(current.sessionPrice), centerFeePerStudent: request.body.centerFeePerStudent ?? Number(current.centerFeePerStudent), status: (request.body.status ?? current.status) as SessionStatus };
+      const body: SessionBody = { teacherId: request.body.teacherId ?? current.teacherId, roomId: request.body.roomId ?? current.roomId, title: request.body.title ?? current.title, academicStage: request.body.academicStage ?? current.academicStage, startTime: request.body.startTime ?? current.startTime.toISOString(), endTime: request.body.endTime ?? current.endTime.toISOString(), sessionPrice: request.body.sessionPrice ?? Number(current.sessionPrice), centerFeePerStudent: request.body.centerFeePerStudent ?? Number(current.centerFeePerStudent), status: ((request.body.status ?? current.status) as any) as SessionStatus };
       const checked = await ensureAvailable(body, request.params.id, tx);
       if (checked.error) return { kind: 'error' as const, error: checked.error };
       if (checked.conflict) return { kind: 'conflict' as const, conflict: checked.conflict };
-      const session = await tx.session.update({ where: { id: request.params.id }, data: { teacherId: body.teacherId, roomId: body.roomId, title: body.title.trim(), academicStage: body.academicStage.trim(), startTime: checked.times!.start, endTime: checked.times!.end, sessionPrice: new Prisma.Decimal(body.sessionPrice), centerFeePerStudent: new Prisma.Decimal(body.centerFeePerStudent), status: body.status } });
+      const session = await tx.session.update({ where: { id: request.params.id }, data: { teacherId: body.teacherId, roomId: body.roomId, title: body.title.trim(), academicStage: body.academicStage.trim(), startTime: checked.times!.start, endTime: checked.times!.end, sessionPrice: new Prisma.Decimal(body.sessionPrice), centerFeePerStudent: new Prisma.Decimal(body.centerFeePerStudent), status: body.status as any } });
       return { kind: 'ok' as const, session };
     });
     if (result.kind === 'notFound') return reply.code(404).send(validation('الحصة غير موجودة.', 'Session not found.'));
