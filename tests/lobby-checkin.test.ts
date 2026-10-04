@@ -8,7 +8,7 @@ test('calculateChangeOwed returns the amount still owed to the student', () => {
   assert.equal(calculateChangeOwed(120, 150), 0);
 });
 
-test('isSessionEligibleForLobbyDashboard includes active and upcoming sessions within 30 minutes', () => {
+test('isSessionEligibleForLobbyDashboard includes active and upcoming sessions within window', () => {
   const now = new Date();
 
   assert.equal(
@@ -32,8 +32,44 @@ test('isSessionEligibleForLobbyDashboard includes active and upcoming sessions w
   assert.equal(
     isSessionEligibleForLobbyDashboard({
       status: 'SCHEDULED',
-      startTime: new Date(now.getTime() + 31 * 60 * 1000),
-      endTime: new Date(now.getTime() + 91 * 60 * 1000),
+      startTime: new Date(now.getTime() + 50 * 60 * 1000),
+      endTime: new Date(now.getTime() + 110 * 60 * 1000),
+    }),
+    true,
+  );
+
+  assert.equal(
+    isSessionEligibleForLobbyDashboard({
+      status: 'SCHEDULED',
+      startTime: new Date(now.getTime() - 120 * 60 * 1000),
+      endTime: new Date(now.getTime() + 60 * 60 * 1000),
+    }),
+    true,
+  );
+
+  assert.equal(
+    isSessionEligibleForLobbyDashboard({
+      status: 'SCHEDULED',
+      startTime: new Date(now.getTime() - 181 * 60 * 1000),
+      endTime: new Date(now.getTime() - 1 * 60 * 1000),
+    }),
+    false,
+  );
+
+  assert.equal(
+    isSessionEligibleForLobbyDashboard({
+      status: 'SCHEDULED',
+      startTime: new Date(now.getTime() - 180 * 60 * 1000),
+      endTime: new Date(now.getTime() + 60 * 60 * 1000),
+    }),
+    true,
+  );
+
+  assert.equal(
+    isSessionEligibleForLobbyDashboard({
+      status: 'SCHEDULED',
+      startTime: new Date(now.getTime() + 181 * 60 * 1000),
+      endTime: new Date(now.getTime() + 241 * 60 * 1000),
     }),
     false,
   );

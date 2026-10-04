@@ -35,7 +35,7 @@ export function isSessionEligibleForLobbyDashboard(session: {
   if (session.status !== SessionStatus.SCHEDULED) return false;
 
   const minutesUntilStart = (session.startTime.getTime() - Date.now()) / (60 * 1000);
-  return minutesUntilStart >= 0 && minutesUntilStart <= 30;
+  return minutesUntilStart >= -180 && minutesUntilStart <= 180;
 }
 
 type AttendanceBody = {
@@ -102,7 +102,7 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const sessions = await prisma.session.findMany({
-      where: { ...sessionWhere, startTime: { lte: new Date(now.getTime() + 30 * 60 * 1000) } },
+      where: { ...sessionWhere, startTime: { lte: new Date(now.getTime() + 180 * 60 * 1000) } },
       include: {
         teacher: { select: { id: true, fullName: true, subject: true } },
         room: { select: { id: true, name: true, capacity: true } },
