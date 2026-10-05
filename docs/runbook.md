@@ -2,7 +2,7 @@
 
 This runbook covers the operational procedures that complete **PROMPT 12 — Production Deployment Preparation**. The application code, build, migrations, health endpoint, secure cookies, CORS/CSRF, Socket.io auth, logs, graceful shutdown, and error handling are already implemented and tested in the repository (see `docs/deployment.md` and `docs/progress.md`). This document is the **ops checklist** for actually running the service and recovering it.
 
-> ⚠️ **Status — READY IN CODE, NOT YET DEPLOYED.** Everything here is verified to build and pass tests in this repo. Live provisioning (hosted PostgreSQL, hosting provider, custom domain) has not been performed.
+> **Status — LIVE ON RAILWAY.** Production is deployed: the `er` service, the `Postgres` service, and the `er-backup` cron service all build from this repository's `main` branch. Everything below is verified to build and pass tests in this repo, and describes the running system.
 
 ---
 
@@ -17,16 +17,15 @@ This runbook covers the operational procedures that complete **PROMPT 12 — Pro
 | Restore script | `scripts/restore.ps1` | `pg_restore --clean --if-exists` into a target DB. |
 | Migration script | `scripts/migrate.ps1` | `prisma migrate deploy` + status (safe, non-destructive). |
 | Seed script wrapper | `scripts/seed.ps1` | Guards production seeding incl. required passwords. |
-| CI | `.github/workflows/ci.yml` | Build + `prisma validate` + backend/frontend tests + Docker image build. |
-| Deploy (manual) | `.github/workflows/deploy.yml` | Manual `workflow_dispatch` deploy stub (provider secrets required). |
-| Render blueprint | `render.yaml` | Hosting blueprint with prod build/start/health-check and secret generation. |
+| CI | `.github/workflows/ci.yml` | Build + `prisma validate` + migrations + backend/frontend tests + Docker image build. Runs on push/PR to `main`. It does not deploy. |
+| Deploy (manual) | Railway dashboard / `railway up` | Re-run the last successful deployment. There is no in-repo deploy script: Railway builds from the repo on push, so a redeploy is a Railway action. |
 
 **Required commands (verified green in this repo):**
 ```powershell
 npm ci --include=dev
 npm run build:production        # prisma generate + tsc -b && vite build + tsc -p tsconfig.server.json
-npm test                        # 143 backend tests
-npm run test:frontend           # 25 Vitest tests
+npm test                        # backend suite (node:test via tsx)
+npm run test:frontend           # frontend suite (Vitest)
 ```
 
 **Start command (also runs migrations first):**
@@ -57,11 +56,13 @@ Set in the **hosting provider's secret/env store**, never in a committed file:
 
 ---
 
-## 2. Database Setup (Hosted PostgreSQL)
+## 2. Database Setup (Railway Postgres)
 
-1. Provision a **PostgreSQL 15+** instance (e.g. Supabase, Neon, Railway, RDS).
+Production uses a Railway `Postgres` service, reached over Railway's private network. Steps 1–4 below are what it was created with:
+
+1. Provision a **PostgreSQL 15+** instance (production: Railway `postgres-ssl:18`; any host works — e.g. Neon, RDS).
 2. Create a dedicated database for the ERP.
-3. Copy the **private** connection string into `DATABASE_URL` (never paste into public files or chat).
+3. Set `DATABASE_URL` as a Railway service variable using a reference to the `Postgres` service's private URL, so it cannot drift out of sync with the database (never paste it into public files or chat).
 4. Make the migration process owned by a role with `CREATE` permissions on that schema (Prisma needs it for migrations).
 
 ---
@@ -69,6 +70,8 @@ Set in the **hosting provider's secret/env store**, never in a committed file:
 ## 3. Migration Process (safe)
 
 Use `prisma migrate deploy` only — never `db push` / `migrate dev` / `migrate reset` for a deployed DB.
+
+Nothing in the application changes the schema: startup probes it, and in production refuses to serve when it is behind, so applying a migration is always a decision someone makes on purpose and `db:migrate:status` afterwards is what confirms it.
 
 ```powershell
 $env:DATABASE_URL = "<private-url>"
@@ -79,7 +82,7 @@ npx prisma generate
 ```
 
 - Migrations are run automatically by `npm run start:production` before the server starts.
-- On Render this is wired as `startCommand`; in Docker the staging image runs `npx prisma migrate deploy` then starts `node`.
+- On Railway this is the `er` service's start command, so every deploy applies pending migrations to Railway Postgres before the server accepts traffic. The `Dockerfile` `CMD` does the same inside the container.
 
 **Seed an empty production DB once** (change passwords after first login):
 ```powershell
@@ -103,7 +106,7 @@ powershell -File scripts/backup.ps1 -Gzip   # optional gzip
 
 **Best practice:**
 - Take a backup **before** every migration/deploy, and retain the pre-change dump as the rollback artifact.
-- Schedule regular backups (host-managed snapshots e.g. Supabase backups, or a cron that runs `scripts/backup.ps1`).
+- Schedule regular backups. This is already automated in production: the `er-backup` Railway service runs daily (`0 3 * * *`), dumps Railway Postgres, uploads to the `erp-backups` bucket, prunes to the newest 14, and fails the run if the newest stored dump is stale. See `AGENTS.md` §Backups for the full rule set.
 - Store dumps **off the app host**, in restricted object storage, and keep multiple dated copies.
 - Test restore into a scratch DB at least quarterly and after schema changes.
 
@@ -138,7 +141,7 @@ Two independent rollback axes: **application** and **database**.
 ### 6.1 Application rollback
 - Prisma migrations are **additive/non-destructive**, so the previous app build remains compatible.
 - Re-deploy the previous verified image/build (blue-green or previous release tag). Because `start:production` runs `migrate deploy`, pointing the old build at the new DB is safe as long as the schema is a superset.
-- Keep the last known-good image tag / release. On Render/Railway, re-deploy the previous deploy.
+- Keep the last known-good image tag / release. On Railway, re-deploy the previous deploy from the dashboard.
 
 ### 6.2 Database rollback
 Prisma has no per-migration "down", so database rollback = **restore a pre-change dump**:
@@ -153,6 +156,7 @@ Prisma has no per-migration "down", so database rollback = **restore a pre-chang
 | Symptom | Action |
 | :--- | :--- |
 | New app build misbehaves, schema is fine | Re-deploy previous **app** build (no DB restore). |
+| Service exits 1 with "Refusing to start in production: the database schema is missing or behind schema.prisma" | The build expects a migration the database does not have. Run `npx prisma migrate status` against `DATABASE_URL` and compare with `prisma/migrations/`, apply the pending migration(s), re-deploy. The server will not repair the schema itself and must not be talked into doing so. |
 | Migration broke schema / data corrupted | Full **DB restore** from pre-migration dump + matching app build. |
 | Partial bad data in one table | Point-in-time recovery / targeted SQL with a fresh backup first. |
 
@@ -200,14 +204,23 @@ For split hosting, set `VITE_API_BASE_URL` / `VITE_SOCKET_URL` **at build time**
 
 ---
 
-## 9. Remaining Deployment Blockers (why "ready in code" ≠ "deployed")
+## 9. Live Topology and Remaining Work
 
-These require external accounts/resources and cannot be completed from inside this repository:
+**Live production topology — GitHub → Railway → Railway Postgres:**
 
-1. Provision a **hosted PostgreSQL** instance and supply its private `DATABASE_URL`.
-2. **Apply migrations** to that hosted DB and confirm `db:migrate:status`.
-3. **Deploy** to a hosting provider (Render/Railway/etc.), storing `JWT_SECRET`, `COOKIE_SECRET`, `CORS_ORIGIN` in its secret store.
-4. Verify **provider-level HTTPS** termination and **WebSocket upgrade** through the provider (the `render.yaml` health check already points at `/api/health`).
-5. Register a **custom domain** + auto-renewing TLS certificate.
-6. Configure **uptime/error monitoring** and **scheduled + tested backups**.
-7. Run a **staging acceptance** and a full **backup-restore + rollback drill** against real services.
+| Piece | Where | Notes |
+| :--- | :--- | :--- |
+| `er` | Railway service | Builds the root `Dockerfile` from `main`; start command `npm run start:production`; domain `*.up.railway.app` on port 3000. |
+| `Postgres` | Railway service | `postgres-ssl:18`, private network, persistent volume. Reached by `er` through a `DATABASE_URL` reference variable. |
+| `er-backup` | Railway service | Builds `Dockerfile.backup`, cron `0 3 * * *`, writes to the `erp-backups` object-storage bucket. See `AGENTS.md` §Backups. |
+| CI | GitHub Actions | `.github/workflows/ci.yml` gates the push; it does not deploy. |
+
+Done: hosted PostgreSQL provisioned, migrations applied via `prisma migrate deploy` on every deploy, the service deployed, HTTPS terminated by Railway, and daily backups with a freshness assertion running unattended.
+
+Still to do:
+
+1. Verify **WebSocket upgrade** end to end through Railway's proxy with two real browser sessions (§8).
+2. Register a **custom domain** + auto-renewing TLS certificate.
+3. Configure **uptime/error monitoring** (e.g. a Railway monitor on `/api/health` plus deploy-failure alerts).
+4. Prove the backups are **restorable**, not just present: restore one into a scratch database and run §5.
+5. Run a full **backup-restore + rollback drill** against the real services.

@@ -13,22 +13,75 @@ const io = new Server(app.server, {
   maxHttpBufferSize: config.socketMaxPayloadBytes,
 });
 
-import { execSync } from 'node:child_process';
 import { ensureSuperAdmin, seedDemoData } from './lib/demoSeed.js';
 
 attachSocketServer(app, io);
+
+const MIGRATION_REMEDY =
+  'Apply the pending migrations with `prisma migrate deploy` (npm run db:migrate:deploy), then restart.';
+
+/**
+ * A model query failing means the schema is not what the code expects. It does
+ * not mean this process may fix that.
+ *
+ * `prisma migrate deploy` already ran in the start command (the container CMD
+ * and `npm run start:production`) before this file's process existed, so
+ * production is migrated by the time these lines run. What used to happen
+ * instead: a fallback ran `prisma db push --accept-data-loss` here, on every
+ * environment including production. That reconciles the database by running DDL
+ * straight from schema.prisma, and --accept-data-loss is what permits it to drop
+ * columns and tables so the shapes match. So any later edit to schema.prisma that
+ * removed a field would delete that column's real student and payment data on the
+ * next restart — no migration, no SQL, no warning, and the failure was swallowed,
+ * so the server started as if nothing had happened. Nothing in the code around it
+ * looked dangerous; the command simply ran first and got there quietly.
+ *
+ * So: no schema change happens at startup, in any environment. An unapplied
+ * migration has to stop the boot instead of being applied behind the deploy's
+ * back.
+ */
+async function reportSchemaNotReady(err: unknown): Promise<void> {
+  // Distinguish "schema is wrong" from "database is gone". A database that
+  // answers `SELECT 1` but not a model query is reachable and unmigrated — a
+  // deployment failure that fails the boot below. One that cannot be reached at
+  // all is not a schema problem, and /api/health already reports it as 503, so it
+  // stays non-fatal rather than turning a network blip into a restart loop.
+  const reachable = await prisma.$queryRaw`SELECT 1`.then(
+    () => true,
+    () => false,
+  );
+
+  if (!reachable) {
+    app.log.error(
+      { err },
+      'Cannot reach the database. Starting anyway; /api/health reports this as unavailable until it recovers.',
+    );
+    return;
+  }
+
+  app.log.error({ err }, `The database is reachable but the schema is missing or out of date. ${MIGRATION_REMEDY}`);
+
+  if (config.nodeEnv === 'production') {
+    throw new Error(
+      `Refusing to start in production: the database schema is missing or behind schema.prisma. ${MIGRATION_REMEDY} ` +
+        'This server never applies migrations itself, so it cannot be started until they have been applied.',
+    );
+  }
+
+  // Development keeps the shortcut a developer can take by hand, never one that
+  // fires on its own: `npm run db:push` applies schema.prisma to a local
+  // database, and `npm run db:migrate` records the change as a migration.
+  app.log.warn(
+    `Continuing in ${config.nodeEnv} without a usable schema; requests will fail until you run it. ` +
+      'Use `npm run db:push` for a throwaway local database, or `npm run db:migrate` to record the change.',
+  );
+}
 
 async function ensureDatabaseReady(): Promise<void> {
   try {
     await prisma.tenant.findFirst();
   } catch (err) {
-    app.log.warn({ err }, 'Database tables missing or pending; running prisma db push...');
-    try {
-      execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit' });
-      app.log.info('Prisma db push applied successfully.');
-    } catch (pushErr) {
-      app.log.error({ err: pushErr }, 'Failed to run prisma db push');
-    }
+    await reportSchemaNotReady(err);
   }
 
   try {

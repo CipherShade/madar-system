@@ -8,8 +8,9 @@
 #   # health: GET http://localhost:3000/api/health
 #   docker compose -f docker-compose.staging.yml down -v   # destroy DB volume
 #
-# NOTE: For an actual HTTPS public deploy point the host (e.g. Render/Railway/K8s)
-# at the edge. This stack is for local/CI staging verification of the production image.
+# NOTE: For the actual HTTPS public deploy point, Railway terminates TLS in front
+# of this same image (the `er` service). This stack is for local/CI staging
+# verification of the production image.
 
 version: '3.8'
 

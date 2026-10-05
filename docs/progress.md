@@ -221,7 +221,7 @@
 - [x] Add a deployment guide for server, client, PostgreSQL, migrations, backups, and rollback ([docs/deployment.md](deployment.md) — production env vars, same-origin vs split hosting, build/migrate/launch, health & graceful shutdown, troubleshooting)
 - [x] Add a production operations runbook (backup, restore, rollback, staging simulation, post-deploy verification, remaining blockers) ([docs/runbook.md](runbook.md))
 - [x] Add deployment artifacts: `Dockerfile` (single-origin image with Prisma CLI + `pg_dump`/`pg_restore` + healthcheck), `.dockerignore`, `docker-compose.staging.yml` (full production-image + PostgreSQL verification stack), and `scripts/backup.ps1`, `scripts/restore.ps1`, `scripts/migrate.ps1`, `scripts/seed.ps1`
-- [x] Add CI checks for client build, server build, Prisma validation/`migrate deploy`/`migrate status`, backend + frontend tests, and production Docker image build ([.github/workflows/ci.yml](../.github/workflows/ci.yml); a manual deploy workflow is at [deploy.yml](../.github/workflows/deploy.yml)); no lint is configured in the repo yet
+- [x] Add CI checks for client build, server build, Prisma validation/`migrate deploy`/`migrate status`, backend + frontend tests, and production Docker image build ([.github/workflows/ci.yml](../.github/workflows/ci.yml)); no lint is configured in the repo yet. CI is a gate, not a deploy: Railway builds and deploys from `main` on its own.
 - [ ] Produce a staging environment with seeded non-production data
 - [ ] Run a receptionist acceptance session covering a full class lifecycle from check-in to drawer close
 - [ ] Run an administrator acceptance session covering management, settlement, reports, and audit review
@@ -253,32 +253,28 @@
 - [ ] Configure Socket.io for the production origin and verify WebSocket upgrades through the hosting provider (CORS origin + WebSocket upgrade verified locally against the production build; provider-level upgrade still to confirm after deploy. `docker-compose.staging.yml` now lets you verify real TCP WebSocket upgrades + auth against the production image in a docker network before deploying)
 - [x] Confirm the production build works from a clean checkout with no local-only files
 - [x] Keep `.env`, database URLs, passwords, and signing secrets out of GitHub
-- [x] Add a cloud deployment blueprint with production build, start, and health-check commands
+- [x] Add a cloud deployment blueprint with production build, start, and health-check commands (the root `Dockerfile` plus `npm run build:production` / `npm run start:production`; the obsolete Render blueprint was removed when production moved to Railway)
 
 ### Step 22: Create the Online Services
 
-- [ ] Create a Supabase account at `https://supabase.com`
-- [ ] Create a new Supabase project for the ERP
-- [ ] Choose a strong database password and store it in a password manager
-- [ ] Copy the Supabase PostgreSQL connection string; do not paste it into public files or chat
-- [ ] Create a Render or Railway account at `https://render.com` or `https://railway.app`
-- [ ] Connect the GitHub repository to the hosting provider
-- [ ] Create one backend web service for the Fastify server
-- [ ] Create one frontend web service, or serve the frontend from the backend as one public service
-- [ ] Use HTTPS URLs supplied by the hosting provider
+- [x] Create a Railway account at `https://railway.app`
+- [x] Create a Railway project holding the web service, the PostgreSQL database, and the backup cron
+- [x] Connect the GitHub repository to Railway, deploying `main` on every push
+- [x] Create one web service for the Fastify server; it also serves the built SPA, so there is no separate frontend service
+- [x] Use the HTTPS URL supplied by Railway
 
 ### Step 23: Configure Production Environment Variables
 
-- [ ] Set `NODE_ENV=production`
-- [ ] Set `DATABASE_URL` to the private Supabase PostgreSQL connection string
-- [ ] Generate and set a long random `JWT_SECRET`
-- [ ] Generate and set a long random `COOKIE_SECRET`
-- [ ] Set `JWT_EXPIRES_IN` to the approved session lifetime
-- [ ] Set `CORS_ORIGIN` to the exact public frontend URL
-- [ ] Set `PORT` according to the hosting provider's port requirement
+- [x] Set `NODE_ENV=production`
+- [x] Set `DATABASE_URL` to the Railway `Postgres` service's private reference variable
+- [x] Generate and set a long random `JWT_SECRET`
+- [x] Generate and set a long random `COOKIE_SECRET`
+- [ ] Set `JWT_EXPIRES_IN` to the approved session lifetime (unset, so the `12h` default applies)
+- [x] Set `CORS_ORIGIN` to the exact public URL
+- [x] Set `PORT` to the port the service domain is mapped to (`3000`)
 - [ ] Set `SEED_ADMIN_PASSWORD` and `SEED_RECEPTIONIST_PASSWORD` only if production seed data is intentionally required
-- [ ] Never use the development `.env` file or the documented demo passwords in production
-- [ ] Configure secure cookies for the final HTTPS domain
+- [x] Never use the development `.env` file or the documented demo passwords in production
+- [x] Secure cookies are on in production: `NODE_ENV=production` makes the cookie `Secure` and the HTTPS domain is Railway's
 
 ### Step 24: Deploy the Database Safely
 

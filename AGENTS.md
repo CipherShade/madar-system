@@ -73,6 +73,17 @@ This document specifies mandatory rules, architectural constraints, and quality 
 
 ---
 
+## 3.1 Schema Changes in a Deployed Environment
+
+- **Migrations are the only thing that changes a deployed schema.** Production runs `prisma migrate deploy` in its start command (`start:production`, and the `Dockerfile` `CMD`), before the server process exists.
+- **Never `db push`, `migrate dev`, or `migrate reset` against a deployed database.** `db push --accept-data-loss` reconciles the database by running DDL straight from `schema.prisma` and is explicitly permitted to drop columns and tables, so a later edit that removes a field deletes that column's real student and payment data with no migration, no SQL, and no warning. `migrate reset` drops every table first.
+- **No schema change from application code, in any environment.** Startup may read the schema; it may not reconcile it. A development convenience that repairs a local database from inside the server process is how a data-loss path reaches production, so those shortcuts are manual commands (`npm run db:push`, `npm run db:migrate`) instead.
+- **An unapplied migration must fail loudly, not be fixed silently.** If the database is reachable but its schema does not match `schema.prisma`, production startup throws and exits non-zero rather than serving traffic against a schema it does not expect.
+- **Fence dev-only schema tooling on `config.nodeEnv === 'development'`, not `!== 'production'`.** `nodeEnv` falls back to `'development'` when `NODE_ENV` is unset, so a negative gate publishes dev tooling to a deployment that simply forgot the variable.
+- Pinned by `tests/production-safety.test.ts`, `tests/production-demo-endpoint.test.ts`, and `tests/dev-demo-endpoint.test.ts`.
+
+---
+
 ## 4. Testing Requirements
 
 - **Unit Tests:** All financial calculations (split math, cash drawer expected balance) must have 100% unit test coverage.

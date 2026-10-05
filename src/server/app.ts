@@ -138,8 +138,14 @@ app.register(inventoryRoutes, { prefix: '/api/inventory' });
     });
   }
 
-  // Setup demo database endpoint - development only
-  if (config.nodeEnv !== 'production') {
+  // Setup demo database endpoint - development only.
+  // The gate is `=== 'development'`, not `!== 'production'`, and that is the
+  // point: `config.nodeEnv` falls back to 'development' when NODE_ENV is unset,
+  // so the looser test turns a deployment that forgot NODE_ENV into one that
+  // publishes an unauthenticated endpoint whose job is to run
+  // `prisma db push --accept-data-loss` against whatever DATABASE_URL points at.
+  // Positive-named gates fail closed; that is the only safe default here.
+  if (config.nodeEnv === 'development') {
     app.all('/api/setup-demo', async (request, reply) => {
       try {
         const { execSync } = await import('node:child_process');

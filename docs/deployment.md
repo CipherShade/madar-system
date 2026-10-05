@@ -1,6 +1,6 @@
 # Deployment Guide: Educational Center ERP
 
-Deploy a single HTTPS web service (frontend + Fastify API + Socket.io) connected to a hosted PostgreSQL database. The project ships with a ready-to-use blueprint for [Render](https://render.com) (`render.yaml`) and state is documented in the README and `docs/progress.md`.
+Deploy a single HTTPS web service (frontend + Fastify API + Socket.io) connected to a hosted PostgreSQL database. Production runs on [Railway](https://railway.app): GitHub `main` → Railway → Railway Postgres, with no other host in the path. The production build and start commands live in this repository (`Dockerfile`, `package.json`); environment variables are set in the Railway dashboard, never in a committed file.
 
 > **Operations (backup, restore, rollback, staging simulation, verification checklist) live in [`docs/runbook.md`](runbook.md).** This guide covers configuration; the runbook covers day-to-day operations and recovery.
 
@@ -36,17 +36,17 @@ graph LR
 
 > Rules guaranteed by code:
 > - **No production fallback secrets.** `config/index.ts` throws on startup when `DATABASE_URL`, `JWT_SECRET`, `COOKIE_SECRET`, or `CORS_ORIGIN` are missing in `NODE_ENV=production`. Development-only defaults are used solely outside production and print warnings.
-> - **No secrets in the repository.** `.env` and `*.local` are git-ignored; only `.env.example` (with placeholders) is tracked. `render.yaml` uses `generateValue: true` and `sync: false` so secrets live in the host's secret store.
+> - **No secrets in the repository.** `.env` and `*.local` are git-ignored; only `.env.example` (with placeholders) is tracked. Production secrets are set as Railway service variables.
 > - **Cookies** are HTTP-only, signed, `SameSite=Lax`, and `Secure` in production.
 > - **Logs** never print secrets: cookie/authorization headers and passwords are redacted; startup logs print port/environment/origins only.
 
 ## 3. Build, Migrate & Launch
 
-Requirements: Node.js 20+ and a PostgreSQL 15+ instance (hosted or `docker-compose.yml` for local).
+Requirements: Node.js 20+ and a PostgreSQL 15+ instance (Railway Postgres in production, or `docker-compose.yml` for local).
 
 ```powershell
 # 1. Install dependencies from the lockfile
-npm ci --include=dev        # (render buildCommand)
+npm ci --include=dev        # (first step of the Dockerfile build stage)
 
 # 2. Generate & validate the Prisma client
 npm run db:generate         # prisma generate
@@ -62,7 +62,21 @@ npm run start:production    # prisma migrate deploy && node dist/server/server/s
 #    GET /api/health  -> 200 {"success":true,"data":{"status":"ok","database":"ok",...}}
 ```
 
-`npm run start:production` runs `prisma migrate deploy` (the only safe production migration command) and then starts the server. On Render this is wired via `healthCheckPath: /api/health`.
+`npm run start:production` runs `prisma migrate deploy` (the only safe production migration command) and then starts the server. Railway runs exactly this as the service's start command, so migrations are applied on every deploy and before the server accepts traffic.
+
+The server process itself never changes the schema. It probes one table at boot, and if the database answers but the schema does not match `schema.prisma`, **production startup throws and exits non-zero** rather than repairing it — a missing migration stops the deploy instead of being quietly applied, and nothing can drop a column behind the deploy log. Development logs the same condition and keeps serving; it does not push either (use `npm run db:push` or `npm run db:migrate` by hand). The one `db push --accept-data-loss` left in the codebase is the dev-only `/api/setup-demo` reset endpoint, which is registered only when `NODE_ENV=development`. See `AGENTS.md` §3.1.
+
+## 3.1 Production Deployment Path (Railway)
+
+There is exactly one production path: **GitHub `main` → Railway → Railway Postgres**.
+
+1. **Push to `main`.** `.github/workflows/ci.yml` runs the full gate (Prisma validate, migrations on a throwaway PostgreSQL 18, production build, backend + frontend tests, Docker image build). It does not deploy.
+2. **Railway builds.** The `er` service is built by **Railpack** (the service's builder setting), not by the root `Dockerfile`: it installs dependencies, then runs `npm run build:production` (`prisma generate` + `tsc -b && vite build` + `tsc -p tsconfig.server.json`). The root `Dockerfile` produces the same artifact and is what CI builds, what `docker-compose.staging.yml` runs, and what any other Docker host would run — but the live service's schema behaviour is decided entirely by its start command, below.
+3. **Railway starts.** The service's start command is `npm run start:production` = `prisma migrate deploy && node dist/server/server/server.js`. Migrations therefore run on the Railway Postgres instance at container start, then Fastify serves `/api`, `/socket.io`, and the built SPA from one origin.
+4. **Railway Postgres.** `DATABASE_URL` is a Railway reference variable pointing at the `Postgres` service's private network address. A second service, `er-backup`, runs `Dockerfile.backup` on a daily cron and writes to the `erp-backups` object-storage bucket (see `AGENTS.md` and `docs/runbook.md`).
+5. **Health.** `GET /api/health` runs a `SELECT 1` against the database; the container `HEALTHCHECK` and Railway's deploy gate both use it.
+
+Nothing about a deploy lives outside this repository plus the Railway dashboard: no Render blueprint, no provider API call from CI. To re-deploy, use Railway's dashboard or `railway up`.
 
 ## 4. Health & Shutdown
 
@@ -81,23 +95,25 @@ The seed creates `admin`, `reception1`, `superadmin` (platform administrator), a
 
 ## 6. Production Verification Checklist
 
-- [ ] `NODE_ENV=production` and the four required variables are set in the host (not in a committed file). *(Verified locally: startup fails fast with exit 1 and "…required in production." when they are missing.)*
+- [ ] `NODE_ENV=production` and the four required variables are set as Railway service variables (not in a committed file). *(Verified locally: startup fails fast with exit 1 and "…required in production." when they are missing.)*
 - [x] `npm ci --include=dev` succeeds from a clean checkout (lockfile in the repo).
-- [x] `npm run build:production` succeeds and produces `dist/` (client + 133 backend / 25 frontend tests green after the clean install).
-- [ ] `prisma migrate deploy` applies all migrations (`0001_init`, `0002_audit_logs`).
+- [x] `npm run build:production` succeeds and produces `dist/` (client + backend and frontend suites green after the clean install).
+- [ ] `prisma migrate deploy` applies every migration in `prisma/migrations` to Railway Postgres.
 - [ ] `/api/health` returns `200` and `database: "ok"`.
 - [ ] Login over HTTPS sets a `Secure`, HTTP-only cookie.
-- [ ] Check-in from two desks keeps lobby counts in sync (Socket.io upgrade works through the host). *(WebSocket transport upgrade verified locally against the production build; unauth clients are rejected with `unauthorized`.)*
+- [ ] Check-in from two desks keeps lobby counts in sync (Socket.io upgrade works through Railway's proxy). *(WebSocket transport upgrade verified locally against the production build; unauth clients are rejected with `unauthorized`.)*
 - [ ] A browser opened at the public URL loads the SPA with no CORS/WebSocket errors.
-- [ ] The laptop that built the app is irrelevant — the service runs on the host.
+- [ ] The laptop that built the app is irrelevant — the service runs on Railway.
 
 ## 7. Troubleshooting
 
 | Symptom | Likely cause / fix |
 | :--- | :--- |
-| Startup aborts with "…required in production." | Missing `DATABASE_URL` / `JWT_SECRET` / `COOKIE_SECRET` / `CORS_ORIGIN`. Set them in the host's env/secret store. |
+| Startup aborts with "…required in production." | Missing `DATABASE_URL` / `JWT_SECRET` / `COOKIE_SECRET` / `CORS_ORIGIN`. Set them as Railway service variables. |
 | WebSocket never connects / socket falls back to polling | The configured `CORS_ORIGIN` does not match the browser origin visiting the app, or the host blocks upgrade requests. Add the exact origin (protocol + host + port) and allow WebSocket upgrades. |
 | CORS error on API calls | Frontend origin not in `CORS_ORIGIN`, or `VITE_API_BASE_URL` mismatched with the API host in a split deployment. |
 | Cookie not sent/accepted | Host must be HTTPS in production; the cookie is `Secure`. |
-| `/api/health` returns 503 | Database unreachable — check `DATABASE_URL`, network rules, and that the Supabase/DB host allows connections. |
+| `/api/health` returns 503 | Database unreachable — check `DATABASE_URL`, that the `er` service is on the same Railway project as `Postgres`, and that the private-network reference variable resolves. |
+| Migrations fail on start | `prisma migrate deploy` errored before the server started. Read the deploy log, fix the migration, and re-deploy. `db push` must never be used here — see `AGENTS.md`. |
+| Service exits with "Refusing to start in production: the database schema is missing or behind schema.prisma" | The database is reachable but the schema is not what the build expects, so the server stops rather than changing it. Check `npx prisma migrate status` against `DATABASE_URL`, confirm the deployment actually contains the migrations for this commit (a stale build or a start command that skipped `migrate deploy` are the usual causes), then re-deploy. Never "fix" it with `db push`. |
 | Session ends too early / too late | Adjust `JWT_EXPIRES_IN`; log out and log in again after a change. |

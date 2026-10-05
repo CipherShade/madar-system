@@ -221,7 +221,7 @@ Principles: lower-level modules (students, scheduling) do not reach into financi
 │   ├── frontend/*.test.tsx            (Vitest + Testing Library — 7 files)
 │   └── integration/db/lifecycle.test.ts (DB-backed, skipped without TEST_DATABASE_URL)
 ├── package.json, tsconfig.json, tsconfig.server.json, vite.config.ts, vitest.config.ts
-├── .env.example, render.yaml, docker-compose.yml
+├── .env.example, Dockerfile, Dockerfile.backup, docker-compose.yml, docker-compose.staging.yml
 ```
 
 ---
@@ -273,9 +273,9 @@ Core codes: `VALIDATION_ERROR` (400), `UNAUTHORIZED` (401), `FORBIDDEN`/`CSRF_OR
 
 ## 14. Testing Strategy
 
-- **Backend:** `node:test` executed with `tsx` (`npm test` → `tsx --test tests/*.test.ts`). HTTP-free `fastify.inject()` against `buildApp()`, in-memory fake Prisma in `tests/helpers.ts`. **133 tests green.**
-- **Frontend:** Vitest + Testing Library, jsdom (`npm run test:frontend` → **25 tests green**), setup in `tests/frontend/`.
-- **DB-backed:** `tests/integration/db/lifecycle.test.ts` (`npm run test:db`) exercises full transactional flows against a real PostgreSQL and is **skipped unless `TEST_DATABASE_URL` is set**.
+- **Backend:** `node:test` executed with `tsx` (`npm test` → `tsx --test tests/*.test.ts`). HTTP-free `fastify.inject()` against `buildApp()`, in-memory fake Prisma in `tests/helpers.ts`.
+- **Frontend:** Vitest + Testing Library, jsdom (`npm run test:frontend`), setup in `tests/frontend/`.
+- **DB-backed:** `tests/integration/db/*` (`npm run test:db`) exercises full transactional flows against a real PostgreSQL and is **skipped unless `TEST_DATABASE_URL` is set**. It is destructive and refuses to run against `DATABASE_URL`.
 - Coverage focus: pure financial functions (settlement split, drawer expected cash, variance, reconciliation discrepancy, daily report totals) have dedicated unit coverage via `tests/`.
 - Note: `test:unit`/`test:integration` scripts exist in `package.json` but their directories/paths currently contain no matching test files (the suites live flat in `tests/`).
 - Test files are not type-checked by `tsconfig.json`/`tsconfig.server.json` (both include only `src`); they require `@types/node`.
@@ -284,14 +284,16 @@ Core codes: `VALIDATION_ERROR` (400), `UNAUTHORIZED` (401), `FORBIDDEN`/`CSRF_OR
 
 ## 15. Deployment Architecture
 
-**Single-service web app** (one URL for UI + API + sockets). Blueprint: `render.yaml` → `render.com` (or any Node host / VPS):
+**Single-service web app** (one URL for UI + API + sockets), deployed on Railway from a push to GitHub `main`:
 
-- `buildCommand`: `npm ci --include=dev && npm run build:production`
-- `startCommand`: `npm run start:production` = `prisma migrate deploy` then `node dist/server/server/server.js`
-- `healthCheckPath`: `/api/health` (verifies DB, returns a JSON status envelope)
+- **Build:** the `er` service is built by **Railpack** (its builder setting), which runs `npm run build:production` = `prisma generate` + `tsc -b && vite build` + `tsc -p tsconfig.server.json`. The root `Dockerfile` produces the same artifact for CI and for any Docker host.
+- **Start:** `npm run start:production` = `prisma migrate deploy` then `node dist/server/server/server.js`. This is the Railway service start command, and the container `CMD` is the same command. No schema change happens anywhere else — the server probes the schema at boot and refuses to start in production if it is behind.
+- **Health:** `GET /api/health` (verifies DB, returns a JSON status envelope). Used by the container `HEALTHCHECK` and the deploy gate.
+- **Data:** Railway Postgres, reached over the private network through a `DATABASE_URL` reference variable.
 - Production serving: `@fastify/static` serves `dist/` and falls back to `index.html` for the SPA.
-- Env vars (from `render.yaml`): `NODE_ENV=production`, `DATABASE_URL` (secret), `JWT_SECRET`/`COOKIE_SECRET` (generateValue), `CORS_ORIGIN` (set to the public frontend origin), `JWT_EXPIRES_IN=12h`, `DEFAULT_LOCALE=ar`. Additional hardening vars documented in `.env.example` (`REQUEST_BODY_LIMIT_KB`, `SOCKET_MAX_PAYLOAD_KB`, `RATE_LIMIT_*`).
-- Local dev DB: `docker-compose.yml` (postgres:15-alpine, `postgrespassword` dev-only) + Vite proxy to `:3000` for `/api` and `/socket.io`.
+- Env vars (set as Railway service variables, never committed): `NODE_ENV=production`, `DATABASE_URL` (secret), `JWT_SECRET`/`COOKIE_SECRET` (secrets), `CORS_ORIGIN` (set to the public frontend origin), `PORT`, `DEFAULT_LOCALE=ar`. Additional hardening vars documented in `.env.example` (`REQUEST_BODY_LIMIT_KB`, `SOCKET_MAX_PAYLOAD_KB`, `RATE_LIMIT_*`).
+- A second Railway service, `er-backup`, builds `Dockerfile.backup` and runs on a daily cron, dumping to object storage. It is infrastructure-only and never serves traffic — see `AGENTS.md`.
+- Local dev DB: `docker-compose.yml` (postgres:15-alpine, `postgrespassword` dev-only) + Vite proxy to `:3000` for `/api` and `/socket.io`. `docker-compose.staging.yml` runs the real production image against a disposable PostgreSQL for pre-deploy verification.
 - CORS must list the exact public origin so Socket.io upgrades and API calls succeed cross-origin; same-origin deployments avoid this entirely.
 
 ---
