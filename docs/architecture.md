@@ -286,7 +286,7 @@ Core codes: `VALIDATION_ERROR` (400), `UNAUTHORIZED` (401), `FORBIDDEN`/`CSRF_OR
 
 **Single-service web app** (one URL for UI + API + sockets), deployed on Railway from a push to GitHub `main`:
 
-- **Build:** the `er` service is built by **Railpack** (its builder setting), which runs `npm run build:production` = `prisma generate` + `tsc -b && vite build` + `tsc -p tsconfig.server.json`. The root `Dockerfile` produces the same artifact for CI and for any Docker host.
+- **Build:** the root `Dockerfile`, which is what the deploy actually resolves to (the `er` service's dashboard builder field reads `RAILPACK`, but its build log loads the Dockerfile). Build stage `npm run build:production` = `prisma generate` + `tsc -b && vite build` + `tsc -p tsconfig.server.json`; runtime stage installs production deps + the Prisma CLI and copies `dist/`.
 - **Start:** `npm run start:production` = `prisma migrate deploy` then `node dist/server/server/server.js`. This is the Railway service start command, and the container `CMD` is the same command. No schema change happens anywhere else — the server probes the schema at boot and refuses to start in production if it is behind.
 - **Health:** `GET /api/health` (verifies DB, returns a JSON status envelope). Used by the container `HEALTHCHECK` and the deploy gate.
 - **Data:** Railway Postgres, reached over the private network through a `DATABASE_URL` reference variable.
