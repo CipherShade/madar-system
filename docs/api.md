@@ -232,12 +232,11 @@ shape, except the data exports and support-note reads which also stream plain te
 
 | Route | Notes |
 | :--- | :--- |
-| `GET /api/admin/stats` | Platform KPIs: center counts by plan/status, total students, MRR. |
-| `GET /api/admin/console-stats` | Everything the Overview section needs in one call (KPIs, open support notes, pending notifications, active usage overrides, open view-as sessions, recent health events). |
-| `GET /api/admin/tenants?page=&limit=&search=&plan=&isActive=` | Paginated center list with usage counts; `search` is Arabic-normalized. |
-| `POST /api/admin/tenants` | Creates a center and its owner `ADMIN`. Requires `name`, `ownerName`, `ownerPhone` (Egyptian mobile pattern), `username`; optional `plan` (default `FREE_TRIAL`) and `password`. `409 USERNAME_TAKEN` on collision. |
+| `GET /api/admin/stats` | Platform KPIs: total / active / trial / suspended center counts and MRR in EGP (sum of `ACTIVE` subscription amounts whose period has not ended). |
+| `GET /api/admin/console-stats` | Everything the Overview section needs in one call (KPIs, open support notes, pending notifications, open view-as sessions, recent health events). |
+| `GET /api/admin/tenants?page=&limit=&search=&status=&paymentStatus=&sort=` | Paginated center list with usage counts; `search` is Arabic-normalized, `status` is `all`/`active`/`suspended`. |
+| `POST /api/admin/tenants` | Creates a center and its owner `ADMIN`. Requires `name`, `ownerName`, `ownerPhone` (Egyptian mobile pattern), `username`; optional `password` and `reason`. `409 USERNAME_TAKEN` on collision. |
 | `GET /api/admin/tenants/:id` | Center 360°: usage counts, subscription timeline, recent platform audit, `ownerName` / `ownerPhone`. |
-| `PATCH /api/admin/tenants/:id/limits` | Overrides `maxUsers` / `maxDesks` / `maxBranches` / `visitLimit`; a `reason` is recorded in the audit trail. |
 | `PATCH /api/admin/tenants/:id/extend-trial` | Body `{ days }` (1-365). |
 | `PATCH /api/admin/tenants/:id/suspend` | Body `{ isActive }` — suspend or reactivate a center. |
 | `GET /api/admin/audit-logs?page=&limit=&action=&tenantId=` | Platform audit trail reads. |
@@ -259,8 +258,8 @@ shape, except the data exports and support-note reads which also stream plain te
 
 | Route | Notes |
 | :--- | :--- |
-| `GET /api/admin/subscriptions?page=&limit=&status=&plan=&tenantId=&stale=` | Subscription list plus status totals. `stale=true` returns `PENDING` records older than `STALE_PENDING_DAYS` (3). |
-| `POST /api/admin/subscriptions` | Records a subscription. Required `tenantId`, `plan` (`ESSENTIAL`, `CONTROL`, or internal `FREE_TRIAL`); optional `paymentMethod`, `paymentReference`, `startImmediately` (activate now vs. `PENDING`). Discount and credit balances are applied by the shared domain function `applyBillingBalances`. |
+| `GET /api/admin/subscriptions?view=&centerId=&search=&page=&limit=` | Subscription list with per-center adjustment history and status totals. Each row carries `isStale` for a `PENDING` record older than `STALE_PENDING_DAYS` (3), and the payload reports `stalePendingAfterDays`. |
+| `POST /api/admin/subscriptions` | Records a subscription. Required `tenantId`; optional `paymentMethod` (default `INSTAPAY`), `paymentReference`, `startImmediately` (activate now vs. `PENDING`), `reason`. The amount is the single monthly price (1199 EGP) after the center's discount and credit balances, applied by the shared domain function `applyBillingBalances`. There is one plan: no `plan` field exists. |
 | `POST /api/admin/subscriptions/:id/cancel` | Body `{ reason?, immediate? }` — cancels at period end unless `immediate`. |
 | `POST /api/admin/subscriptions/:id/reactivate` | `reason` required. Restores a canceled/expired subscription. |
 | `POST /api/admin/subscriptions/:id/discount` | Body `{ kind: 'PERCENT' \| 'FIXED', value, reason }` — writes a `SubscriptionAdjustment` and credits the center's discount balance. |
@@ -269,11 +268,11 @@ shape, except the data exports and support-note reads which also stream plain te
 | `GET /api/admin/billing/adjustments?page=&limit=&type=&tenantId=` | Returns `{ adjustments, totals }` — discount/credit/refund history with per-type totals. |
 | `GET /api/admin/revenue?months=6` | Monthly collected revenue: new subscriptions, renewals, cancellations, refunds, discounts, credits, and net. `months` is clamped. |
 
-### 12.4. Usage & limits — `platformUsage.ts`
+### 12.4. Usage — `platformUsage.ts`
 
 | Route | Notes |
 | :--- | :--- |
-| `GET /api/admin/usage` | Per-center usage vs. limits for `USERS`, `RECEPTIONISTS`, `STUDENTS`, `VISITS`, `BRANCHES`, including active `UsageOverride` extras and the 80% warning level. |
+| `GET /api/admin/usage?search=&status=&page=&limit=` | One row per center with real counts — `USERS`, `RECEPTIONISTS`, `STUDENTS`, `VISITS`, `BRANCHES` — plus its subscription status and billing window. The subscription is unlimited, so nothing here has a limit, a level, or a warning threshold. |
 
 ### 12.5. Platform operations — `platformOps.ts`
 

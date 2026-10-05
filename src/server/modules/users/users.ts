@@ -135,7 +135,7 @@ const userRoutes: FastifyPluginAsync = async (app) => {
         },
         select: publicUserSelect,
       });
-      await recordAuditEntry({ actorId: request.user.sub, shiftRegisterId: null, action: 'USER_CREATED', entityType: 'USER', entityId: created.id, metadata: { username: created.username, role: created.role } }, transaction);
+      await recordAuditEntry({ actorId: request.user.sub, tenantId, shiftRegisterId: null, action: 'USER_CREATED', entityType: 'USER', entityId: created.id, metadata: { username: created.username, role: created.role } }, transaction);
       return created;
     });
     return reply.code(201).send({ success: true, data: { user: serializeUser(user) } });
@@ -180,13 +180,13 @@ const userRoutes: FastifyPluginAsync = async (app) => {
           },
           select: publicUserSelect,
         });
-        await recordAuditEntry({ actorId: request.user.sub, shiftRegisterId: null, action: 'USER_UPDATED'.concat(request.body.password ? '_PASSWORD_RESET' : ''), entityType: 'USER', entityId: updated.id, metadata: { username: updated.username } }, transaction);
+        await recordAuditEntry({ actorId: request.user.sub, tenantId, shiftRegisterId: null, action: 'USER_UPDATED'.concat(request.body.password ? '_PASSWORD_RESET' : ''), entityType: 'USER', entityId: updated.id, metadata: { username: updated.username } }, transaction);
         return updated;
       });
       return reply.send({ success: true, data: { user: serializeUser(user) } });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        return reply.code(404).send(invalid('المستخدم غير موجود.', 'User not found.'));
+        return reply.code(404).send(invalid('المستخدم غير موجود.', 'User not found.', 'USER_NOT_FOUND'));
       }
       throw error;
     }
@@ -207,13 +207,13 @@ const userRoutes: FastifyPluginAsync = async (app) => {
           data: { isActive: false, username: `${current?.username ?? 'user'}-disabled-${Date.now()}` },
           select: publicUserSelect,
         });
-        await recordAuditEntry({ actorId: request.user.sub, shiftRegisterId: null, action: 'USER_DEACTIVATED', entityType: 'USER', entityId: updated.id, metadata: { username: updated.username } }, transaction);
+        await recordAuditEntry({ actorId: request.user.sub, tenantId, shiftRegisterId: null, action: 'USER_DEACTIVATED', entityType: 'USER', entityId: updated.id, metadata: { username: updated.username } }, transaction);
         return updated;
       });
       return reply.send({ success: true, data: { user: serializeUser(user) } });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        return reply.code(404).send(invalid('المستخدم غير موجود.', 'User not found.'));
+        return reply.code(404).send(invalid('المستخدم غير موجود.', 'User not found.', 'USER_NOT_FOUND'));
       }
       throw error;
     }

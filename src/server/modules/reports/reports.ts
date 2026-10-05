@@ -81,11 +81,22 @@ const reportRoutes: FastifyPluginAsync = async (app) => {
     }
     const pagination = parseAuditPagination(request.query);
     if (!pagination.ok) return reply.status(400).send(pagination.error);
+    const tenantId = request.user.tenantId;
+    if (!tenantId) {
+      return reply.status(403).send(validationError('لا يوجد مركز مرتبط بحسابك.', 'Your account is not attached to a center.', 'TENANT_CONTEXT_MISSING'));
+    }
 
-    const shift = await prisma.shiftRegister.findUnique({ where: { id: request.params.shiftId }, select: { id: true, receptionistId: true } });
+    // Scoped by center: the audit log carries every amount that moved through the
+    // drawer, so an ADMIN of one center could otherwise read another center's
+    // whole shift simply by supplying its id. Resolving the shift by tenant makes
+    // a foreign shift indistinguishable from a missing one.
+    const shift = await prisma.shiftRegister.findFirst({ where: { id: request.params.shiftId, tenantId }, select: { id: true, receptionistId: true } });
     if (!shift) return reply.status(404).send(validationError('الوردية غير موجودة.', 'Shift not found.', 'SHIFT_NOT_FOUND'));
     if (request.user.role !== Role.ADMIN && shift.receptionistId !== request.user.sub) return reply.status(403).send(validationError('لا يسمح لك بعرض سجل هذه الوردية.', 'You cannot view this shift audit log.', 'AUDIT_ACCESS_DENIED'));
 
+    // Deliberately keyed on shiftRegisterId alone: the shift above is already
+    // proven to belong to the caller, and audit rows written before AuditLog
+    // carried a tenantId would otherwise disappear from the log.
     const where: NonNullable<Parameters<typeof prisma.auditLog.findMany>[0]>['where'] = { shiftRegisterId: shift.id };
     if (pagination.from || pagination.to) {
       where.createdAt = { ...(pagination.from ? { gte: pagination.from } : {}), ...(pagination.to ? { lt: pagination.to } : {}) };

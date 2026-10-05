@@ -180,6 +180,7 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
 
       await recordAuditEntry({
         actorId: request.user.sub,
+        tenantId,
         shiftRegisterId: null,
         action: 'SUBSCRIPTION_RENEWED',
         entityType: 'SUBSCRIPTION',
@@ -296,6 +297,7 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
       });
       await recordAuditEntry({
         actorId: request.user.sub,
+        tenantId: subscription.tenantId,
         shiftRegisterId: null,
         action: 'SUBSCRIPTION_VERIFIED',
         entityType: 'SUBSCRIPTION',
@@ -357,6 +359,7 @@ const subscriptionRoutes: FastifyPluginAsync = async (app) => {
       });
       await recordAuditEntry({
         actorId: request.user.sub,
+        tenantId: subscription.tenantId,
         shiftRegisterId: null,
         action: 'SUBSCRIPTION_REJECTED',
         entityType: 'SUBSCRIPTION',

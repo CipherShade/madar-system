@@ -90,6 +90,7 @@ const branchRoutes: FastifyPluginAsync = async (app) => {
 
         await recordAuditEntry({
           actorId: request.user.sub,
+          tenantId,
           shiftRegisterId: null,
           action: 'BRANCH_CREATED',
           entityType: 'BRANCH',
@@ -147,6 +148,7 @@ const branchRoutes: FastifyPluginAsync = async (app) => {
 
         await recordAuditEntry({
           actorId: request.user.sub,
+          tenantId,
           shiftRegisterId: null,
           action: 'BRANCH_UPDATED',
           entityType: 'BRANCH',
@@ -160,7 +162,7 @@ const branchRoutes: FastifyPluginAsync = async (app) => {
       return reply.send({ success: true, data: { branch } });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        return reply.code(404).send(invalid('الفرع غير موجود.', 'Branch not found.'));
+        return reply.code(404).send(invalid('الفرع غير موجود.', 'Branch not found.', 'BRANCH_NOT_FOUND'));
       }
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         return reply.code(409).send(invalid('اسم الفرع مسجل بالفعل في هذا المركز.', 'A branch with this name already exists in your center.'));
@@ -186,6 +188,7 @@ const branchRoutes: FastifyPluginAsync = async (app) => {
         await tx.branch.delete({ where: { id: request.params.id, tenantId } });
         await recordAuditEntry({
           actorId: request.user.sub,
+          tenantId,
           shiftRegisterId: null,
           action: 'BRANCH_DELETED',
           entityType: 'BRANCH',
@@ -196,7 +199,7 @@ const branchRoutes: FastifyPluginAsync = async (app) => {
       return reply.send({ success: true, data: null });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        return reply.code(404).send(invalid('الفرع غير موجود.', 'Branch not found.'));
+        return reply.code(404).send(invalid('الفرع غير موجود.', 'Branch not found.', 'BRANCH_NOT_FOUND'));
       }
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
         return reply.code(409).send(invalid('لا يمكن حذف فرع مرتبط بقاعات أو حصص.', 'Cannot delete branch associated with rooms or sessions.'));

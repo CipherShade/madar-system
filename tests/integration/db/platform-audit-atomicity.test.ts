@@ -5,9 +5,35 @@ import assert from 'node:assert/strict';
 // every platform mutation must be committed together with its audit row, so a
 // failure to record the audit can never leave an un-audited write behind.
 //
-// It is skipped unless TEST_DATABASE_URL points at a disposable test database
-// that has the Prisma schema applied (`npm run db:migrate:deploy`).
+// Destructive, like its siblings: `before` creates a super-admin user and
+// `after` deletes it, a probe notification, a probe setting and that user's
+// audit rows. Skipped unless TEST_DATABASE_URL points at a disposable test
+// database whose name says so, and refused outright if it is the
+// application's own database.
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
+
+function assertDisposableDatabase(url: string): void {
+  const databaseName = (u: string): string => {
+    try {
+      return decodeURIComponent(new URL(u).pathname.replace(/^\//, ''));
+    } catch {
+      return '';
+    }
+  };
+  const name = databaseName(url);
+  if (!name) throw new Error('TEST_DATABASE_URL is not a parseable database URL.');
+  if (!/test/i.test(name)) {
+    throw new Error(
+      `Refusing to run destructive integration tests against database "${name}": the name does not contain "test". ` +
+        'Point TEST_DATABASE_URL at a disposable database.',
+    );
+  }
+  const live = process.env.DATABASE_URL;
+  if (live && databaseName(live) === name) {
+    throw new Error(`Refusing to run: TEST_DATABASE_URL and DATABASE_URL both point at database "${name}".`);
+  }
+}
+if (TEST_DATABASE_URL) assertDisposableDatabase(TEST_DATABASE_URL);
 
 type FastifyLike = {
   ready(): Promise<void>;
@@ -61,6 +87,11 @@ describe(
     let superAdminToken: string;
 
     before(async () => {
+      // This suite uses the application's own shared Prisma client rather than a
+      // local one, so it must be pointed at the test database *before* the app
+      // modules are imported. Without this it would create and delete a
+      // super-admin user in whatever DATABASE_URL happens to point at.
+      process.env.DATABASE_URL = TEST_DATABASE_URL as string;
       const { buildApp } = await import('../../../src/server/app.js');
       const { prisma: realPrisma } = await import('../../../src/server/lib/prisma.js');
       app = buildApp() as unknown as FastifyLike;

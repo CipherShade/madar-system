@@ -60,6 +60,15 @@ function toNumber(value: Prisma.Decimal | number | null | undefined): number {
   return Number(value);
 }
 
+/** The center a shift belongs to, or null when the token carries no tenant. */
+function tenantRequired(request: { user?: { tenantId?: string | null } }): string | null {
+  return request.user?.tenantId ?? null;
+}
+
+function tenantRequiredFailure() {
+  return { success: false as const, error: { code: 'TENANT_REQUIRED', message: 'الحساب غير مرتبط بمركز تعليمي.', messageEn: 'Account has no tenant assigned.' } };
+}
+
 export function computeShiftFinancialSummary(input: ShiftFinancialSummaryInput): ShiftFinancialSummary {
   const totalCashCollected = roundAmount(input.cashCollected);
   const totalVodafoneCashCollected = roundAmount(input.vodafoneCashCollected);
@@ -80,30 +89,30 @@ export function computeShiftFinancialSummary(input: ShiftFinancialSummaryInput):
   };
 }
 
-async function loadShiftFinancials(shiftId: string) {
+async function loadShiftFinancials(shiftId: string, tenantId: string) {
   const [cashCollected, vodafoneCashCollected, instapayCollected, teacherCashPayouts, cashExpenses, openingCash] = await Promise.all([
     prisma.attendance.aggregate({
       _sum: { amountPaid: true },
-      where: { shiftRegisterId: shiftId, paymentMethod: PaymentMethod.CASH },
+      where: { shiftRegisterId: shiftId, tenantId, paymentMethod: PaymentMethod.CASH },
     }),
     prisma.attendance.aggregate({
       _sum: { amountPaid: true },
-      where: { shiftRegisterId: shiftId, paymentMethod: PaymentMethod.VODAFONE_CASH },
+      where: { shiftRegisterId: shiftId, tenantId, paymentMethod: PaymentMethod.VODAFONE_CASH },
     }),
     prisma.attendance.aggregate({
       _sum: { amountPaid: true },
-      where: { shiftRegisterId: shiftId, paymentMethod: PaymentMethod.INSTAPAY },
+      where: { shiftRegisterId: shiftId, tenantId, paymentMethod: PaymentMethod.INSTAPAY },
     }),
     prisma.sessionSettlement.aggregate({
       _sum: { teacherPayout: true },
-      where: { disbursedFromShiftId: shiftId, payoutMethod: PaymentMethod.CASH },
+      where: { disbursedFromShiftId: shiftId, tenantId, payoutMethod: PaymentMethod.CASH },
     }),
     prisma.expense.aggregate({
       _sum: { amount: true },
-      where: { shiftRegisterId: shiftId, paymentMethod: PaymentMethod.CASH },
+      where: { shiftRegisterId: shiftId, tenantId, paymentMethod: PaymentMethod.CASH },
     }),
-    prisma.shiftRegister.findUnique({
-      where: { id: shiftId },
+    prisma.shiftRegister.findFirst({
+      where: { id: shiftId, tenantId },
       select: { openingCash: true },
     }),
   ]);
@@ -136,16 +145,19 @@ function serializeShift(shift: { id: string; receptionistId: string; deskIdentif
 
 const shiftRoutes: FastifyPluginAsync = async (app) => {
   app.get('/current', { preHandler: authenticate }, async (request, reply) => {
-    const shift = await prisma.shiftRegister.findFirst({
-      where: { receptionistId: request.user.sub, status: ShiftStatus.OPEN },
-      orderBy: { openedAt: 'desc' },
-    });
+    const tenantId = tenantRequired(request);
+    const shift = tenantId
+      ? await prisma.shiftRegister.findFirst({
+        where: { receptionistId: request.user.sub, tenantId, status: ShiftStatus.OPEN },
+        orderBy: { openedAt: 'desc' },
+      })
+      : null;
 
     if (!shift) {
       return reply.send({ success: true, data: { shift: null } });
     }
 
-    const financials = await loadShiftFinancials(shift.id);
+    const financials = await loadShiftFinancials(shift.id, tenantId!);
     return reply.send({
       success: true,
       data: {
@@ -172,8 +184,10 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
     },
   }, async (request, reply) => {
     if (!isValidMoneyAmount(request.body.openingCash)) return reply.code(400).send(moneyFailure());
+    const tenantId = tenantRequired(request);
+    if (!tenantId) return reply.code(400).send(tenantRequiredFailure());
     const hasActiveShift = await prisma.shiftRegister.findFirst({
-      where: { receptionistId: request.user.sub, status: ShiftStatus.OPEN },
+      where: { receptionistId: request.user.sub, tenantId, status: ShiftStatus.OPEN },
       select: { id: true },
     });
 
@@ -187,14 +201,14 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
     const shift = await prisma.$transaction(async (transaction) => {
       const createdShift = await transaction.shiftRegister.create({
         data: {
-          tenantId: request.user.tenantId || null,
+          tenantId,
           receptionistId: request.user.sub,
           deskIdentifier: request.body.deskIdentifier.trim(),
           openingCash: new Prisma.Decimal(request.body.openingCash),
           status: ShiftStatus.OPEN,
         },
       });
-      await recordAuditEntry({ actorId: request.user.sub, shiftRegisterId: createdShift.id, action: 'SHIFT_OPENED', entityType: 'SHIFT_REGISTER', entityId: createdShift.id, amount: request.body.openingCash, metadata: { deskIdentifier: createdShift.deskIdentifier } }, transaction);
+      await recordAuditEntry({ actorId: request.user.sub, tenantId, shiftRegisterId: createdShift.id, action: 'SHIFT_OPENED', entityType: 'SHIFT_REGISTER', entityId: createdShift.id, amount: request.body.openingCash, metadata: { deskIdentifier: createdShift.deskIdentifier } }, transaction);
       return createdShift;
     });
 
@@ -230,8 +244,10 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
       },
     },
   }, async (request, reply) => {
+    const tenantId = tenantRequired(request);
+    if (!tenantId) return reply.code(400).send(tenantRequiredFailure());
     const shift = await prisma.shiftRegister.findFirst({
-      where: { receptionistId: request.user.sub, status: ShiftStatus.OPEN },
+      where: { receptionistId: request.user.sub, tenantId, status: ShiftStatus.OPEN },
       orderBy: { openedAt: 'desc' },
     });
 
@@ -243,7 +259,7 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
     }
     if (!isValidMoneyAmount(request.body.actualCashCounted)) return reply.code(400).send(moneyFailure());
 
-    const financials = await loadShiftFinancials(shift.id);
+    const financials = await loadShiftFinancials(shift.id, tenantId);
     const actualCashCounted = roundAmount(request.body.actualCashCounted);
     const expectedCash = roundAmount(financials.expectedCashInDrawer);
     const cashVariance = calculateCashVariance(actualCashCounted, expectedCash);
@@ -252,7 +268,7 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
     try {
       closedShift = await prisma.$transaction(async (transaction) => {
         const updatedShift = await transaction.shiftRegister.updateMany({
-          where: { id: shift.id, status: ShiftStatus.OPEN },
+          where: { id: shift.id, tenantId, status: ShiftStatus.OPEN },
           data: {
             closedAt: new Date(),
             actualCashCounted: new Prisma.Decimal(actualCashCounted),
@@ -263,8 +279,8 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
           },
         });
         if (updatedShift.count !== 1) throw new Error('SHIFT_ALREADY_CLOSED');
-        const result = await transaction.shiftRegister.findUniqueOrThrow({ where: { id: shift.id } });
-        await recordAuditEntry({ actorId: request.user.sub, shiftRegisterId: result.id, action: 'SHIFT_CLOSED', entityType: 'SHIFT_REGISTER', entityId: result.id, amount: actualCashCounted, metadata: { expectedCash, cashVariance, closingNotes: result.closingNotes } }, transaction);
+        const result = await transaction.shiftRegister.findFirstOrThrow({ where: { id: shift.id, tenantId } });
+        await recordAuditEntry({ actorId: request.user.sub, tenantId, shiftRegisterId: result.id, action: 'SHIFT_CLOSED', entityType: 'SHIFT_REGISTER', entityId: result.id, amount: actualCashCounted, metadata: { expectedCash, cashVariance, closingNotes: result.closingNotes } }, transaction);
         return result;
       });
     } catch (error) {
@@ -293,7 +309,16 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
   app.get<{ Querystring: { page?: string; limit?: string } }>('/history', { preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST)] }, async (request, reply) => {
     const pagination = parsePagination(request.query);
     if (!pagination.ok) return reply.code(400).send(pagination.error);
-    const where: Record<string, unknown> = request.user.role === Role.ADMIN ? { status: ShiftStatus.CLOSED } : { receptionistId: request.user.sub, status: ShiftStatus.CLOSED };
+    const tenantId = tenantRequired(request);
+    if (!tenantId) {
+      return reply.send({ success: true, data: { shifts: [], pagination: { page: pagination.page, limit: pagination.limit, total: 0, pages: 0 } } });
+    }
+    // An ADMIN sees every closed shift *in their own center* — opening cash,
+    // counted cash and variance included. Without tenantId in this filter the
+    // admin history was the entire platform's drawer balances.
+    const where: Record<string, unknown> = request.user.role === Role.ADMIN
+      ? { tenantId, status: ShiftStatus.CLOSED }
+      : { tenantId, receptionistId: request.user.sub, status: ShiftStatus.CLOSED };
     const [shifts, total] = await Promise.all([
       prisma.shiftRegister.findMany({
         where,
@@ -307,7 +332,7 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
     return reply.send({
       success: true,
       data: {
-        shifts: await Promise.all(shifts.map(async (shift) => ({ ...serializeShift(shift), receptionist: shift.receptionist.fullName, financials: await loadShiftFinancials(shift.id) }))),
+        shifts: await Promise.all(shifts.map(async (shift) => ({ ...serializeShift(shift), receptionist: shift.receptionist.fullName, financials: await loadShiftFinancials(shift.id, tenantId) }))),
         pagination: { page: pagination.page, limit: pagination.limit, total, pages: Math.ceil(total / pagination.limit) },
       },
     });
@@ -330,9 +355,11 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
     },
   }, async (request, reply) => {
     if (!isValidMoneyAmount(request.body.amount)) return reply.code(400).send(moneyFailure());
+    const tenantId = tenantRequired(request);
+    if (!tenantId) return reply.code(400).send(tenantRequiredFailure());
     if (request.body.paymentMethod === PaymentMethod.CASH) {
       const openShift = await prisma.shiftRegister.findFirst({
-        where: { receptionistId: request.user.sub, status: ShiftStatus.OPEN },
+        where: { receptionistId: request.user.sub, tenantId, status: ShiftStatus.OPEN },
         orderBy: { openedAt: 'desc' },
       });
 
@@ -345,10 +372,11 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
 
       try {
         const expense = await prisma.$transaction(async (transaction) => {
-          const currentShift = await transaction.shiftRegister.findUnique({ where: { id: openShift.id }, select: { status: true } });
+          const currentShift = await transaction.shiftRegister.findFirst({ where: { id: openShift.id, tenantId }, select: { status: true } });
           if (!currentShift || currentShift.status !== ShiftStatus.OPEN) throw new Error('SHIFT_CLOSED');
           const createdExpense = await transaction.expense.create({
             data: {
+              tenantId,
               category: request.body.category.trim(),
               amount: new Prisma.Decimal(request.body.amount),
               paymentMethod: PaymentMethod.CASH,
@@ -357,7 +385,7 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
               shiftRegisterId: openShift.id,
             },
           });
-          await recordAuditEntry({ actorId: request.user.sub, shiftRegisterId: openShift.id, action: 'EXPENSE_RECORDED', entityType: 'EXPENSE', entityId: createdExpense.id, amount: request.body.amount, metadata: { category: createdExpense.category, paymentMethod: createdExpense.paymentMethod } }, transaction);
+          await recordAuditEntry({ actorId: request.user.sub, tenantId, shiftRegisterId: openShift.id, action: 'EXPENSE_RECORDED', entityType: 'EXPENSE', entityId: createdExpense.id, amount: request.body.amount, metadata: { category: createdExpense.category, paymentMethod: createdExpense.paymentMethod } }, transaction);
           return createdExpense;
         });
 
@@ -376,6 +404,7 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
   const expense = await prisma.$transaction(async (transaction) => {
     const createdExpense = await transaction.expense.create({
       data: {
+        tenantId,
         category: request.body.category.trim(),
         amount: new Prisma.Decimal(request.body.amount),
         paymentMethod: request.body.paymentMethod,
@@ -384,7 +413,7 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
         shiftRegisterId: null,
       },
     });
-    await recordAuditEntry({ actorId: request.user.sub, shiftRegisterId: null, action: 'EXPENSE_RECORDED', entityType: 'EXPENSE', entityId: createdExpense.id, amount: request.body.amount, metadata: { category: createdExpense.category, paymentMethod: createdExpense.paymentMethod } }, transaction);
+    await recordAuditEntry({ actorId: request.user.sub, tenantId, shiftRegisterId: null, action: 'EXPENSE_RECORDED', entityType: 'EXPENSE', entityId: createdExpense.id, amount: request.body.amount, metadata: { category: createdExpense.category, paymentMethod: createdExpense.paymentMethod } }, transaction);
     return createdExpense;
   });
 

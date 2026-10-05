@@ -12,11 +12,45 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    # The Prisma datasource is PostgreSQL, so CI needs a real PostgreSQL to
+    # validate, migrate and test against. Everything here is ephemeral and scoped
+    # to one job: the credentials below are throwaway values for the throwaway
+    # container below, not production credentials, and no repository secret is
+    # involved.
     env:
-      DATABASE_URL: "file:./dev.db"
       NODE_ENV: test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      # The app database. The existing migration chain is applied here, so a
+      # migration that does not apply to a clean database fails here first.
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/edu_center_erp_ci?schema=public
+      # The database tests/integration/db runs against. That suite empties every
+      # business table on each run and refuses to start unless its database name
+      # contains "test" and differs from DATABASE_URL's, so it gets a database of
+      # its own on the same throwaway server.
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/edu_center_erp_test?schema=public
       JWT_SECRET: "ci-test-jwt-secret-string-at-least-32-chars-long"
       COOKIE_SECRET: "ci-test-cookie-secret-string-at-least-32-chars"
+
+    services:
+      postgres:
+        # Same major version as the production server (Railway `postgres-ssl:18`),
+        # so a migration that only holds on an older PostgreSQL fails here rather
+        # than on a client deploy.
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          # The service container creates one database on first boot; the test
+          # database is created in a step below.
+          POSTGRES_DB: edu_center_erp_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout
@@ -37,8 +71,22 @@ jobs:
       - name: Prisma generate
         run: npm run db:generate
 
-      - name: Schema push (prisma db push)
-        run: npm run db:push
+      # The destructive DB-backed suite must never share a database with anything
+      # else. This one lives on the same throwaway server and dies with the job.
+      - name: Create the test database
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE edu_center_erp_test;'
+
+      # Migrations, not `prisma db push`: CI must exercise the same chain that
+      # `start:production` applies on a real deploy.
+      - name: Apply migrations (app database)
+        run: npm run db:migrate:deploy
+
+      - name: Apply migrations (test database)
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+        run: npm run db:migrate:deploy
 
       - name: Build production (client + server)
         run: npm run build:production

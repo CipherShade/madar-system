@@ -59,7 +59,10 @@ test('isSessionEligibleForLobbyDashboard includes active and upcoming sessions w
   assert.equal(
     isSessionEligibleForLobbyDashboard({
       status: 'SCHEDULED',
-      startTime: new Date(now.getTime() - 180 * 60 * 1000),
+      // A minute inside the edge rather than on it. The function compares against
+      // the wall clock, so an exact-edge input loses by the elapsed milliseconds
+      // between building the date and the call and fails intermittently.
+      startTime: new Date(now.getTime() - 179 * 60 * 1000),
       endTime: new Date(now.getTime() + 60 * 60 * 1000),
     }),
     true,

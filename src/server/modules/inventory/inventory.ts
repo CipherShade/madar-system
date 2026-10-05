@@ -157,11 +157,25 @@ type Tx = Prisma.TransactionClient | PrismaClient;
  * before it can record the delivery.
  */
 async function ensureStockRow(db: Tx, tenantId: string, branchId: string, productId: string) {
-  await db.branchStock.upsert({
+  const row = await db.branchStock.upsert({
     where: { branchId_productId: { branchId, productId } },
     create: { tenantId, branchId, productId, quantity: 0 },
     update: {},
+    select: { tenantId: true },
   });
+
+  // `branchId_productId` is unique across the whole database, not per center, so
+  // an upsert on that pair can land on a row another center already owns.
+  // Incrementing it would move that center's stock, and this center could never
+  // create its own row for the pair afterwards, because the slot is taken.
+  //
+  // Every route below asserts the branch and the product belong to this center
+  // before it gets here, which is what actually closes that door. This check is
+  // the backstop for the case those assertions cannot cover: a pair claimed
+  // before they existed, by a version that did not ask.
+  if (row.tenantId !== tenantId) {
+    throw new Error('STOCK_ROW_FOREIGN_TENANT');
+  }
 }
 
 /**
@@ -236,6 +250,29 @@ async function assertBranch(db: Tx, tenantId: string, branchId: string): Promise
   return branch !== null;
 }
 
+/**
+ * The same question for a product, and it matters just as much: a foreign
+ * `productId` is not a foreign key error, it is a perfectly valid row.
+ */
+async function assertProduct(db: Tx, tenantId: string, productId: string): Promise<boolean> {
+  if (!isValidUUID(productId)) return false;
+  const product = await db.product.findFirst({ where: { id: productId, tenantId }, select: { id: true } });
+  return product !== null;
+}
+
+/**
+ * The refusal for a stock pair this center cannot legitimately own. Only a
+ * pre-existing inconsistency can reach it, so it says so instead of blaming the
+ * caller's numbers, and names nothing that belongs to another center.
+ */
+function stockRowConflict() {
+  return invalid(
+    'سجل مخزون غير متسق لهذا الفرع والمنتج، راجع الدعم الفني.',
+    'The stock record for this branch and product is inconsistent; please contact support.',
+    'STOCK_INTEGRITY_CONFLICT',
+  );
+}
+
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 const inventoryRoutes: FastifyPluginAsync = async (app) => {
@@ -258,9 +295,13 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
         ...(query ? { searchName: { contains: normalizeArabicText(query) } } : {}),
       },
       include: {
+        // Scoped by the *branch's* ownership, not the row's own `tenantId`. A row
+        // that a center claimed with someone else's branch is stamped with the
+        // claimer's tenant, so filtering on `tenantId` would happily show it —
+        // and the shelf on screen would belong to a branch that is not theirs.
         branchStocks: branchId
-          ? { where: { branchId: String(branchId) }, select: { quantity: true, reorderLevel: true } }
-          : { select: { quantity: true, reorderLevel: true, branchId: true } },
+          ? { where: { branchId: String(branchId), branch: { tenantId } }, select: { quantity: true, reorderLevel: true } }
+          : { where: { branch: { tenantId } }, select: { quantity: true, reorderLevel: true, branchId: true } },
       },
       orderBy: { nameAr: 'asc' },
       skip,
@@ -349,7 +390,7 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
 
     const before = await prisma.product.findFirst({ where: { id: request.params.id, tenantId } });
     if (!before) {
-      return reply.code(404).send(invalid('المنتج غير موجود.', 'Product not found.'));
+      return reply.code(404).send(invalid('المنتج غير موجود.', 'Product not found.', 'PRODUCT_NOT_FOUND'));
     }
 
     const nextSale = body.salePrice ?? Number(before.salePrice);
@@ -392,7 +433,7 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
     const { branchId, items, note } = request.body;
 
     if (!(await assertBranch(prisma, tenantId, branchId))) {
-      return reply.code(404).send(invalid('الفرع غير موجود.', 'Branch not found.'));
+      return reply.code(404).send(invalid('الفرع غير موجود.', 'Branch not found.', 'BRANCH_NOT_FOUND'));
     }
 
     // Merge repeated product lines so one receipt of 2+3 of the same title is
@@ -409,7 +450,7 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
       select: { id: true },
     });
     if (products.length !== merged.size) {
-      return reply.code(404).send(invalid('بعض المنتجات غير موجودة في هذا المركز.', 'One or more products do not exist in your center.'));
+      return reply.code(404).send(invalid('بعض المنتجات غير موجودة في هذا المركز.', 'One or more products do not exist in your center.', 'PRODUCT_NOT_FOUND'));
     }
 
     const { costTotal } = computePurchaseCost([...merged.values()].map((v) => ({ quantity: v.quantity, unitCost: v.unitCost })));
@@ -435,6 +476,7 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
 
       await recordAuditEntry({
         actorId: request.user!.sub,
+        tenantId: request.user!.tenantId,
         shiftRegisterId: null,
         action: 'INVENTORY_PURCHASE_RECORDED',
         entityType: 'BRANCH_STOCK',
@@ -456,6 +498,19 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(403).send(invalid('الحساب غير مرتبط بمركز تعليمي.', 'Account has no tenant assigned.', 'TENANT_CONTEXT_MISSING'));
     }
     const { branchId, productId, countedQuantity, note } = request.body;
+
+    // Both parents are checked before the shelf is read. The read below is
+    // tenant-scoped and would answer "quantity 0" for anything this center does
+    // not own, which is indistinguishable from an empty shelf — so without these
+    // two checks the route would report a real count against a stock row it had
+    // just created for someone else's branch and product.
+    if (!(await assertBranch(prisma, tenantId, branchId))) {
+      return reply.code(404).send(invalid('الفرع غير موجود.', 'Branch not found.', 'BRANCH_NOT_FOUND'));
+    }
+
+    if (!(await assertProduct(prisma, tenantId, productId))) {
+      return reply.code(404).send(invalid('المنتج غير موجود.', 'Product not found.', 'PRODUCT_NOT_FOUND'));
+    }
 
     const current = await prisma.branchStock.findFirst({
       where: { branchId, productId, tenantId },
@@ -491,6 +546,7 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
         }
         await recordAuditEntry({
           actorId: request.user!.sub,
+          tenantId: request.user!.tenantId,
           shiftRegisterId: null,
           action: 'INVENTORY_ADJUSTED',
           entityType: 'BRANCH_STOCK',
@@ -501,6 +557,9 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
     } catch (error) {
       if (error instanceof Error && error.message === 'ADJUSTMENT_WOULD_GO_NEGATIVE') {
         return reply.code(409).send(invalid('الكمية الحالية أقل من المحوّل، لا يمكن تسجيل العجز.', 'Stock is already lower than the counted figure; a shortfall cannot be recorded.', 'STOCK_INSUFFICIENT'));
+      }
+      if (error instanceof Error && error.message === 'STOCK_ROW_FOREIGN_TENANT') {
+        return reply.code(409).send(stockRowConflict());
       }
       throw error;
     }
@@ -518,6 +577,16 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(403).send(invalid('الحساب غير مرتبط بمركز تعليمي.', 'Account has no tenant assigned.', 'TENANT_CONTEXT_MISSING'));
     }
     const { branchId, productId, quantity, note } = request.body;
+
+    // Same two checks as an adjustment: a write-off is a stock movement, so it
+    // can neither name a branch nor a product belonging to another center.
+    if (!(await assertBranch(prisma, tenantId, branchId))) {
+      return reply.code(404).send(invalid('الفرع غير موجود.', 'Branch not found.', 'BRANCH_NOT_FOUND'));
+    }
+
+    if (!(await assertProduct(prisma, tenantId, productId))) {
+      return reply.code(404).send(invalid('المنتج غير موجود.', 'Product not found.', 'PRODUCT_NOT_FOUND'));
+    }
 
     let delta: number;
     try {
@@ -541,6 +610,7 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
         if (!moved.ok) throw new Error('WRITE_OFF_EXCEEDS_STOCK');
         await recordAuditEntry({
           actorId: request.user!.sub,
+          tenantId: request.user!.tenantId,
           shiftRegisterId: null,
           action: 'INVENTORY_WRITTEN_OFF',
           entityType: 'BRANCH_STOCK',
@@ -551,6 +621,9 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
     } catch (error) {
       if (error instanceof Error && error.message === 'WRITE_OFF_EXCEEDS_STOCK') {
         return reply.code(409).send(invalid('الكمية المتاحة غير كافية.', 'Not enough stock on hand.', 'STOCK_INSUFFICIENT'));
+      }
+      if (error instanceof Error && error.message === 'STOCK_ROW_FOREIGN_TENANT') {
+        return reply.code(409).send(stockRowConflict());
       }
       throw error;
     }
@@ -581,7 +654,7 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
     const { branchId, studentId, paymentMethod, note, items } = request.body;
 
     if (!(await assertBranch(prisma, tenantId, branchId))) {
-      return reply.code(404).send(invalid('الفرع غير موجود.', 'Branch not found.'));
+      return reply.code(404).send(invalid('الفرع غير موجود.', 'Branch not found.', 'BRANCH_NOT_FOUND'));
     }
 
     // Tenant-scoped: this is the check that stops another center's student from
@@ -591,7 +664,7 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
       select: { id: true, fullName: true },
     });
     if (!student) {
-      return reply.code(404).send(invalid('الطالب غير موجود في هذا المركز.', 'Student not found in your center.'));
+      return reply.code(404).send(invalid('الطالب غير موجود في هذا المركز.', 'Student not found in your center.', 'STUDENT_NOT_FOUND'));
     }
 
     const products = await prisma.product.findMany({
@@ -599,7 +672,7 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
       select: { id: true, nameAr: true, salePrice: true, costPrice: true, isActive: true },
     });
     if (products.length !== new Set(items.map((i) => i.productId)).size) {
-      return reply.code(404).send(invalid('بعض المنتجات غير موجودة في هذا المركز.', 'One or more products do not exist in your center.'));
+      return reply.code(404).send(invalid('بعض المنتجات غير موجودة في هذا المركز.', 'One or more products do not exist in your center.', 'PRODUCT_NOT_FOUND'));
     }
     if (products.some((p) => !p.isActive)) {
       return reply.code(400).send(invalid('لا يمكن بيع منتج غير نشط.', 'An inactive product cannot be sold.'));
@@ -675,6 +748,7 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
 
         await recordAuditEntry({
           actorId: request.user!.sub,
+          tenantId: request.user!.tenantId,
           shiftRegisterId: null,
           action: 'BOOK_SALE_RECORDED',
           entityType: 'BOOK_SALE',
@@ -740,7 +814,7 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
       include: { lines: { select: { productId: true, quantity: true } } },
     });
     if (!existing) {
-      return reply.code(404).send(invalid('عملية البيع غير موجودة.', 'Sale not found.'));
+      return reply.code(404).send(invalid('عملية البيع غير موجودة.', 'Sale not found.', 'BOOK_SALE_NOT_FOUND'));
     }
     if (existing.status === 'VOIDED') {
       return reply.code(409).send(invalid('هذه العملية مُلغاة بالفعل.', 'This sale has already been voided.', 'SALE_ALREADY_VOIDED'));
@@ -771,6 +845,7 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
 
         await recordAuditEntry({
           actorId: request.user!.sub,
+          tenantId: request.user!.tenantId,
           shiftRegisterId: null,
           action: 'BOOK_SALE_VOIDED',
           entityType: 'BOOK_SALE',
@@ -800,8 +875,12 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
     const { page, limit, skip } = pagination;
 
     const sales = await prisma.bookSale.findMany({
+      // `branch: { tenantId }` for the same reason as in `/products`: a sale
+      // stamped with this tenant but pointing at another center's branch is not
+      // this center's sale, and must not be listed under that branch.
       where: {
         tenantId,
+        branch: { tenantId },
         ...(q.branchId ? { branchId: String(q.branchId) } : {}),
         ...(q.studentId ? { studentId: String(q.studentId) } : {}),
         ...(q.from || q.to
@@ -863,7 +942,7 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
       select: { id: true, fullName: true },
     });
     if (!student) {
-      return reply.code(404).send(invalid('الطالب غير موجود في هذا المركز.', 'Student not found in your center.'));
+      return reply.code(404).send(invalid('الطالب غير موجود في هذا المركز.', 'Student not found in your center.', 'STUDENT_NOT_FOUND'));
     }
 
     const sales = await prisma.bookSale.findMany({
@@ -920,11 +999,11 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
 
     const [sales, lowStock] = await Promise.all([
       prisma.bookSale.findMany({
-        where: { tenantId, ...(branchId ? { branchId } : {}), createdAt: { gte: from, lte: to } },
+        where: { tenantId, branch: { tenantId }, ...(branchId ? { branchId } : {}), createdAt: { gte: from, lte: to } },
         select: { status: true, total: true, costTotal: true, createdAt: true },
       }),
       prisma.branchStock.findMany({
-        where: { tenantId, ...(branchId ? { branchId } : {}) },
+        where: { tenantId, branch: { tenantId }, ...(branchId ? { branchId } : {}) },
         include: {
           product: { select: { id: true, nameAr: true, costPrice: true } },
           branch: { select: { name: true } },
@@ -973,6 +1052,7 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
     const movements = await prisma.stockMovement.findMany({
       where: {
         tenantId,
+        branch: { tenantId },
         ...(q.branchId ? { branchId: String(q.branchId) } : {}),
         ...(q.productId ? { productId: String(q.productId) } : {}),
         ...(q.type ? { type: String(q.type) as Prisma.EnumStockMovementTypeFilter } : {}),

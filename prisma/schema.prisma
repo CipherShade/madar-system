@@ -96,28 +96,28 @@ enum SchoolType {
 
 // 0. SaaS Tenant (Educational Center)
 model Tenant {
-  id          String     @id @default(uuid())
-  name        String
-  slug        String     @unique
-  searchName  String?    @map("search_name")
-  ownerName   String?    @map("owner_name")
-  ownerPhone  String?    @map("owner_phone")
-  trialEndsAt DateTime?  @map("trial_ends_at")
-  isActive    Boolean    @default(true) @map("is_active")
-  discountBalance Decimal @default(0) @map("discount_balance")
-  creditBalance   Decimal @default(0) @map("credit_balance")
-  createdAt   DateTime   @default(now()) @map("created_at")
-  updatedAt   DateTime   @default(now()) @updatedAt @map("updated_at")
+  id              String    @id @default(uuid())
+  name            String
+  slug            String    @unique
+  searchName      String?   @map("search_name")
+  ownerName       String?   @map("owner_name")
+  ownerPhone      String?   @map("owner_phone")
+  trialEndsAt     DateTime? @map("trial_ends_at")
+  isActive        Boolean   @default(true) @map("is_active")
+  discountBalance Decimal   @default(0) @map("discount_balance")
+  creditBalance   Decimal   @default(0) @map("credit_balance")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
 
-   users                 User[]
-   branches              Branch[]
-   usageRecords          UsageRecord[]
-   rooms                 Room[]
-   teachers              Teacher[]
-   students              Student[]
-   sessions              Session[]
-   shiftRegisters        ShiftRegister[]
-   attendances           Attendance[]
+  users                  User[]
+  branches               Branch[]
+  usageRecords           UsageRecord[]
+  rooms                  Room[]
+  teachers               Teacher[]
+  students               Student[]
+  sessions               Session[]
+  shiftRegisters         ShiftRegister[]
+  attendances            Attendance[]
   sessionReconciliations SessionReconciliation[]
   sessionSettlements     SessionSettlement[]
   expenses               Expense[]
@@ -173,14 +173,14 @@ model Subscription {
 /// synthesize a single BASE line from `amount` in that case rather than showing
 /// a broken invoice.
 model SubscriptionLineItem {
-  id             String       @id @default(uuid())
-  subscriptionId String       @map("subscription_id")
+  id             String   @id @default(uuid())
+  subscriptionId String   @map("subscription_id")
   /// 'BASE' for the platform itself, or an AddonCode value.
   code           String
-  labelEn        String       @map("label_en")
-  labelAr        String       @map("label_ar")
+  labelEn        String   @map("label_en")
+  labelAr        String   @map("label_ar")
   amount         Decimal
-  createdAt      DateTime     @default(now()) @map("created_at")
+  createdAt      DateTime @default(now()) @map("created_at")
 
   subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
@@ -190,21 +190,21 @@ model SubscriptionLineItem {
 
 // 0.2 SaaS Tenant Branches
 model Branch {
-  id                    String                 @id @default(uuid())
-  tenantId              String                 @map("tenant_id")
-  name                  String
-  address               String?
-  phoneNumber           String?                @map("phone_number")
-  isActive              Boolean                @default(true) @map("is_active")
-  createdAt             DateTime               @default(now()) @map("created_at")
-  updatedAt             DateTime               @default(now()) @updatedAt @map("updated_at")
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  name        String
+  address     String?
+  phoneNumber String?  @map("phone_number")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
 
-  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  usageRecords          UsageRecord[]
-  rooms                 Room[]
-  branchStocks          BranchStock[]
-  stockMovements        StockMovement[]
-  bookSales             BookSale[]
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  usageRecords   UsageRecord[]
+  rooms          Room[]
+  branchStocks   BranchStock[]
+  stockMovements StockMovement[]
+  bookSales      BookSale[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -213,17 +213,17 @@ model Branch {
 
 // 0.3 Monthly Usage Records
 model UsageRecord {
-  id                    String                 @id @default(uuid())
-  tenantId              String                 @map("tenant_id")
-  branchId              String?                @map("branch_id")
-  periodStart           DateTime               @map("period_start")
-  periodEnd             DateTime               @map("period_end")
-  visitCount            Int                    @default(0) @map("visit_count")
-  createdAt             DateTime               @default(now()) @map("created_at")
-  updatedAt             DateTime               @default(now()) @updatedAt @map("updated_at")
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  branchId    String?  @map("branch_id")
+  periodStart DateTime @map("period_start")
+  periodEnd   DateTime @map("period_end")
+  visitCount  Int      @default(0) @map("visit_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
 
-  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  branch                Branch?                @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, branchId, periodStart, periodEnd])
   @@index([tenantId, periodStart, periodEnd])
@@ -241,15 +241,15 @@ model UsageRecord {
 // into every subsequent invoice; disabling one stops the next invoice, and
 // never touches a period that has already been paid for.
 model TenantAddon {
-  id           String     @id @default(uuid())
-  tenantId     String     @map("tenant_id")
-  code         AddonCode
-  enabled      Boolean    @default(true)
-  enabledAt    DateTime   @default(now()) @map("enabled_at")
-  disabledAt   DateTime?  @map("disabled_at")
-  updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at")
+  id         String    @id @default(uuid())
+  tenantId   String    @map("tenant_id")
+  code       AddonCode
+  enabled    Boolean   @default(true)
+  enabledAt  DateTime  @default(now()) @map("enabled_at")
+  disabledAt DateTime? @map("disabled_at")
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at")
 
-  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -261,24 +261,24 @@ model TenantAddon {
 /// the moment of sale so that editing a product later cannot rewrite the
 /// center's historical revenue or profit.
 model Product {
-  id            String    @id @default(uuid())
-  tenantId      String    @map("tenant_id")
-  nameAr        String    @map("name_ar")
-  nameEn        String?   @map("name_en")
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  nameAr     String   @map("name_ar")
+  nameEn     String?  @map("name_en")
   /// Normalized Arabic name for trigram search, mirroring `Student.searchName`.
-  searchName    String    @map("search_name")
-  sku           String?
-  categoryAr    String?   @map("category_ar")
-  salePrice     Decimal   @map("sale_price")
-  costPrice     Decimal   @default(0) @map("cost_price")
-  isActive      Boolean   @default(true) @map("is_active")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at")
+  searchName String   @map("search_name")
+  sku        String?
+  categoryAr String?  @map("category_ar")
+  salePrice  Decimal  @map("sale_price")
+  costPrice  Decimal  @default(0) @map("cost_price")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at")
 
-  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  branchStocks  BranchStock[]
-  movements     StockMovement[]
-  saleLines     BookSaleLine[]
+  tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branchStocks BranchStock[]
+  movements    StockMovement[]
+  saleLines    BookSaleLine[]
 
   @@unique([tenantId, sku])
   @@index([tenantId, searchName])
@@ -290,18 +290,18 @@ model Product {
 /// two branches are two physical shelves; a single pooled figure would let one
 /// site sell what another site owns.
 model BranchStock {
-  id            String   @id @default(uuid())
-  tenantId      String   @map("tenant_id")
-  branchId      String   @map("branch_id")
-  productId     String   @map("product_id")
-  quantity      Int      @default(0)
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  branchId     String   @map("branch_id")
+  productId    String   @map("product_id")
+  quantity     Int      @default(0)
   /// Quantity at or below which the branch should reorder. 0 disables the alert.
-  reorderLevel  Int      @default(0) @map("reorder_level")
-  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+  reorderLevel Int      @default(0) @map("reorder_level")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
 
-  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  branch        Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch  Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([branchId, productId])
   @@index([tenantId, branchId])
@@ -312,29 +312,29 @@ model BranchStock {
 /// a cached running total of these rows, never an independently edited number,
 /// so the on-hand figure can always be re-derived and audited.
 model StockMovement {
-  id            String            @id @default(uuid())
-  tenantId      String            @map("tenant_id")
-  branchId      String            @map("branch_id")
-  productId     String            @map("product_id")
-  type          StockMovementType
+  id          String            @id @default(uuid())
+  tenantId    String            @map("tenant_id")
+  branchId    String            @map("branch_id")
+  productId   String            @map("product_id")
+  type        StockMovementType
   /// Always positive. The direction of the change is implied by `type`, except
   /// for ADJUSTMENT where the sign of the applied delta is recorded in `delta`.
-  quantity      Int
+  quantity    Int
   /// Signed change actually applied to the on-hand quantity. Equal to `quantity`
   /// for every type except ADJUSTMENT.
-  delta         Int
+  delta       Int
   /// What one unit cost the center, captured from the product at the time.
-  unitCost      Decimal?          @map("unit_cost")
-  note          String?
-  saleId        String?           @map("sale_id")
-  createdById   String?           @map("created_by_id")
-  createdAt     DateTime          @default(now()) @map("created_at")
+  unitCost    Decimal?          @map("unit_cost")
+  note        String?
+  saleId      String?           @map("sale_id")
+  createdById String?           @map("created_by_id")
+  createdAt   DateTime          @default(now()) @map("created_at")
 
-  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  branch        Branch            @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  product       Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
-  sale          BookSale?         @relation(fields: [saleId], references: [id], onDelete: SetNull)
-  createdBy     User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch    Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sale      BookSale? @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  createdBy User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([tenantId, branchId, productId])
   @@index([tenantId, createdAt])
@@ -367,14 +367,14 @@ model BookSale {
   createdById     String?       @map("created_by_id")
   createdAt       DateTime      @default(now()) @map("created_at")
 
-  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  branch          Branch         @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  student         Student        @relation(fields: [studentId], references: [id], onDelete: Restrict)
-  shiftRegister   ShiftRegister? @relation(fields: [shiftRegisterId], references: [id], onDelete: SetNull)
-  createdBy       User?          @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch        Branch         @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  student       Student        @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  shiftRegister ShiftRegister? @relation(fields: [shiftRegisterId], references: [id], onDelete: SetNull)
+  createdBy     User?          @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
-  lines           BookSaleLine[]
-  movements       StockMovement[]
+  lines     BookSaleLine[]
+  movements StockMovement[]
 
   @@index([tenantId, createdAt])
   @@index([tenantId, studentId])
@@ -385,16 +385,16 @@ model BookSale {
 
 /// One product on one sale, with the prices frozen at sale time.
 model BookSaleLine {
-  id            String    @id @default(uuid())
-  saleId        String    @map("sale_id")
-  productId     String    @map("product_id")
-  quantity      Int
-  unitPrice     Decimal   @map("unit_price")
-  unitCost      Decimal   @map("unit_cost")
-  lineTotal     Decimal   @map("line_total")
+  id        String  @id @default(uuid())
+  saleId    String  @map("sale_id")
+  productId String  @map("product_id")
+  quantity  Int
+  unitPrice Decimal @map("unit_price")
+  unitCost  Decimal @map("unit_cost")
+  lineTotal Decimal @map("line_total")
 
-  sale          BookSale  @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  product       Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+  sale    BookSale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
 
   @@index([saleId])
   @@index([productId])
@@ -403,22 +403,23 @@ model BookSaleLine {
 
 // 1. Center Staff Internal Accounts
 model User {
-  id                String   @id @default(uuid())
-  tenantId          String?  @map("tenant_id")
-  username          String   @unique
-  email             String?  @unique
-  passwordHash      String   @map("password_hash")
-  fullName          String   @map("full_name")
-  searchName        String?  @map("search_name")
-  role              Role     @default(RECEPTIONIST)
-  phoneNumber       String?  @map("phone_number")
-  preferredLanguage String   @default("ar") @map("preferred_language")
-  isActive          Boolean  @default(true) @map("is_active")
+  id                String    @id @default(uuid())
+  tenantId          String?   @map("tenant_id")
+  username          String    @unique
+  email             String?   @unique
+  passwordHash      String    @map("password_hash")
+  fullName          String    @map("full_name")
+  searchName        String?   @map("search_name")
+  role              Role      @default(RECEPTIONIST)
+  phoneNumber       String?   @map("phone_number")
+  preferredLanguage String    @default("ar") @map("preferred_language")
+  isActive          Boolean   @default(true) @map("is_active")
   lastLoginAt       DateTime? @map("last_login_at")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at")
 
-  tenant                    Tenant?                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   shiftRegisters            ShiftRegister[]
   attendances               Attendance[]
   reconciliations           SessionReconciliation[]
@@ -432,7 +433,7 @@ model User {
   systemSettingsUpdated     SystemSetting[]
   superAdminSessions        SuperAdminSession[]
   superAdminUserPermissions SuperAdminUserPermission[]
-  subscriptionAdjustments    SubscriptionAdjustment[]
+  subscriptionAdjustments   SubscriptionAdjustment[]
   stockMovements            StockMovement[]
   bookSales                 BookSale[]
 
@@ -442,18 +443,18 @@ model User {
 
 // 2. Classrooms & Lecture Halls
 model Room {
-   id        String   @id @default(uuid())
-   tenantId  String?  @map("tenant_id")
-   branchId  String?  @map("branch_id")
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  branchId  String?  @map("branch_id")
   name      String
   capacity  Int
   floor     String?
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
 
-   tenant    Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-   branch    Branch?   @relation(fields: [branchId], references: [id], onDelete: SetNull)
-   sessions  Session[]
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch   Branch?   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  sessions Session[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -464,7 +465,7 @@ model Room {
 // 3. Tutors / Instructors
 model Teacher {
   id               String   @id @default(uuid())
-  tenantId         String?  @map("tenant_id")
+  tenantId         String   @map("tenant_id")
   fullName         String   @map("full_name")
   /// Normalized Arabic name for trigram search
   searchName       String   @map("search_name")
@@ -476,7 +477,7 @@ model Teacher {
   isActive         Boolean  @default(true) @map("is_active")
   createdAt        DateTime @default(now()) @map("created_at")
 
-  tenant   Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   sessions Session[]
 
   @@index([tenantId, searchName])
@@ -487,7 +488,7 @@ model Teacher {
 // 4. Student Master Directory
 model Student {
   id            String     @id @default(uuid())
-  tenantId      String?    @map("tenant_id")
+  tenantId      String     @map("tenant_id")
   studentCode   String     @map("student_code")
   fullName      String     @map("full_name")
   /// Normalized Arabic name (Alef unified, taa marbouta, diacritics stripped) for trigram search
@@ -500,7 +501,7 @@ model Student {
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @default(now()) @updatedAt @map("updated_at")
 
-  tenant      Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   attendances Attendance[]
   bookSales   BookSale[]
 
@@ -515,7 +516,7 @@ model Student {
 // 5. Scheduled Class Sessions
 model Session {
   id                  String        @id @default(uuid())
-  tenantId            String?       @map("tenant_id")
+  tenantId            String        @map("tenant_id")
   teacherId           String        @map("teacher_id")
   roomId              String        @map("room_id")
   title               String
@@ -528,7 +529,7 @@ model Session {
   createdById         String        @map("created_by")
   createdAt           DateTime      @default(now()) @map("created_at")
 
-  tenant    Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   teacher   Teacher @relation(fields: [teacherId], references: [id])
   room      Room    @relation(fields: [roomId], references: [id])
   createdBy User    @relation(fields: [createdById], references: [id])
@@ -547,7 +548,7 @@ model Session {
 // 6. Per-Desk Shift Cash Drawers
 model ShiftRegister {
   id                String      @id @default(uuid())
-  tenantId          String?     @map("tenant_id")
+  tenantId          String      @map("tenant_id")
   receptionistId    String      @map("receptionist_id")
   deskIdentifier    String      @map("desk_identifier")
   openedAt          DateTime    @default(now()) @map("opened_at")
@@ -559,7 +560,7 @@ model ShiftRegister {
   status            ShiftStatus @default(OPEN)
   closingNotes      String?     @map("closing_notes")
 
-  tenant               Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant               Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   receptionist         User                @relation(fields: [receptionistId], references: [id])
   attendances          Attendance[]
   disbursedSettlements SessionSettlement[]
@@ -575,7 +576,7 @@ model ShiftRegister {
 // 7. Door Check-In & Payment Records
 model Attendance {
   id               String           @id @default(uuid())
-  tenantId         String?          @map("tenant_id")
+  tenantId         String           @map("tenant_id")
   sessionId        String           @map("session_id")
   studentId        String           @map("student_id")
   receptionistId   String           @map("receptionist_id")
@@ -587,7 +588,7 @@ model Attendance {
   paymentReference String?          @map("payment_reference")
   status           AttendanceStatus @default(PAID)
 
-  tenant        Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   session       Session       @relation(fields: [sessionId], references: [id])
   student       Student       @relation(fields: [studentId], references: [id])
   receptionist  User          @relation(fields: [receptionistId], references: [id])
@@ -605,7 +606,7 @@ model Attendance {
 // 8. In-Hall Headcount Reconciliation
 model SessionReconciliation {
   id                  String   @id @default(uuid())
-  tenantId            String?  @map("tenant_id")
+  tenantId            String   @map("tenant_id")
   sessionId           String   @unique @map("session_id")
   lobbyCount          Int      @map("lobby_count")
   assistantCount      Int      @map("assistant_count")
@@ -615,7 +616,7 @@ model SessionReconciliation {
   reconciledById      String   @map("reconciled_by")
   reconciledAt        DateTime @default(now()) @map("reconciled_at")
 
-  tenant       Tenant?            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   session      Session            @relation(fields: [sessionId], references: [id])
   reconciledBy User               @relation(fields: [reconciledById], references: [id])
   settlement   SessionSettlement?
@@ -628,7 +629,7 @@ model SessionReconciliation {
 // 9. Session Financial Settlements (Teacher Payouts)
 model SessionSettlement {
   id                   String           @id @default(uuid())
-  tenantId             String?          @map("tenant_id")
+  tenantId             String           @map("tenant_id")
   sessionId            String           @unique @map("session_id")
   reconciliationId     String           @unique @map("reconciliation_id")
   disbursedFromShiftId String?          @map("disbursed_from_shift_id")
@@ -644,7 +645,7 @@ model SessionSettlement {
   createdById          String           @map("created_by")
   settledAt            DateTime         @default(now()) @map("settled_at")
 
-  tenant             Tenant?               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant             Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   session            Session               @relation(fields: [sessionId], references: [id])
   reconciliation     SessionReconciliation @relation(fields: [reconciliationId], references: [id])
   disbursedFromShift ShiftRegister?        @relation(fields: [disbursedFromShiftId], references: [id])
@@ -659,7 +660,7 @@ model SessionSettlement {
 // 10. Petty Cash & Desk Operating Expenses
 model Expense {
   id              String        @id @default(uuid())
-  tenantId        String?       @map("tenant_id")
+  tenantId        String        @map("tenant_id")
   shiftRegisterId String?       @map("shift_register_id")
   category        String
   amount          Decimal
@@ -668,7 +669,7 @@ model Expense {
   createdById     String        @map("created_by")
   createdAt       DateTime      @default(now()) @map("created_at")
 
-  tenant        Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   shiftRegister ShiftRegister? @relation(fields: [shiftRegisterId], references: [id])
   createdBy     User           @relation(fields: [createdById], references: [id])
 
@@ -806,14 +807,14 @@ model SystemSetting {
 }
 
 model SubscriptionAdjustment {
-  id             String                   @id @default(uuid())
-  tenantId       String                   @map("tenant_id")
-  subscriptionId String?                  @map("subscription_id")
+  id             String                     @id @default(uuid())
+  tenantId       String                     @map("tenant_id")
+  subscriptionId String?                    @map("subscription_id")
   type           SubscriptionAdjustmentType
   amount         Decimal
   reason         String?
-  createdById    String                   @map("created_by_id")
-  createdAt      DateTime                 @default(now()) @map("created_at")
+  createdById    String                     @map("created_by_id")
+  createdAt      DateTime                   @default(now()) @map("created_at")
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)

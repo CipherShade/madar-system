@@ -206,6 +206,7 @@ const authRoutes: FastifyPluginAsync = async (app) => {
 
       await recordAuditEntry({
         actorId: user.id,
+        tenantId: tenant.id,
         shiftRegisterId: null,
         action: 'TENANT_REGISTERED',
         entityType: 'TENANT',
@@ -271,7 +272,7 @@ const authRoutes: FastifyPluginAsync = async (app) => {
       },
     },
   }, async (request, reply) => {
-    const user = await prisma.user.findUnique({ where: { id: request.user.sub }, select: { id: true, passwordHash: true, username: true } });
+    const user = await prisma.user.findUnique({ where: { id: request.user.sub }, select: { id: true, passwordHash: true, username: true, tenantId: true } });
     if (!user) return reply.code(401).send({ success: false, error: { code: 'UNAUTHORIZED', message: 'الحساب غير موجود.', messageEn: 'Account not found.' } });
     if (!(await argon2.verify(user.passwordHash, request.body.currentPassword))) {
       return reply.code(400).send({ success: false, error: { code: 'INVALID_CURRENT_PASSWORD', message: 'كلمة المرور الحالية غير صحيحة.', messageEn: 'The current password is incorrect.' } });
@@ -284,7 +285,7 @@ const authRoutes: FastifyPluginAsync = async (app) => {
         where: { id: user.id },
         data: { passwordHash: await argon2.hash(request.body.newPassword, { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 4 }) },
       });
-      await recordAuditEntry({ actorId: user.id, shiftRegisterId: null, action: 'PASSWORD_CHANGED', entityType: 'USER', entityId: user.id, metadata: { username: user.username } }, transaction);
+      await recordAuditEntry({ actorId: user.id, tenantId: user.tenantId, shiftRegisterId: null, action: 'PASSWORD_CHANGED', entityType: 'USER', entityId: user.id, metadata: { username: user.username } }, transaction);
     });
     return reply.send({ success: true, data: null });
   });

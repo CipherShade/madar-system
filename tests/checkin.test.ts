@@ -20,24 +20,44 @@ describe('CHECK-IN: change owed', () => {
 });
 
 describe('CHECK-IN: lobby dashboard eligibility', () => {
-  const now = Date.now();
-  const mk = (status: SessionStatus, startDeltaMin: number, endDeltaMin: number) => ({
-    status,
-    startTime: new Date(now + startDeltaMin * 60_000),
-    endTime: new Date(now + endDeltaMin * 60_000),
-  });
+  // Resolved per call, not once at collection. The function under test reads the
+  // wall clock itself, so a `now` captured when this describe block was collected
+  // is already stale by the time the assertions run, and any test sitting on the
+  // window edge would fail on elapsed milliseconds alone.
+  const mk = (status: SessionStatus, startDeltaMin: number, endDeltaMin: number) => {
+    const now = Date.now();
+    return {
+      status,
+      startTime: new Date(now + startDeltaMin * 60_000),
+      endTime: new Date(now + endDeltaMin * 60_000),
+    };
+  };
 
   test('ACTIVE sessions are always shown', () => {
     assert.equal(isSessionEligibleForLobbyDashboard(mk(SessionStatus.ACTIVE, -5, 55)), true);
   });
 
-  test('SCHEDULED sessions start within 30 minutes are shown', () => {
+  test('SCHEDULED sessions starting soon are shown', () => {
     assert.equal(isSessionEligibleForLobbyDashboard(mk(SessionStatus.SCHEDULED, 10, 70)), true);
     assert.equal(isSessionEligibleForLobbyDashboard(mk(SessionStatus.SCHEDULED, 1, 61)), true);
   });
 
-  test('SCHEDULED sessions start more than 30 minutes away are hidden', () => {
-    assert.equal(isSessionEligibleForLobbyDashboard(mk(SessionStatus.SCHEDULED, 31, 91)), false);
+  test('SCHEDULED sessions still running are shown', () => {
+    // The window is symmetric on purpose. A reception desk still needs a session
+    // that started two hours ago on its board: students arrive late, and the
+    // session has to be settled and paid out. Hiding it on a 30-minute rule would
+    // strand that money.
+    assert.equal(isSessionEligibleForLobbyDashboard(mk(SessionStatus.SCHEDULED, -120, 0)), true);
+  });
+
+  test('the window is three hours either side of the start time', () => {
+    // A minute inside and a minute outside, rather than the exact edge: an exact
+    // edge assertion is a race against the wall clock and flakes on elapsed
+    // milliseconds. One minute of slack still pins the constant to 180.
+    assert.equal(isSessionEligibleForLobbyDashboard(mk(SessionStatus.SCHEDULED, 179, 239)), true);
+    assert.equal(isSessionEligibleForLobbyDashboard(mk(SessionStatus.SCHEDULED, 181, 241)), false);
+    assert.equal(isSessionEligibleForLobbyDashboard(mk(SessionStatus.SCHEDULED, -179, 1)), true);
+    assert.equal(isSessionEligibleForLobbyDashboard(mk(SessionStatus.SCHEDULED, -181, -121)), false);
   });
 
   test('COMPLETED or CANCELLED sessions are never shown', () => {
@@ -117,5 +137,3 @@ describe('CHECK-IN HTTP workflow', () => {
     await app.close();
   });
 });
-
-import { validUUID } from './helpers.js';

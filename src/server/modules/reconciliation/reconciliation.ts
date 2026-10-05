@@ -64,7 +64,15 @@ const reconciliationRoutes: FastifyPluginAsync = async (app) => {
     if (!isValidUUID(request.params.id)) {
       return reply.code(400).send(validation('معرّف الحصة غير صالح.', 'The session id is invalid.'));
     }
-    const session = await prisma.session.findUnique({ where: { id: request.params.id } });
+    const tenantId = request.user.tenantId;
+    if (!tenantId) {
+      return reply.code(400).send(validation('الحساب غير مرتبط بمركز تعليمي.', 'Account has no tenant assigned.', 'TENANT_REQUIRED'));
+    }
+    // Scoped by center: reconciliation fixes the headcount a payout is computed
+    // from, so another center's session must be indistinguishable from a missing
+    // one. Attendance counts are scoped too, so a foreign row cannot inflate or
+    // deflate this center's number.
+    const session = await prisma.session.findFirst({ where: { id: request.params.id, tenantId } });
     if (!session) {
       return reply.code(404).send(validation('الحصة غير موجودة.', 'Session not found.', 'SESSION_NOT_FOUND'));
     }
@@ -72,13 +80,13 @@ const reconciliationRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(409).send(validation('لا يمكن تعديل مطابقة حصة منتهية.', 'A completed session cannot be reconciled again.', 'SESSION_LOCKED'));
     }
 
-    const room = await prisma.room.findUnique({ where: { id: session.roomId }, select: { capacity: true } });
+    const room = await prisma.room.findFirst({ where: { id: session.roomId, tenantId }, select: { capacity: true } });
     const headcountCheck = validateReconciledHeadcount(request.body.reconciledHeadcount, room?.capacity ?? 0);
     if (!headcountCheck.ok) {
       return reply.code(400).send(validation(`العدد النهائي المعتمد لا يمكن أن يتجاوز سعة القاعة (${room?.capacity ?? 0}).`, headcountCheck.error, 'HEADCOUNT_EXCEEDS_CAPACITY'));
     }
 
-    const lobbyCount = await prisma.attendance.count({ where: { sessionId: session.id, status: { not: 'VOID' } } });
+    const lobbyCount = await prisma.attendance.count({ where: { sessionId: session.id, tenantId, status: { not: 'VOID' } } });
     const reconcileInput = validateReconciliationInput({
       assistantCount: request.body.assistantCount,
       lobbyCount,
@@ -90,17 +98,18 @@ const reconciliationRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const reconciliation = await prisma.$transaction(async (transaction) => {
-      const currentSession = await transaction.session.findUnique({ where: { id: session.id }, select: { status: true } });
+      const currentSession = await transaction.session.findFirst({ where: { id: session.id, tenantId }, select: { status: true } });
       if (!currentSession || currentSession.status === SessionStatus.COMPLETED) throw new Error('SESSION_LOCKED');
-      const currentLobbyCount = await transaction.attendance.count({ where: { sessionId: session.id, status: { not: 'VOID' } } });
+      const currentLobbyCount = await transaction.attendance.count({ where: { sessionId: session.id, tenantId, status: { not: 'VOID' } } });
       const currentDiscrepancy = computeDiscrepancy(request.body.assistantCount, currentLobbyCount);
       const record = await transaction.sessionReconciliation.upsert({
         where: { sessionId: session.id },
         update: { lobbyCount: currentLobbyCount, assistantCount: request.body.assistantCount, discrepancy: currentDiscrepancy, reconciledHeadcount: request.body.reconciledHeadcount, resolutionNotes: request.body.resolutionNotes?.trim() || null, reconciledById: request.user.sub, reconciledAt: new Date() },
-        create: { sessionId: session.id, lobbyCount: currentLobbyCount, assistantCount: request.body.assistantCount, discrepancy: currentDiscrepancy, reconciledHeadcount: request.body.reconciledHeadcount, resolutionNotes: request.body.resolutionNotes?.trim() || null, reconciledById: request.user.sub },
+        create: { sessionId: session.id, tenantId, lobbyCount: currentLobbyCount, assistantCount: request.body.assistantCount, discrepancy: currentDiscrepancy, reconciledHeadcount: request.body.reconciledHeadcount, resolutionNotes: request.body.resolutionNotes?.trim() || null, reconciledById: request.user.sub },
       });
       await recordAuditEntry({
         actorId: request.user.sub,
+        tenantId,
         shiftRegisterId: null,
         action: 'SESSION_RECONCILED',
         entityType: 'SESSION_RECONCILIATION',

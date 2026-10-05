@@ -138,23 +138,25 @@ app.register(inventoryRoutes, { prefix: '/api/inventory' });
     });
   }
 
-  // Setup demo database endpoint
-  app.all('/api/setup-demo', async (request, reply) => {
-    try {
-      const { execSync } = await import('node:child_process');
-      const { seedDemoData } = await import('./lib/demoSeed.js');
+  // Setup demo database endpoint - development only
+  if (config.nodeEnv !== 'production') {
+    app.all('/api/setup-demo', async (request, reply) => {
       try {
-        execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit' });
-      } catch (pushErr) {
-        request.log.warn({ err: pushErr }, 'db push note in setup-demo');
+        const { execSync } = await import('node:child_process');
+        const { seedDemoData } = await import('./lib/demoSeed.js');
+        try {
+          execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit' });
+        } catch (pushErr) {
+          request.log.warn({ err: pushErr }, 'db push note in setup-demo');
+        }
+        await seedDemoData(prisma);
+        return { success: true, message: 'Database migrated and demo data seeded successfully!' };
+      } catch (err: any) {
+        request.log.error({ err }, 'setup-demo failed');
+        return reply.code(500).send({ success: false, error: err?.message || String(err) });
       }
-      await seedDemoData(prisma);
-      return { success: true, message: 'Database migrated and demo data seeded successfully!' };
-    } catch (err: any) {
-      request.log.error({ err }, 'setup-demo failed');
-      return reply.code(500).send({ success: false, error: err?.message || String(err) });
-    }
-  });
+    });
+  }
 
   // 4. Health check endpoint
   app.get('/api/health', async (_request, reply) => {

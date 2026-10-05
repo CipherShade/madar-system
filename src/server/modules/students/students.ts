@@ -37,9 +37,9 @@ export function nextStudentCodeFromLatest(latestCode: string | null | undefined)
   return `STU-${String((match ? Number(match[1]) : 0) + 1).padStart(5, '0')}`;
 }
 
-async function nextStudentCode(tenantId?: string | null): Promise<string> {
+async function nextStudentCode(tenantId: string): Promise<string> {
   const latest = await prisma.student.findFirst({
-    where: tenantId ? { tenantId } : {},
+    where: { tenantId },
     orderBy: { studentCode: 'desc' },
     select: { studentCode: true },
   });
@@ -56,21 +56,27 @@ const studentRoutes: FastifyPluginAsync = async (app) => {
     const { page, limit, skip } = pagination;
     const search = request.query.search?.trim();
     const searchWhere = buildStudentSearchWhere(search);
-    const where: Prisma.StudentWhereInput = {
-      ...searchWhere,
-      ...(request.user?.tenantId ? { tenantId: request.user.tenantId } : {}),
-    };
+    const tenantId = request.user?.tenantId;
+    // No tenant, no registry. Dropping the filter instead would return every
+    // center's students — names, guardian phone numbers and stages.
+    if (!tenantId) {
+      return reply.send({ success: true, data: { students: [], pagination: { page, limit, total: 0, pages: 0 } } });
+    }
+    const where: Prisma.StudentWhereInput = { ...searchWhere, tenantId };
     const [students, total] = await Promise.all([prisma.student.findMany({ where, orderBy: { fullName: 'asc' }, skip, take: limit }), prisma.student.count({ where })]);
     return reply.send({ success: true, data: { students: students.map(serializeStudent), pagination: { page, limit, total, pages: Math.ceil(total / limit) } } });
   });
   app.post<{ Body: StudentBody }>('/students', { preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), requireTenantWritable], schema: { body: bodySchema } }, async (request, reply) => {
     const body = request.body; const phoneError = validateStudentPhones(body); if (phoneError) return reply.code(400).send(phoneError); const fullName = body.fullName.trim();
+    // Fail closed: an orphan student with a null tenant is invisible to every
+    // tenant-scoped read, and its attendance could never be billed.
+    const tenantId = request.user.tenantId; if (!tenantId) return reply.code(400).send(invalid('الحساب غير مرتبط بمركز تعليمي.', 'Account has no tenant assigned.', 'TENANT_REQUIRED'));
     for (let attempt = 0; ; attempt += 1) {
       try {
         const student = await prisma.student.create({
           data: {
-            tenantId: request.user.tenantId || null,
-            studentCode: await nextStudentCode(request.user.tenantId),
+            tenantId,
+            studentCode: await nextStudentCode(tenantId),
             fullName,
             searchName: normalizeArabicText(fullName),
             studentPhone: body.studentPhone || null,
@@ -92,16 +98,19 @@ const studentRoutes: FastifyPluginAsync = async (app) => {
   });
   app.patch<{ Params: { id: string }; Body: Partial<StudentBody> }>('/students/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), requireTenantWritable], schema: { params: uuidParamsSchema, body: { ...bodySchema, required: [] } } }, async (request, reply) => {
     if (!isValidUUID(request.params.id)) return reply.code(400).send(invalid('معرّف الطالب غير صالح.', 'The student id is invalid.'));
+    const tenantId = request.user.tenantId; if (!tenantId) return reply.code(400).send(invalid('الحساب غير مرتبط بمركز تعليمي.', 'Account has no tenant assigned.', 'TENANT_REQUIRED'));
     const body = request.body; if (body.guardianPhone && !egyptianPhone.test(body.guardianPhone)) return reply.code(400).send(invalid('رقم ولي الأمر غير صحيح.', 'Guardian phone is invalid.')); if (body.studentPhone && !egyptianPhone.test(body.studentPhone)) return reply.code(400).send(invalid('رقم الطالب غير صحيح.', 'Student phone is invalid.'));
-    try { const student = await prisma.student.update({ where: { id: request.params.id }, data: { ...(body.fullName === undefined ? {} : { fullName: body.fullName.trim(), searchName: normalizeArabicText(body.fullName) }), ...(body.studentPhone === undefined ? {} : { studentPhone: body.studentPhone || null }), ...(body.guardianPhone === undefined ? {} : { guardianPhone: body.guardianPhone }), ...(body.academicStage === undefined ? {} : { academicStage: body.academicStage.trim() }), ...(body.schoolType === undefined ? {} : { schoolType: body.schoolType }), ...(body.notes === undefined ? {} : { notes: body.notes?.trim() || null }) } }); return reply.send({ success: true, data: { student } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') return reply.code(404).send(invalid('الطالب غير موجود.', 'Student not found.')); throw error; }
+    try { const student = await prisma.student.update({ where: { id: request.params.id, tenantId }, data: { ...(body.fullName === undefined ? {} : { fullName: body.fullName.trim(), searchName: normalizeArabicText(body.fullName) }), ...(body.studentPhone === undefined ? {} : { studentPhone: body.studentPhone || null }), ...(body.guardianPhone === undefined ? {} : { guardianPhone: body.guardianPhone }), ...(body.academicStage === undefined ? {} : { academicStage: body.academicStage.trim() }), ...(body.schoolType === undefined ? {} : { schoolType: body.schoolType }), ...(body.notes === undefined ? {} : { notes: body.notes?.trim() || null }) } }); return reply.send({ success: true, data: { student } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') return reply.code(404).send(invalid('الطالب غير موجود.', 'Student not found.', 'STUDENT_NOT_FOUND')); throw error; }
   });
   app.get<{ Params: { id: string } }>('/students/:id/attendances', { preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST)] }, async (request, reply) => {
     if (!isValidUUID(request.params.id)) return reply.code(400).send(invalid('معرّف الطالب غير صالح.', 'The student id is invalid.'));
-    const student = await prisma.student.findUnique({ where: { id: request.params.id }, select: { id: true, fullName: true } });
-    if (!student) return reply.code(404).send(invalid('الطالب غير موجود.', 'Student not found.'));
+    const tenantId = request.user.tenantId;
+    if (!tenantId) return reply.code(404).send(invalid('الطالب غير موجود.', 'Student not found.', 'STUDENT_NOT_FOUND'));
+    const student = await prisma.student.findFirst({ where: { id: request.params.id, tenantId }, select: { id: true, fullName: true } });
+    if (!student) return reply.code(404).send(invalid('الطالب غير موجود.', 'Student not found.', 'STUDENT_NOT_FOUND'));
 
     const attendances = await prisma.attendance.findMany({
-      where: { studentId: request.params.id, status: { not: 'VOID' } },
+      where: { studentId: request.params.id, tenantId, status: { not: 'VOID' } },
       include: {
         session: { select: { id: true, title: true, startTime: true, sessionPrice: true, status: true, teacher: { select: { fullName: true } } } },
         shiftRegister: { select: { deskIdentifier: true } },
@@ -147,6 +156,6 @@ const studentRoutes: FastifyPluginAsync = async (app) => {
       },
     });
   });
-  app.delete<{ Params: { id: string } }>('/students/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable], schema: { params: uuidParamsSchema } }, async (request, reply) => { if (!isValidUUID(request.params.id)) return reply.code(400).send(invalid('معرّف الطالب غير صالح.', 'The student id is invalid.')); try { await prisma.student.delete({ where: { id: request.params.id } }); return reply.send({ success: true, data: null }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') return reply.code(404).send(invalid('الطالب غير موجود.', 'Student not found.')); if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') return reply.code(409).send(invalid('لا يمكن حذف طالب له سجل حضور.', 'A student with attendance records cannot be deleted.', 'STUDENT_IN_USE')); throw error; } });
+  app.delete<{ Params: { id: string } }>('/students/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable], schema: { params: uuidParamsSchema } }, async (request, reply) => { if (!isValidUUID(request.params.id)) return reply.code(400).send(invalid('معرّف الطالب غير صالح.', 'The student id is invalid.')); const tenantId = request.user.tenantId; if (!tenantId) return reply.code(400).send(invalid('الحساب غير مرتبط بمركز تعليمي.', 'Account has no tenant assigned.', 'TENANT_REQUIRED')); try { await prisma.student.delete({ where: { id: request.params.id, tenantId } }); return reply.send({ success: true, data: null }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') return reply.code(404).send(invalid('الطالب غير موجود.', 'Student not found.', 'STUDENT_NOT_FOUND')); if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') return reply.code(409).send(invalid('لا يمكن حذف طالب له سجل حضور.', 'A student with attendance records cannot be deleted.', 'STUDENT_IN_USE')); throw error; } });
 };
 export default studentRoutes;

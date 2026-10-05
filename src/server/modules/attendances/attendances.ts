@@ -79,17 +79,22 @@ export function validateCheckinInput(input: { paymentMethod: PaymentMethod; paym
   return null;
 }
 
-async function getActiveShift(receptionistId: string) {
+async function getActiveShift(receptionistId: string, tenantId: string) {
   return prisma.shiftRegister.findFirst({
-    where: { receptionistId, status: ShiftStatus.OPEN },
+    where: { receptionistId, tenantId, status: ShiftStatus.OPEN },
     orderBy: { openedAt: 'desc' },
   });
 }
 
 const attendanceRoutes: FastifyPluginAsync = async (app) => {
   app.get('/sessions/active', { preHandler: authenticate }, async (request, reply) => {
+    const tenantId = request.user?.tenantId;
+    // The lobby board is per-center. Without this filter every center's timetable,
+    // teacher names and live headcounts were visible to every other center.
+    if (!tenantId) return reply.send({ success: true, data: { sessions: [] } });
     const deskFilter = (request.query as { deskFilter?: string; roomId?: string; teacherId?: string }).deskFilter;
     const sessionWhere: Record<string, unknown> = {
+      tenantId,
       OR: [{ status: SessionStatus.ACTIVE }, { status: SessionStatus.SCHEDULED }],
     };
 
@@ -154,16 +159,23 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
     if (!isValidUUID(sessionId) || !isValidUUID(studentId)) {
       return reply.code(400).send(validation('معرّفات الحصة أو الطالب غير صالحة.', 'Session or student id is invalid.'));
     }
+    const tenantId = request.user.tenantId;
+    if (!tenantId) {
+      return reply.code(400).send(validation('الحساب غير مرتبط بمركز تعليمي.', 'Account has no tenant assigned.', 'TENANT_REQUIRED'));
+    }
     const inputError = validateCheckinInput({ paymentMethod, paymentReference, amountPaid });
     if (inputError) return reply.code(400).send(inputError);
 
-    const activeShift = await getActiveShift(request.user.sub);
+    const activeShift = await getActiveShift(request.user.sub, tenantId);
     if (!activeShift) {
       return reply.code(400).send(validation('يجب فتح وردية نشطة قبل تسجيل حضور الطلاب.', 'An active shift must be open before check-in.', 'SHIFT_NOT_OPEN'));
     }
 
-    const session = await prisma.session.findUnique({
-      where: { id: sessionId },
+    // Scoped by center as well as id: the session and the student must both
+    // belong to the caller's center, or this check-in would write one center's
+    // student into another center's session and bill it to the caller's tenant.
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, tenantId },
       include: { room: true },
     });
 
@@ -175,19 +187,19 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(400).send(validation('الحصة غير متاحة للجلسات الحالية.', 'The session is not available for check-in.', 'SESSION_NOT_ACTIVE'));
     }
 
-    const student = await prisma.student.findUnique({ where: { id: studentId } });
+    const student = await prisma.student.findFirst({ where: { id: studentId, tenantId } });
     if (!student) {
       return reply.code(404).send(validation('الطالب غير موجود.', 'Student not found.', 'STUDENT_NOT_FOUND'));
     }
 
-    const currentAttendanceCount = await prisma.attendance.count({ where: { sessionId, status: { not: AttendanceStatus.VOID } } });
+    const currentAttendanceCount = await prisma.attendance.count({ where: { sessionId, tenantId, status: { not: AttendanceStatus.VOID } } });
     if (currentAttendanceCount >= session.room.capacity) {
       return reply.code(400).send(validation('وصلت الحصة إلى الحد الأقصى للسعة.', 'Session capacity has been reached.', 'SESSION_CAPACITY_REACHED'));
     }
 
     const fee = Number(session.sessionPrice);
     const cashAmount = amountPaid ?? fee;
-    const duplicate = await prisma.attendance.findFirst({ where: { sessionId, studentId, status: { not: AttendanceStatus.VOID } } });
+    const duplicate = await prisma.attendance.findFirst({ where: { sessionId, studentId, tenantId, status: { not: AttendanceStatus.VOID } } });
 
 
     if (duplicate) {
@@ -203,24 +215,24 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
     }
 
     try {
-      const effectiveTenantId = request.user.tenantId || session.tenantId;
+      // The caller's tenant, never the session's: falling back to session.tenantId
+      // was what allowed a cross-tenant check-in to be stamped with the wrong owner.
+      const effectiveTenantId = tenantId;
 
       const { attendance, newLobbyCount } = await prisma.$transaction(async (transaction) => {
-        const currentShift = await transaction.shiftRegister.findUnique({ where: { id: activeShift.id }, select: { status: true } });
+        const currentShift = await transaction.shiftRegister.findFirst({ where: { id: activeShift.id, tenantId }, select: { status: true } });
         if (!currentShift || currentShift.status !== ShiftStatus.OPEN) throw new Error('SHIFT_CLOSED_DURING_CHECKIN');
-        const currentAttendanceCount = await transaction.attendance.count({ where: { sessionId, status: { not: AttendanceStatus.VOID } } });
+        const currentAttendanceCount = await transaction.attendance.count({ where: { sessionId, tenantId, status: { not: AttendanceStatus.VOID } } });
         if (currentAttendanceCount >= session.room.capacity) throw new Error('SESSION_CAPACITY_REACHED');
 
-        if (effectiveTenantId) {
-          await recordVisitUsage(transaction, {
-            tenantId: effectiveTenantId,
-            branchId: session.room.branchId,
-          });
-        }
+        await recordVisitUsage(transaction, {
+          tenantId: effectiveTenantId,
+          branchId: session.room.branchId,
+        });
 
         const attendance = await transaction.attendance.create({
           data: {
-            tenantId: effectiveTenantId || null,
+            tenantId: effectiveTenantId,
             sessionId,
             studentId,
             receptionistId: request.user.sub,
@@ -232,8 +244,8 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
             status: isPartialPayment(cashAmount, fee) ? AttendanceStatus.PARTIAL : AttendanceStatus.PAID,
           },
         });
-        const newLobbyCount = await transaction.attendance.count({ where: { sessionId, status: { not: AttendanceStatus.VOID } } });
-        await recordAuditEntry({ actorId: request.user.sub, shiftRegisterId: activeShift.id, action: 'ATTENDANCE_CHECKED_IN', entityType: 'ATTENDANCE', entityId: attendance.id, amount: cashAmount, metadata: { sessionId, studentId, paymentMethod, status: attendance.status } }, transaction);
+        const newLobbyCount = await transaction.attendance.count({ where: { sessionId, tenantId, status: { not: AttendanceStatus.VOID } } });
+        await recordAuditEntry({ actorId: request.user.sub, tenantId, shiftRegisterId: activeShift.id, action: 'ATTENDANCE_CHECKED_IN', entityType: 'ATTENDANCE', entityId: attendance.id, amount: cashAmount, metadata: { sessionId, studentId, paymentMethod, status: attendance.status } }, transaction);
         return { attendance, newLobbyCount };
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
       const payload = buildLobbyAttendancePayload({
@@ -298,10 +310,16 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
     }
     const pagination = parsePagination(request.query);
     if (!pagination.ok) return reply.code(400).send(pagination.error);
+    const tenantId = request.user?.tenantId;
+    // A roster carries guardian phone numbers and payment amounts, so a
+    // session belonging to another center must resolve to nothing at all.
+    if (!tenantId) {
+      return reply.send({ success: true, data: { attendances: [], pagination: { page: pagination.page, limit: pagination.limit, total: 0, pages: 0 } } });
+    }
 
     const [attendances, total] = await Promise.all([
       prisma.attendance.findMany({
-        where: { sessionId: request.params.sessionId },
+        where: { sessionId: request.params.sessionId, tenantId },
         include: {
           student: { select: { id: true, fullName: true, guardianPhone: true, studentPhone: true } },
           shiftRegister: { select: { deskIdentifier: true } },
@@ -311,7 +329,7 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
         skip: pagination.skip,
         take: pagination.limit,
       }),
-      prisma.attendance.count({ where: { sessionId: request.params.sessionId } }),
+      prisma.attendance.count({ where: { sessionId: request.params.sessionId, tenantId } }),
     ]);
 
     return reply.send({
@@ -355,9 +373,13 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
     if (!isValidUUID(request.params.id)) {
       return reply.code(400).send(validation('معرّف الحضور غير صالح.', 'The attendance id is invalid.'));
     }
+    const tenantId = request.user.tenantId;
+    if (!tenantId) {
+      return reply.code(400).send(validation('الحساب غير مرتبط بمركز تعليمي.', 'Account has no tenant assigned.', 'TENANT_REQUIRED'));
+    }
 
-    const attendance = await prisma.attendance.findUnique({
-      where: { id: request.params.id },
+    const attendance = await prisma.attendance.findFirst({
+      where: { id: request.params.id, tenantId },
       include: {
         session: { select: { id: true, status: true, roomId: true } },
         shiftRegister: { select: { id: true, status: true, deskIdentifier: true } },
@@ -377,7 +399,7 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
       request.user.role === Role.ADMIN ||
       (attendance.shiftRegister.status === ShiftStatus.OPEN &&
         (await prisma.shiftRegister.findFirst({
-          where: { id: attendance.shiftRegister.id, receptionistId: request.user.sub, status: ShiftStatus.OPEN },
+          where: { id: attendance.shiftRegister.id, tenantId, receptionistId: request.user.sub, status: ShiftStatus.OPEN },
           select: { id: true },
         })) !== null);
 
@@ -386,12 +408,13 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const voided = await prisma.$transaction(async (transaction) => {
-      const current = await transaction.attendance.findUnique({ where: { id: request.params.id }, include: { session: { select: { status: true } } } });
+      const current = await transaction.attendance.findFirst({ where: { id: request.params.id, tenantId }, include: { session: { select: { status: true } } } });
       if (!current || current.status === AttendanceStatus.VOID) throw new Error('ATTENDANCE_ALREADY_VOID');
       if (current.session.status === SessionStatus.COMPLETED) throw new Error('SESSION_LOCKED');
-      const updated = await transaction.attendance.update({ where: { id: request.params.id }, data: { status: AttendanceStatus.VOID } });
+      const updated = await transaction.attendance.update({ where: { id: request.params.id, tenantId }, data: { status: AttendanceStatus.VOID } });
       await recordAuditEntry({
         actorId: request.user.sub,
+        tenantId,
         shiftRegisterId: attendance.shiftRegister.id,
         action: 'ATTENDANCE_VOIDED',
         entityType: 'ATTENDANCE',
@@ -402,7 +425,7 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
       return updated;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
-    const newLobbyCount = await prisma.attendance.count({ where: { sessionId: attendance.session.id, status: { not: AttendanceStatus.VOID } } });
+    const newLobbyCount = await prisma.attendance.count({ where: { sessionId: attendance.session.id, tenantId, status: { not: AttendanceStatus.VOID } } });
     // Scoped to the same center as the check-in, for the same reason: this event
     // carries a student id and a session id.
     app.io?.to(lobbyRoomFor(request.user.tenantId)).emit('attendance:voided', { sessionId: attendance.session.id, attendanceId: voided.id, newLobbyCount });

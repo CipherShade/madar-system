@@ -5,6 +5,17 @@
 > `npx tsc -p tsconfig.server.json --noEmit`, `npm run test:unit` (**223/223 pass**), and
 > `npm run build` are all green. Updated as work lands.
 
+> **Superseded in part.** This file records the state at the end of Phase 5 and is kept as a
+> record of that work, not as a description of the server today. Migration
+> `20260930000000_single_monthly_subscription` later removed the plan catalogue and everything that
+> only existed to enforce it, so the following references below are history: the `UsageOverride`
+> model and its routes (`/api/admin/usage-overrides`), per-center limit overrides
+> (`PATCH /api/admin/tenants/:id/limits`, `maxUsers` / `maxDesks` / `maxBranches` / `visitLimit`),
+> the `plan` column on tenants and subscriptions, and `src/shared/constants/plans.ts`. The
+> subscription is now a single monthly price, so usage is reported as raw counts with no limit, no
+> level and no warning threshold. `tests/usage-reporting.test.ts` and the plan-removal tests pin
+> that. For current behaviour see `docs/api.md` §12.
+
 ## Phase 1-2 landed (platform models + server surface)
 
 - `20260924000000_platform_models` — `SuperAdminSession`, `SuperAdminAuditLog`, `FeatureFlag` /
