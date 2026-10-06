@@ -50,11 +50,11 @@ const reportRoutes: FastifyPluginAsync = async (app) => {
 
     const attendanceWhere = { tenantId, checkInTime: { gte: bounds.start, lt: bounds.end }, status: { not: AttendanceStatus.VOID } };
     const settlementWhere = { tenantId, settledAt: { gte: bounds.start, lt: bounds.end }, status: SettlementStatus.DISBURSED };
-    const [attendanceCount, attendanceTotals, settlementTotals] = await Promise.all([
-      prisma.attendance.count({ where: attendanceWhere }),
-      prisma.attendance.groupBy({ by: ['paymentMethod'], where: attendanceWhere, _sum: { amountPaid: true } }),
+    const [attendanceTotals, settlementTotals] = await Promise.all([
+      prisma.attendance.groupBy({ by: ['paymentMethod'], where: attendanceWhere, _sum: { amountPaid: true }, _count: { _all: true } }),
       prisma.sessionSettlement.aggregate({ where: settlementWhere, _sum: { centerRevenue: true, teacherPayout: true } }),
     ]);
+    const attendanceCount = attendanceTotals.reduce((sum, row) => sum + row._count._all, 0);
 
     const digital = (method: PaymentMethod) => number(attendanceTotals.find((row) => row.paymentMethod === method)?._sum.amountPaid);
     const isAdmin = request.user.role === Role.ADMIN;

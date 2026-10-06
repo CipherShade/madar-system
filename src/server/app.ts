@@ -69,6 +69,16 @@ export function buildApp(options?: BuildAppOptions): FastifyInstance {
       return existing || randomUUID();
     },
     bodyLimit: config.bodyLimitBytes,
+    // Fastify's default AJV strips unknown body fields (removeAdditional: true),
+    // which silently contradicts every `additionalProperties: false` schema in
+    // the route modules and the documented contract (docs/api.md: unknown input
+    // -> 400 VALIDATION_ERROR). Disable stripping so undeclared fields are
+    // rejected instead of dropped before the handler runs.
+    ajv: {
+      customOptions: {
+        removeAdditional: false,
+      },
+    },
   });
 
   app.addHook('onResponse', async (request, reply) => {

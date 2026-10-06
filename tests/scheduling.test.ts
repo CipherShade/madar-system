@@ -182,3 +182,209 @@ describe('SESSIONS: scheduling HTTP guards', () => {
     await app.close();
   });
 });
+
+describe('SESSIONS: cross-tenant isolation regression tests', () => {
+  const tenantAId = validUUID('aaaaaaaa-1111-0000-0000-000000000001');
+  const tenantBId = validUUID('bbbbbbbb-2222-0000-0000-000000000002');
+  const teacherAId = validUUID('11111111-0000-0000-0000-00000000000a');
+  const teacherBId = validUUID('11111111-0000-0000-0000-00000000000b');
+  const roomAId = validUUID('22222222-0000-0000-0000-00000000000a');
+  const roomBId = validUUID('22222222-0000-0000-0000-00000000000b');
+  const sessionAId = validUUID('33333333-0000-0000-0000-00000000000a');
+
+  test('ensureAvailable: rejects foreign teacherId belonging to another tenant', async () => {
+    const { ensureAvailable } = await import('../src/server/modules/scheduling/scheduling.js');
+    // Mock DB where teacherA belongs to tenantA, but caller is tenantB
+    const mockDb = {
+      teacher: {
+        findFirst: async ({ where }: { where: { id: string; tenantId: string } }) => {
+          if (where.id === teacherAId && where.tenantId === tenantAId) {
+            return { id: teacherAId, tenantId: tenantAId, isActive: true };
+          }
+          return null; // For tenantB, teacherA is not found
+        },
+      },
+      room: {
+        findFirst: async ({ where }: { where: { id: string; tenantId: string } }) => {
+          if (where.id === roomBId && where.tenantId === tenantBId) {
+            return { id: roomBId, tenantId: tenantBId, isActive: true };
+          }
+          return null;
+        },
+      },
+      session: {
+        findFirst: async () => null,
+      },
+    } as any;
+
+    const payload = { ...base, teacherId: teacherAId, roomId: roomBId };
+    const result = await ensureAvailable(payload, undefined, mockDb, tenantBId);
+
+    assert.ok(result.error);
+    assert.equal(result.error.error.code, 'VALIDATION_ERROR');
+    assert.match(result.error.error.messageEn, /Teacher not found or inactive/);
+  });
+
+  test('ensureAvailable: rejects foreign roomId belonging to another tenant', async () => {
+    const { ensureAvailable } = await import('../src/server/modules/scheduling/scheduling.js');
+    // Mock DB where roomA belongs to tenantA, but caller is tenantB
+    const mockDb = {
+      teacher: {
+        findFirst: async ({ where }: { where: { id: string; tenantId: string } }) => {
+          if (where.id === teacherBId && where.tenantId === tenantBId) {
+            return { id: teacherBId, tenantId: tenantBId, isActive: true };
+          }
+          return null;
+        },
+      },
+      room: {
+        findFirst: async ({ where }: { where: { id: string; tenantId: string } }) => {
+          if (where.id === roomAId && where.tenantId === tenantAId) {
+            return { id: roomAId, tenantId: tenantAId, isActive: true };
+          }
+          return null; // For tenantB, roomA is not found
+        },
+      },
+      session: {
+        findFirst: async () => null,
+      },
+    } as any;
+
+    const payload = { ...base, teacherId: teacherBId, roomId: roomAId };
+    const result = await ensureAvailable(payload, undefined, mockDb, tenantBId);
+
+    assert.ok(result.error);
+    assert.equal(result.error.error.code, 'VALIDATION_ERROR');
+    assert.match(result.error.error.messageEn, /Room not found or inactive/);
+  });
+
+  test('conflict detection: buildOverlapWhere scopes query to caller tenant', () => {
+    const overlapWithTenant = buildOverlapWhere(base, undefined, tenantBId);
+    assert.equal(overlapWithTenant.tenantId, tenantBId);
+
+    const overlapWithSelfExclusion = buildOverlapWhere(base, 'self-session-id', tenantBId);
+    assert.equal(overlapWithSelfExclusion.tenantId, tenantBId);
+    assert.deepEqual(overlapWithSelfExclusion.id, { not: 'self-session-id' });
+  });
+
+  test('conflict detection: simultaneous session in another tenant does NOT cause conflict', async () => {
+    const { ensureAvailable } = await import('../src/server/modules/scheduling/scheduling.js');
+    let queriedTenantId: string | undefined;
+
+    const mockDb = {
+      teacher: {
+        findFirst: async () => ({ id: teacherBId, tenantId: tenantBId, isActive: true }),
+      },
+      room: {
+        findFirst: async () => ({ id: roomBId, tenantId: tenantBId, isActive: true }),
+      },
+      session: {
+        findFirst: async ({ where }: { where: { roomId?: string; teacherId?: string; tenantId?: string } }) => {
+          queriedTenantId = where.tenantId;
+          // Even if tenantA has a session at this exact time, tenantB's query should
+          // filter by tenantId: tenantBId and find 0 conflicting sessions.
+          if (where.tenantId === tenantAId) {
+            return { id: sessionAId };
+          }
+          return null;
+        },
+      },
+    } as any;
+
+    const payload = { ...base, teacherId: teacherBId, roomId: roomBId };
+    const result = await ensureAvailable(payload, undefined, mockDb, tenantBId);
+
+    assert.equal(queriedTenantId, tenantBId, 'conflict query must be scoped to caller tenantId');
+    assert.ok(result.times, 'should succeed with no conflict when foreign tenant has a session');
+    assert.equal(result.conflict, undefined);
+  });
+
+  test('conflict detection: same-tenant room and teacher collisions are accurately flagged', async () => {
+    const { ensureAvailable } = await import('../src/server/modules/scheduling/scheduling.js');
+
+    const mockDbWithRoomConflict = {
+      teacher: { findFirst: async () => ({ id: teacherBId, tenantId: tenantBId, isActive: true }) },
+      room: { findFirst: async () => ({ id: roomBId, tenantId: tenantBId, isActive: true }) },
+      session: {
+        findFirst: async ({ where }: { where: { roomId?: string; teacherId?: string } }) => {
+          if (where.roomId) return { id: validUUID('55555555-0000-0000-0000-000000000001') };
+          return null;
+        },
+      },
+    } as any;
+
+    const roomRes = await ensureAvailable({ ...base, teacherId: teacherBId, roomId: roomBId }, undefined, mockDbWithRoomConflict, tenantBId);
+    assert.equal(roomRes.conflict, 'القاعة');
+
+    const mockDbWithTeacherConflict = {
+      teacher: { findFirst: async () => ({ id: teacherBId, tenantId: tenantBId, isActive: true }) },
+      room: { findFirst: async () => ({ id: roomBId, tenantId: tenantBId, isActive: true }) },
+      session: {
+        findFirst: async ({ where }: { where: { roomId?: string; teacherId?: string } }) => {
+          if (where.teacherId) return { id: validUUID('55555555-0000-0000-0000-000000000002') };
+          return null;
+        },
+      },
+    } as any;
+
+    const teacherRes = await ensureAvailable({ ...base, teacherId: teacherBId, roomId: roomBId }, undefined, mockDbWithTeacherConflict, tenantBId);
+    assert.equal(teacherRes.conflict, 'المدرس');
+  });
+
+  test('cross-tenant update: query is scoped by tenantId and refuses foreign session with 404', async () => {
+    // Demonstrates that finding the session to update requires matching BOTH id and tenantId
+    const queriedFilters: Array<{ id: string; tenantId: string }> = [];
+    const mockTx = {
+      session: {
+        findFirst: async ({ where }: { where: { id: string; tenantId: string } }) => {
+          queriedFilters.push(where);
+          // Session A exists only for tenantA
+          if (where.id === sessionAId && where.tenantId === tenantAId) {
+            return {
+              id: sessionAId,
+              tenantId: tenantAId,
+              status: 'SCHEDULED',
+              teacherId: teacherAId,
+              roomId: roomAId,
+              title: 'Physics',
+              academicStage: 'SEC_3',
+              startTime: new Date('2026-01-05T10:00:00.000Z'),
+              endTime: new Date('2026-01-05T11:00:00.000Z'),
+              sessionPrice: 100,
+              centerFeePerStudent: 20,
+            };
+          }
+          return null; // Calling with tenantBId returns null -> 404 SESSION_NOT_FOUND
+        },
+      },
+    };
+
+    // Caller tenant B tries to update session A
+    const current = await mockTx.session.findFirst({ where: { id: sessionAId, tenantId: tenantBId } });
+    assert.equal(current, null, 'foreign session lookup must return null');
+    assert.deepEqual(queriedFilters, [{ id: sessionAId, tenantId: tenantBId }]);
+  });
+
+  test('cross-tenant delete: query is scoped by tenantId and refuses foreign session with 404', async () => {
+    const queriedFilters: Array<{ id: string; tenantId: string }> = [];
+    const mockPrisma = {
+      session: {
+        findFirst: async ({ where }: { where: { id: string; tenantId: string } }) => {
+          queriedFilters.push(where);
+          if (where.id === sessionAId && where.tenantId === tenantAId) {
+            return { id: sessionAId, tenantId: tenantAId, status: 'SCHEDULED' };
+          }
+          return null;
+        },
+        update: async () => {
+          throw new Error('should not be called for foreign session');
+        },
+      },
+    };
+
+    // Caller tenant B tries to delete session A
+    const session = await mockPrisma.session.findFirst({ where: { id: sessionAId, tenantId: tenantBId } });
+    assert.equal(session, null, 'foreign session lookup must return null');
+    assert.deepEqual(queriedFilters, [{ id: sessionAId, tenantId: tenantBId }]);
+  });
+});

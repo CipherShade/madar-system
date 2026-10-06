@@ -244,7 +244,7 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
             status: isPartialPayment(cashAmount, fee) ? AttendanceStatus.PARTIAL : AttendanceStatus.PAID,
           },
         });
-        const newLobbyCount = await transaction.attendance.count({ where: { sessionId, tenantId, status: { not: AttendanceStatus.VOID } } });
+        const newLobbyCount = currentAttendanceCount + 1;
         await recordAuditEntry({ actorId: request.user.sub, tenantId, shiftRegisterId: activeShift.id, action: 'ATTENDANCE_CHECKED_IN', entityType: 'ATTENDANCE', entityId: attendance.id, amount: cashAmount, metadata: { sessionId, studentId, paymentMethod, status: attendance.status } }, transaction);
         return { attendance, newLobbyCount };
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
@@ -290,7 +290,17 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
       if (error instanceof Error && error.message === 'SESSION_CAPACITY_REACHED') {
         return reply.code(400).send(validation('وصلت الحصة إلى الحد الأقصى للسعة.', 'Session capacity has been reached.', 'SESSION_CAPACITY_REACHED'));
       }
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      // P2002: declarative unique-index violation (Prisma @@unique).
+      // P2034: transaction serialization failure (PostgreSQL code 40001) — raised when
+      //   two concurrent Serializable transactions both try to insert the same
+      //   (session_id, student_id) pair and the partial unique index
+      //   `uq_attendance_session_student_nonvoid` fires on one of them.
+      //   Both codes map to the same user-facing error so callers get a consistent
+      //   `DUPLICATE_CHECK_IN` regardless of which concurrency path was taken.
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        (error.code === 'P2002' || error.code === 'P2034')
+      ) {
         return reply.code(409).send({
           success: false,
           error: {

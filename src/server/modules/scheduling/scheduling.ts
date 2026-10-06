@@ -6,7 +6,7 @@ import { authenticate, requireRoles } from '../auth/auth.js';
 import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
 import { isValidMoneyAmount, isValidUUID, uuidParamsSchema } from '../../lib/http.js';
 
-type SessionBody = {
+export type SessionBody = {
   teacherId: string;
   roomId: string;
   title: string;
@@ -79,7 +79,7 @@ export function buildOverlapWhere(body: SessionBody, id?: string, tenantId?: str
 }
 function scheduleConflict(reply: { code: (status: number) => { send: (body: unknown) => unknown } }, resource: string) { return reply.code(409).send(validation(`يوجد تعارض في موعد ${resource} خلال هذه الفترة.`, `${resource} is already booked during this time.`, 'SCHEDULE_CONFLICT')); }
 
-async function ensureAvailable(body: SessionBody, id: string | undefined, db: Prisma.TransactionClient | typeof prisma, tenantId: string) {
+export async function ensureAvailable(body: SessionBody, id: string | undefined, db: Prisma.TransactionClient | typeof prisma, tenantId: string) {
   const times = parseTimes(body);
   const inputError = validateSessionInput(body, times);
   if (inputError) return { error: inputError };
@@ -130,7 +130,7 @@ const schedulingRoutes: FastifyPluginAsync = async (app) => {
           endTime: checked.times!.end,
           sessionPrice: new Prisma.Decimal(request.body.sessionPrice),
           centerFeePerStudent: new Prisma.Decimal(request.body.centerFeePerStudent),
-          status: (request.body.status ?? SessionStatus.SCHEDULED) as any,
+          status: request.body.status ?? SessionStatus.SCHEDULED,
           createdById: request.user.sub,
         },
       });
@@ -151,11 +151,11 @@ const schedulingRoutes: FastifyPluginAsync = async (app) => {
       if (!current) return { kind: 'notFound' as const };
       const statusCheck = validateSessionStatusChange(current.status, request.body.status);
       if (!statusCheck.ok) return { kind: 'statusError' as const, check: statusCheck };
-      const body: SessionBody = { teacherId: request.body.teacherId ?? current.teacherId, roomId: request.body.roomId ?? current.roomId, title: request.body.title ?? current.title, academicStage: request.body.academicStage ?? current.academicStage, startTime: request.body.startTime ?? current.startTime.toISOString(), endTime: request.body.endTime ?? current.endTime.toISOString(), sessionPrice: request.body.sessionPrice ?? Number(current.sessionPrice), centerFeePerStudent: request.body.centerFeePerStudent ?? Number(current.centerFeePerStudent), status: ((request.body.status ?? current.status) as any) as SessionStatus };
+      const body: SessionBody = { teacherId: request.body.teacherId ?? current.teacherId, roomId: request.body.roomId ?? current.roomId, title: request.body.title ?? current.title, academicStage: request.body.academicStage ?? current.academicStage, startTime: request.body.startTime ?? current.startTime.toISOString(), endTime: request.body.endTime ?? current.endTime.toISOString(), sessionPrice: request.body.sessionPrice ?? Number(current.sessionPrice), centerFeePerStudent: request.body.centerFeePerStudent ?? Number(current.centerFeePerStudent), status: request.body.status ?? current.status };
       const checked = await ensureAvailable(body, request.params.id, tx, tenantId);
       if (checked.error) return { kind: 'error' as const, error: checked.error };
       if (checked.conflict) return { kind: 'conflict' as const, conflict: checked.conflict };
-      const session = await tx.session.update({ where: { id: request.params.id, tenantId }, data: { teacherId: body.teacherId, roomId: body.roomId, title: body.title.trim(), academicStage: body.academicStage.trim(), startTime: checked.times!.start, endTime: checked.times!.end, sessionPrice: new Prisma.Decimal(body.sessionPrice), centerFeePerStudent: new Prisma.Decimal(body.centerFeePerStudent), status: body.status as any } });
+      const session = await tx.session.update({ where: { id: request.params.id, tenantId }, data: { teacherId: body.teacherId, roomId: body.roomId, title: body.title.trim(), academicStage: body.academicStage.trim(), startTime: checked.times!.start, endTime: checked.times!.end, sessionPrice: new Prisma.Decimal(body.sessionPrice), centerFeePerStudent: new Prisma.Decimal(body.centerFeePerStudent), status: body.status } });
       return { kind: 'ok' as const, session };
     });
     if (result.kind === 'notFound') return reply.code(404).send(validation('الحصة غير موجودة.', 'Session not found.', 'SESSION_NOT_FOUND'));
@@ -164,7 +164,19 @@ const schedulingRoutes: FastifyPluginAsync = async (app) => {
     if (result.kind === 'conflict') return scheduleConflict(reply, result.conflict);
     return reply.send({ success: true, data: { session: result.session } });
   });
-  app.delete<{ Params: SessionParams }>('/sessions/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable], schema: { params: uuidParamsSchema } }, async (request, reply) => { if (!isValidUUID(request.params.id)) return reply.code(400).send(validation('معرّف الحصة غير صالح.', 'The session id is invalid.')); const tenantId = request.user.tenantId; if (!tenantId) return reply.code(400).send(validation('الحساب غير مرتبط بمركز تعليمي.', 'Account has no tenant assigned.', 'TENANT_REQUIRED')); const session = await prisma.session.findFirst({ where: { id: request.params.id, tenantId }, select: { status: true } }); if (!session) return reply.code(404).send(validation('الحصة غير موجودة.', 'Session not found.', 'SESSION_NOT_FOUND')); if (session.status === SessionStatus.COMPLETED) return reply.code(409).send(validation('لا يمكن حذف حصة منتهية.', 'Completed sessions cannot be deleted.', 'SESSION_LOCKED')); await prisma.session.update({ where: { id: request.params.id, tenantId }, data: { status: SessionStatus.CANCELLED } }); return reply.send({ success: true, data: null }); });
+  app.delete<{ Params: SessionParams }>('/sessions/:id', {
+    preHandler: [authenticate, requireRoles(Role.ADMIN), requireTenantWritable],
+    schema: { params: uuidParamsSchema },
+  }, async (request, reply) => {
+    if (!isValidUUID(request.params.id)) return reply.code(400).send(validation('معرّف الحصة غير صالح.', 'The session id is invalid.'));
+    const tenantId = request.user.tenantId;
+    if (!tenantId) return reply.code(400).send(validation('الحساب غير مرتبط بمركز تعليمي.', 'Account has no tenant assigned.', 'TENANT_REQUIRED'));
+    const session = await prisma.session.findFirst({ where: { id: request.params.id, tenantId }, select: { status: true } });
+    if (!session) return reply.code(404).send(validation('الحصة غير موجودة.', 'Session not found.', 'SESSION_NOT_FOUND'));
+    if (session.status === SessionStatus.COMPLETED) return reply.code(409).send(validation('لا يمكن حذف حصة منتهية.', 'Completed sessions cannot be deleted.', 'SESSION_LOCKED'));
+    await prisma.session.update({ where: { id: request.params.id, tenantId }, data: { status: SessionStatus.CANCELLED } });
+    return reply.send({ success: true, data: null });
+  });
 };
 
 export default schedulingRoutes;

@@ -1,1 +1,121 @@
-﻿export const ROLES = {SUPER_ADMIN:'SUPER_ADMIN',ADMIN:'ADMIN',RECEPTIONIST:'RECEPTIONIST'} as const; export const Role = ROLES; export type Role = (typeof ROLES)[keyof typeof ROLES];export const ASSIGNABLE_ROLES = [Role.ADMIN,Role.RECEPTIONIST] as const; export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number]; export function isAssignableRole(role: any): role is AssignableRole { return typeof role==='string' && ASSIGNABLE_ROLES.includes(role as any); }export const PaymentMethod = {CASH:'CASH',VODAFONE_CASH:'VODAFONE_CASH',INSTAPAY:'INSTAPAY'} as const; export const PAYMENT_METHODS = PaymentMethod; export type PaymentMethod = (typeof PaymentMethod)[keyof typeof PaymentMethod];export const SubscriptionStatus = {PENDING:'PENDING',TRIALING:'TRIALING',ACTIVE:'ACTIVE',PAST_DUE:'PAST_DUE',CANCELED:'CANCELED',EXPIRED:'EXPIRED'} as const; export const SUBSCRIPTION_STATUSES = SubscriptionStatus; export type SubscriptionStatus = (typeof SubscriptionStatus)[keyof typeof SubscriptionStatus]; export const AttendanceStatus = {PAID:'PAID',PARTIAL:'PARTIAL',EXCUSED:'EXCUSED',VOID:'VOID'} as const; export type AttendanceStatus = (typeof AttendanceStatus)[keyof typeof AttendanceStatus]; export const ShiftStatus = {OPEN:'OPEN',CLOSED:'CLOSED'} as const; export type ShiftStatus = (typeof ShiftStatus)[keyof typeof ShiftStatus]; export const SettlementStatus = {PENDING:'PENDING',DISBURSED:'DISBURSED'} as const; export type SettlementStatus = (typeof SettlementStatus)[keyof typeof SettlementStatus]; export const SchoolType = {GENERAL:'GENERAL',LANGUAGES:'LANGUAGES',AZHAR:'AZHAR'} as const; export type SchoolType = (typeof SchoolType)[keyof typeof SchoolType]; export const EGYPTIAN_MOBILE_REGEX = /^(010|011|012|015)[0-9]{8}$/;export const SessionStatus = {SCHEDULED:'SCHEDULED',ACTIVE:'ACTIVE',COMPLETED:'COMPLETED',CANCELLED:'CANCELLED',REVIEW:'REVIEW',ONGOING:'ONGOING'} as const; export type SessionStatus = (typeof SessionStatus)[keyof typeof SessionStatus];
+export const ROLES = {
+  SUPER_ADMIN: 'SUPER_ADMIN',
+  ADMIN: 'ADMIN',
+  RECEPTIONIST: 'RECEPTIONIST',
+} as const;
+export const Role = ROLES;
+export type Role = (typeof ROLES)[keyof typeof ROLES];
+
+/**
+ * Roles that may be assigned to an account through any API.
+ *
+ * SUPER_ADMIN is deliberately excluded, and that exclusion is load-bearing: it
+ * is the platform owner's role, it spans every center, and it can read and
+ * change any tenant's data. It is only ever established at first boot from
+ * `SUPER_ADMIN_USERNAME` / `SUPER_ADMIN_PASSWORD`, or by the demo seeder. No
+ * route — tenant-facing or platform console — can grant it, because every
+ * assignment path reads this one list.
+ *
+ * Both a center's own user screen (`/api/users`) and the platform console
+ * (`/api/admin/users/:id`) must use this. A local copy in either module is how
+ * a center admin ends up able to promote a second login they control and take
+ * over the platform.
+ */
+export const ASSIGNABLE_ROLES = [Role.ADMIN, Role.RECEPTIONIST] as const;
+export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
+
+export function isAssignableRole(role: unknown): role is AssignableRole {
+  return typeof role === 'string' && (ASSIGNABLE_ROLES as readonly string[]).includes(role);
+}
+
+export * from './subscription.js';
+export * from './offers.js';
+
+export const SUBSCRIPTION_STATUSES = {
+  PENDING: 'PENDING',
+  TRIALING: 'TRIALING',
+  ACTIVE: 'ACTIVE',
+  PAST_DUE: 'PAST_DUE',
+  CANCELED: 'CANCELED',
+  EXPIRED: 'EXPIRED',
+} as const;
+export const SubscriptionStatus = SUBSCRIPTION_STATUSES;
+export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[keyof typeof SUBSCRIPTION_STATUSES];
+
+export const PAYMENT_METHODS = {
+  CASH: 'CASH',
+  VODAFONE_CASH: 'VODAFONE_CASH',
+  INSTAPAY: 'INSTAPAY',
+} as const;
+export const PaymentMethod = PAYMENT_METHODS;
+export type PaymentMethod = (typeof PAYMENT_METHODS)[keyof typeof PAYMENT_METHODS];
+
+export const PAYMENT_METHOD_LABELS_AR: Record<PaymentMethod, string> = {
+  CASH: 'كاش (نقدي)',
+  VODAFONE_CASH: 'فودافون كاش / محفظة',
+  INSTAPAY: 'إنستاباي (تحويل بنكي)',
+};
+
+export const SESSION_STATUSES = {
+  SCHEDULED: 'SCHEDULED',
+  ACTIVE: 'ACTIVE',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+} as const;
+export const SessionStatus = SESSION_STATUSES;
+export type SessionStatus = (typeof SESSION_STATUSES)[keyof typeof SESSION_STATUSES];
+
+export const SESSION_STATUS_LABELS_AR: Record<SessionStatus, string> = {
+  SCHEDULED: 'مجدولة قريباً',
+  ACTIVE: 'جارية الآن',
+  COMPLETED: 'منتهية ومقفلة',
+  CANCELLED: 'ملغاة',
+};
+
+export const SHIFT_STATUSES = {
+  OPEN: 'OPEN',
+  CLOSED: 'CLOSED',
+} as const;
+export const ShiftStatus = SHIFT_STATUSES;
+export type ShiftStatus = (typeof SHIFT_STATUSES)[keyof typeof SHIFT_STATUSES];
+
+export const ATTENDANCE_STATUSES = {
+  PAID: 'PAID',
+  PARTIAL: 'PARTIAL',
+  EXCUSED: 'EXCUSED',
+  VOID: 'VOID',
+} as const;
+export const AttendanceStatus = ATTENDANCE_STATUSES;
+export type AttendanceStatus = (typeof ATTENDANCE_STATUSES)[keyof typeof ATTENDANCE_STATUSES];
+
+export const SETTLEMENT_STATUSES = {
+  PENDING: 'PENDING',
+  DISBURSED: 'DISBURSED',
+} as const;
+export const SettlementStatus = SETTLEMENT_STATUSES;
+export type SettlementStatus = (typeof SETTLEMENT_STATUSES)[keyof typeof SETTLEMENT_STATUSES];
+
+export const SCHOOL_TYPES = {
+  GENERAL: 'GENERAL',
+  LANGUAGES: 'LANGUAGES',
+  AZHAR: 'AZHAR',
+} as const;
+export const SchoolType = SCHOOL_TYPES;
+export type SchoolType = (typeof SCHOOL_TYPES)[keyof typeof SCHOOL_TYPES];
+
+export const ACADEMIC_STAGES = [
+  { id: 'PRIMARY_1', labelAr: 'الأول الابتدائي', stage: 'PRIMARY' },
+  { id: 'PRIMARY_2', labelAr: 'الثاني الابتدائي', stage: 'PRIMARY' },
+  { id: 'PRIMARY_3', labelAr: 'الثالث الابتدائي', stage: 'PRIMARY' },
+  { id: 'PRIMARY_4', labelAr: 'الرابع الابتدائي', stage: 'PRIMARY' },
+  { id: 'PRIMARY_5', labelAr: 'الخامس الابتدائي', stage: 'PRIMARY' },
+  { id: 'PRIMARY_6', labelAr: 'السادس الابتدائي', stage: 'PRIMARY' },
+  { id: 'PREP_1', labelAr: 'الأول الإعدادي', stage: 'PREPARATORY' },
+  { id: 'PREP_2', labelAr: 'الثاني الإعدادي', stage: 'PREPARATORY' },
+  { id: 'PREP_3', labelAr: 'الثالث الإعدادي', stage: 'PREPARATORY' },
+  { id: 'SEC_1', labelAr: 'الأول الثانوي', stage: 'SECONDARY' },
+  { id: 'SEC_2', labelAr: 'الثاني الثانوي', stage: 'SECONDARY' },
+  { id: 'SEC_3', labelAr: 'الثالث الثانوي (ثانوية عامة)', stage: 'SECONDARY' },
+] as const;
+
+export const EGYPTIAN_MOBILE_REGEX = /^(010|011|012|015)[0-9]{8}$/;

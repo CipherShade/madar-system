@@ -89,19 +89,12 @@ export function computeShiftFinancialSummary(input: ShiftFinancialSummaryInput):
   };
 }
 
-async function loadShiftFinancials(shiftId: string, tenantId: string) {
-  const [cashCollected, vodafoneCashCollected, instapayCollected, teacherCashPayouts, cashExpenses, openingCash] = await Promise.all([
-    prisma.attendance.aggregate({
+async function loadShiftFinancials(shiftId: string, tenantId: string, knownOpeningCash?: number) {
+  const [attendanceGroups, teacherCashPayouts, cashExpenses, openingCash] = await Promise.all([
+    prisma.attendance.groupBy({
+      by: ['paymentMethod'],
+      where: { shiftRegisterId: shiftId, tenantId },
       _sum: { amountPaid: true },
-      where: { shiftRegisterId: shiftId, tenantId, paymentMethod: PaymentMethod.CASH },
-    }),
-    prisma.attendance.aggregate({
-      _sum: { amountPaid: true },
-      where: { shiftRegisterId: shiftId, tenantId, paymentMethod: PaymentMethod.VODAFONE_CASH },
-    }),
-    prisma.attendance.aggregate({
-      _sum: { amountPaid: true },
-      where: { shiftRegisterId: shiftId, tenantId, paymentMethod: PaymentMethod.INSTAPAY },
     }),
     prisma.sessionSettlement.aggregate({
       _sum: { teacherPayout: true },
@@ -111,20 +104,97 @@ async function loadShiftFinancials(shiftId: string, tenantId: string) {
       _sum: { amount: true },
       where: { shiftRegisterId: shiftId, tenantId, paymentMethod: PaymentMethod.CASH },
     }),
-    prisma.shiftRegister.findFirst({
-      where: { id: shiftId, tenantId },
-      select: { openingCash: true },
-    }),
+    knownOpeningCash !== undefined
+      ? null
+      : prisma.shiftRegister.findFirst({
+          where: { id: shiftId, tenantId },
+          select: { openingCash: true },
+        }),
   ]);
 
+  const cashByMethod = (method: PaymentMethod) =>
+    toNumber(attendanceGroups.find((g) => g.paymentMethod === method)?._sum.amountPaid ?? 0);
+
   return computeShiftFinancialSummary({
-    openingCash: toNumber(openingCash?.openingCash ?? 0),
-    cashCollected: toNumber(cashCollected._sum.amountPaid ?? 0),
-    vodafoneCashCollected: toNumber(vodafoneCashCollected._sum.amountPaid ?? 0),
-    instapayCollected: toNumber(instapayCollected._sum.amountPaid ?? 0),
+    openingCash: knownOpeningCash !== undefined ? knownOpeningCash : toNumber(openingCash?.openingCash ?? 0),
+    cashCollected: cashByMethod(PaymentMethod.CASH),
+    vodafoneCashCollected: cashByMethod(PaymentMethod.VODAFONE_CASH),
+    instapayCollected: cashByMethod(PaymentMethod.INSTAPAY),
     teacherCashPayouts: toNumber(teacherCashPayouts._sum.teacherPayout ?? 0),
     cashExpenses: toNumber(cashExpenses._sum.amount ?? 0),
   });
+}
+
+/**
+ * Batches shift financial calculations for a paginated list of shifts.
+ * Replaces 6*N database queries with 3 grouped database queries total.
+ */
+async function loadBatchShiftFinancials(
+  shifts: Array<{ id: string; openingCash: Prisma.Decimal }>,
+  tenantId: string,
+): Promise<Map<string, ShiftFinancialSummary>> {
+  if (shifts.length === 0) return new Map();
+  const shiftIds = shifts.map((s) => s.id);
+
+  const [attendancesGrouped, settlementsGrouped, expensesGrouped] = await Promise.all([
+    prisma.attendance.groupBy({
+      by: ['shiftRegisterId', 'paymentMethod'],
+      where: { shiftRegisterId: { in: shiftIds }, tenantId },
+      _sum: { amountPaid: true },
+    }),
+    prisma.sessionSettlement.groupBy({
+      by: ['disbursedFromShiftId'],
+      where: { disbursedFromShiftId: { in: shiftIds }, tenantId, payoutMethod: PaymentMethod.CASH },
+      _sum: { teacherPayout: true },
+    }),
+    prisma.expense.groupBy({
+      by: ['shiftRegisterId'],
+      where: { shiftRegisterId: { in: shiftIds }, tenantId, paymentMethod: PaymentMethod.CASH },
+      _sum: { amount: true },
+    }),
+  ]);
+
+  const attendanceMap = new Map<string, Record<string, number>>();
+  for (const row of attendancesGrouped) {
+    let entry = attendanceMap.get(row.shiftRegisterId);
+    if (!entry) {
+      entry = {};
+      attendanceMap.set(row.shiftRegisterId, entry);
+    }
+    entry[row.paymentMethod] = toNumber(row._sum.amountPaid);
+  }
+
+  const settlementMap = new Map<string, number>();
+  for (const row of settlementsGrouped) {
+    if (row.disbursedFromShiftId) {
+      settlementMap.set(row.disbursedFromShiftId, toNumber(row._sum.teacherPayout));
+    }
+  }
+
+  const expenseMap = new Map<string, number>();
+  for (const row of expensesGrouped) {
+    if (row.shiftRegisterId) {
+      expenseMap.set(row.shiftRegisterId, toNumber(row._sum.amount));
+    }
+  }
+
+  const result = new Map<string, ShiftFinancialSummary>();
+  for (const shift of shifts) {
+    const methods = attendanceMap.get(shift.id) ?? {};
+    result.set(
+      shift.id,
+      computeShiftFinancialSummary({
+        openingCash: toNumber(shift.openingCash),
+        cashCollected: methods[PaymentMethod.CASH] ?? 0,
+        vodafoneCashCollected: methods[PaymentMethod.VODAFONE_CASH] ?? 0,
+        instapayCollected: methods[PaymentMethod.INSTAPAY] ?? 0,
+        teacherCashPayouts: settlementMap.get(shift.id) ?? 0,
+        cashExpenses: expenseMap.get(shift.id) ?? 0,
+      }),
+    );
+  }
+
+  return result;
 }
 
 function serializeShift(shift: { id: string; receptionistId: string; deskIdentifier: string; openedAt: Date; closedAt: Date | null; openingCash: Prisma.Decimal; actualCashCounted: Prisma.Decimal | null; expectedCash: Prisma.Decimal | null; cashVariance: Prisma.Decimal | null; status: ShiftStatus | string; closingNotes: string | null; }) {
@@ -157,7 +227,7 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
       return reply.send({ success: true, data: { shift: null } });
     }
 
-    const financials = await loadShiftFinancials(shift.id, tenantId!);
+    const financials = await loadShiftFinancials(shift.id, tenantId!, Number(shift.openingCash));
     return reply.send({
       success: true,
       data: {
@@ -259,7 +329,7 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
     }
     if (!isValidMoneyAmount(request.body.actualCashCounted)) return reply.code(400).send(moneyFailure());
 
-    const financials = await loadShiftFinancials(shift.id, tenantId);
+    const financials = await loadShiftFinancials(shift.id, tenantId, Number(shift.openingCash));
     const actualCashCounted = roundAmount(request.body.actualCashCounted);
     const expectedCash = roundAmount(financials.expectedCashInDrawer);
     const cashVariance = calculateCashVariance(actualCashCounted, expectedCash);
@@ -329,10 +399,17 @@ const shiftRoutes: FastifyPluginAsync = async (app) => {
       }),
       prisma.shiftRegister.count({ where }),
     ]);
+
+    const financialsMap = await loadBatchShiftFinancials(shifts, tenantId);
+
     return reply.send({
       success: true,
       data: {
-        shifts: await Promise.all(shifts.map(async (shift) => ({ ...serializeShift(shift), receptionist: shift.receptionist.fullName, financials: await loadShiftFinancials(shift.id, tenantId) }))),
+        shifts: shifts.map((shift) => ({
+          ...serializeShift(shift),
+          receptionist: shift.receptionist.fullName,
+          financials: financialsMap.get(shift.id)!,
+        })),
         pagination: { page: pagination.page, limit: pagination.limit, total, pages: Math.ceil(total / pagination.limit) },
       },
     });
