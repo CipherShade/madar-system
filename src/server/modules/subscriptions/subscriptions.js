@@ -1,0 +1,339 @@
+import { Prisma } from '@prisma/client';
+import { AttendanceStatus, PaymentMethod, Role, SubscriptionStatus } from '../../../shared/constants/index.js';
+import { MONTHLY_PRICE_EGP, SUBSCRIPTION_CURRENCY } from '../../../shared/constants/subscription.js';
+import { prisma } from '../../lib/prisma.js';
+import { isValidUUID } from '../../lib/http.js';
+import { applyBillingBalances, verifiedEntitlements } from '../admin/billingMath.js';
+import { addEgyptDays, resolveTenantLifecycle, startOfEgyptDay } from '../../lib/tenantLifecycle.js';
+import { authenticate, requireRoles } from '../auth/auth.js';
+import { recordAuditEntry } from '../reports/audit.js';
+import { getTenantUsageSummary } from './usageService.js';
+const SUBSCRIPTION_PERIOD_DAYS = 30;
+const SUBSCRIPTION_HISTORY_LIMIT = 10;
+/**
+ * The usage window is the current active subscription period, falling back to
+ * the tenant's creation date when no paid period is running (trial / lapsed).
+ * Exported for unit testing.
+ */
+export function resolveUsagePeriodStart(createdAt, subscriptions, now) {
+    for (const sub of subscriptions) {
+        if (sub.status === SubscriptionStatus.ACTIVE && new Date(sub.periodEnd).getTime() > now.getTime()) {
+            return new Date(sub.periodStart);
+        }
+    }
+    return createdAt;
+}
+/**
+ * Where-clause for usage visit counting. One student check-in to one center
+ * session = one visit. VOID attendances are never counted (they never count as
+ * real visits) and only attendances recorded on or after the usage-period start
+ * belong to the current billing window. Exported for unit testing so the
+ * VOID-exclusion guarantee cannot drift.
+ */
+export function buildVisitCountWhere(periodStart, tenantId) {
+    return {
+        checkInTime: { gte: periodStart },
+        status: { not: AttendanceStatus.VOID },
+        session: { tenantId },
+    };
+}
+const subscriptionRoutes = async (app) => {
+    app.get('/current', { preHandler: [authenticate, requireRoles(Role.ADMIN, Role.SUPER_ADMIN)] }, async (request, reply) => {
+        const tenantId = request.user.tenantId;
+        if (!tenantId) {
+            return reply.code(400).send({
+                success: false,
+                error: { code: 'TENANT_REQUIRED', message: 'الحساب غير مرتبط بمركز تعليمي.', messageEn: 'Account has no tenant assigned.' },
+            });
+        }
+        const [tenant, subscriptions] = await Promise.all([
+            prisma.tenant.findUnique({
+                where: { id: tenantId },
+                select: {
+                    id: true,
+                    name: true,
+                    slug: true,
+                    trialEndsAt: true,
+                    isActive: true,
+                    createdAt: true,
+                },
+            }),
+            prisma.subscription.findMany({
+                where: { tenantId },
+                orderBy: { createdAt: 'desc' },
+                take: SUBSCRIPTION_HISTORY_LIMIT,
+            }),
+        ]);
+        if (!tenant) {
+            return reply.code(404).send({
+                success: false,
+                error: { code: 'TENANT_NOT_FOUND', message: 'المركز التعليمي غير موجود.', messageEn: 'Tenant not found.' },
+            });
+        }
+        const now = new Date();
+        const trialDaysRemaining = tenant.trialEndsAt
+            ? Math.max(0, Math.ceil((new Date(tenant.trialEndsAt).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
+            : 0;
+        const periodStart = resolveUsagePeriodStart(tenant.createdAt, subscriptions, now);
+        const usageSummary = await getTenantUsageSummary(tenantId, now).catch((error) => {
+            request.log.error({ error, tenantId }, 'tenant usage summary unavailable');
+            return null;
+        });
+        const usedVisits = usageSummary ? usageSummary.usedVisits : await prisma.attendance.count({
+            where: buildVisitCountWhere(periodStart, tenantId),
+        });
+        const lifecycle = resolveTenantLifecycle(subscriptions, now);
+        return reply.send({
+            success: true,
+            data: {
+                tenant,
+                trialDaysRemaining,
+                isTrialActive: tenant.trialEndsAt ? tenant.trialEndsAt > now : false,
+                // Drives the in-app renewal / grace / frozen banner, and mirrors exactly
+                // what the write guard enforces.
+                lifecycle,
+                usage: {
+                    ...(usageSummary || {}),
+                    periodStart,
+                    usedVisits,
+                    summaryAvailable: usageSummary !== null,
+                },
+                subscriptions: subscriptions.map((sub) => ({
+                    ...sub,
+                    amount: sub.amount.toString(),
+                })),
+            },
+        });
+    });
+    app.post('/renew', {
+        preHandler: [authenticate, requireRoles(Role.ADMIN, Role.SUPER_ADMIN)],
+        schema: {
+            body: {
+                type: 'object',
+                required: ['paymentMethod', 'paymentReference'],
+                properties: {
+                    paymentMethod: { type: 'string', enum: [PaymentMethod.INSTAPAY] },
+                    paymentReference: { type: 'string', pattern: '^[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+$', minLength: 3, maxLength: 100 },
+                },
+                additionalProperties: false,
+            },
+        },
+    }, async (request, reply) => {
+        const tenantId = request.user.tenantId;
+        if (!tenantId) {
+            return reply.code(400).send({
+                success: false,
+                error: { code: 'TENANT_REQUIRED', message: 'الحساب غير مرتبط بمركز تعليمي.', messageEn: 'Account has no tenant assigned.' },
+            });
+        }
+        // Quoted on the same day boundaries `verify` will actually grant, so the
+        // dates shown on the invoice are the dates the owner gets.
+        const periodStart = startOfEgyptDay(new Date());
+        const periodEnd = addEgyptDays(periodStart, SUBSCRIPTION_PERIOD_DAYS);
+        const result = await prisma.$transaction(async (tx) => {
+            // The invoice is priced against the tenant's wallets so the customer
+            // knows exactly what to pay, but the wallets are NOT spent and the paid
+            // month is NOT granted here. Both happen in `verify`, which is the only
+            // place a PENDING payment can become an entitlement.
+            const tenantForWallet = await prisma.tenant.findUniqueOrThrow({
+                where: { id: tenantId },
+                select: { discountBalance: true, creditBalance: true },
+            });
+            const billing = applyBillingBalances(MONTHLY_PRICE_EGP, tenantForWallet.discountBalance, tenantForWallet.creditBalance);
+            const subscription = await tx.subscription.create({
+                data: {
+                    tenantId,
+                    status: SubscriptionStatus.PENDING,
+                    amount: new Prisma.Decimal(billing.amountDue),
+                    currency: SUBSCRIPTION_CURRENCY,
+                    paymentMethod: request.body.paymentMethod,
+                    paymentReference: request.body.paymentReference.trim(),
+                    periodStart,
+                    periodEnd,
+                },
+            });
+            await recordAuditEntry({
+                actorId: request.user.sub,
+                tenantId,
+                shiftRegisterId: null,
+                action: 'SUBSCRIPTION_RENEWED',
+                entityType: 'SUBSCRIPTION',
+                entityId: subscription.id,
+                amount: billing.amountDue,
+                metadata: {
+                    paymentMethod: request.body.paymentMethod,
+                    baseAmount: billing.baseAmount,
+                    discountApplied: billing.discountApplied,
+                    creditApplied: billing.creditApplied,
+                },
+            }, tx);
+            return { subscription, tenant: await tx.tenant.findUniqueOrThrow({ where: { id: tenantId } }), billing };
+        });
+        return reply.send({
+            success: true,
+            data: {
+                subscription: {
+                    ...result.subscription,
+                    amount: result.subscription.amount.toString(),
+                },
+                tenant: result.tenant,
+                billing: result.billing,
+            },
+        });
+    });
+    // ── Super Admin: pending-payment verification queue ─────────────────────────
+    //
+    // Every INSTAPAY subscription is recorded as PENDING and grants no paid
+    // entitlements. Verification is the ONLY transition that activates the paid
+    // month and spends its discount/credit wallets, so rejecting a payment can
+    // never leave a center holding an unpaid month.
+    app.get('/pending', {
+        preHandler: [authenticate, requireRoles(Role.SUPER_ADMIN)],
+    }, async (_request, reply) => {
+        const subscriptions = await prisma.subscription.findMany({
+            where: { status: SubscriptionStatus.PENDING },
+            orderBy: { createdAt: 'desc' },
+            take: 100,
+            include: { tenant: { select: { id: true, name: true, slug: true } } },
+        });
+        return reply.send({
+            success: true,
+            data: {
+                subscriptions: subscriptions.map((sub) => ({
+                    id: sub.id,
+                    amount: sub.amount.toString(),
+                    currency: sub.currency,
+                    paymentMethod: sub.paymentMethod,
+                    paymentReference: sub.paymentReference,
+                    createdAt: sub.createdAt,
+                    tenant: sub.tenant,
+                })),
+            },
+        });
+    });
+    app.post('/:id/verify', {
+        preHandler: [authenticate, requireRoles(Role.SUPER_ADMIN)],
+    }, async (request, reply) => {
+        if (!isValidUUID(request.params.id)) {
+            return reply.code(400).send({
+                success: false,
+                error: { code: 'INVALID_ID', message: 'معرّف الاشتراك غير صالح.', messageEn: 'The subscription id is invalid.' },
+            });
+        }
+        const subscription = await prisma.subscription.findUnique({ where: { id: request.params.id } });
+        if (!subscription) {
+            return reply.code(404).send({
+                success: false,
+                error: { code: 'SUBSCRIPTION_NOT_FOUND', message: 'الاشتراك غير موجود.', messageEn: 'Subscription not found.' },
+            });
+        }
+        if (subscription.status !== SubscriptionStatus.PENDING) {
+            return reply.code(409).send({
+                success: false,
+                error: { code: 'ALREADY_VERIFIED', message: 'هذا الاشتراك ليس قيد التأكيد.', messageEn: 'This subscription is not pending verification.' },
+            });
+        }
+        const now = new Date();
+        // Snap the paid period to the business-day boundaries: it starts at 12:00 AM
+        // GMT+3 today and ends at 12:00 AM GMT+3 30 days later, so the period, the
+        // renewal reminder and the freeze instant are all counted on the same clock
+        // and a period can never expire part-way through a business day.
+        const periodStart = startOfEgyptDay(now);
+        const periodEnd = addEgyptDays(periodStart, SUBSCRIPTION_PERIOD_DAYS);
+        const result = await prisma.$transaction(async (tx) => {
+            // Entitlements are recomputed from the tenant's live wallet balances, so
+            // a discount granted while the payment sat in the queue is applied here.
+            const tenant = await tx.tenant.findUniqueOrThrow({
+                where: { id: subscription.tenantId },
+                select: { discountBalance: true, creditBalance: true },
+            });
+            const granted = verifiedEntitlements(tenant.discountBalance, tenant.creditBalance);
+            const updated = await tx.subscription.update({
+                where: { id: subscription.id },
+                data: { status: SubscriptionStatus.ACTIVE, periodStart, periodEnd },
+            });
+            await tx.tenant.update({
+                where: { id: subscription.tenantId },
+                data: {
+                    isActive: granted.isActive,
+                    discountBalance: new Prisma.Decimal(granted.discountBalance),
+                    creditBalance: new Prisma.Decimal(granted.creditBalance),
+                },
+            });
+            await recordAuditEntry({
+                actorId: request.user.sub,
+                tenantId: subscription.tenantId,
+                shiftRegisterId: null,
+                action: 'SUBSCRIPTION_VERIFIED',
+                entityType: 'SUBSCRIPTION',
+                entityId: subscription.id,
+                amount: Number(subscription.amount),
+                metadata: {
+                    paymentMethod: subscription.paymentMethod,
+                    paymentReference: subscription.paymentReference,
+                    // The invoice quoted at upgrade time vs. what the wallets actually
+                    // allowed at verification time — a gap means a wallet changed.
+                    invoicedAmount: subscription.amount.toString(),
+                    amountDue: granted.billing?.amountDue ?? null,
+                    discountApplied: granted.billing?.discountApplied ?? 0,
+                    creditApplied: granted.billing?.creditApplied ?? 0,
+                },
+            }, tx);
+            return updated;
+        });
+        return reply.send({
+            success: true,
+            data: {
+                subscription: { ...result, amount: result.amount.toString() },
+            },
+        });
+    });
+    app.post('/:id/reject', {
+        preHandler: [authenticate, requireRoles(Role.SUPER_ADMIN)],
+    }, async (request, reply) => {
+        if (!isValidUUID(request.params.id)) {
+            return reply.code(400).send({
+                success: false,
+                error: { code: 'INVALID_ID', message: 'معرّف الاشتراك غير صالح.', messageEn: 'The subscription id is invalid.' },
+            });
+        }
+        const subscription = await prisma.subscription.findUnique({ where: { id: request.params.id } });
+        if (!subscription) {
+            return reply.code(404).send({
+                success: false,
+                error: { code: 'SUBSCRIPTION_NOT_FOUND', message: 'الاشتراك غير موجود.', messageEn: 'Subscription not found.' },
+            });
+        }
+        if (subscription.status !== SubscriptionStatus.PENDING) {
+            return reply.code(409).send({
+                success: false,
+                error: { code: 'NOT_PENDING', message: 'هذا الاشتراك ليس قيد التأكيد.', messageEn: 'This subscription is not pending.' },
+            });
+        }
+        // Nothing to unwind: the pending payment never granted the paid month and never
+        // spent a wallet, so the tenant simply keeps the access it already had (the
+        // trial at signup, or the current paid month after a rejected renewal).
+        const result = await prisma.$transaction(async (tx) => {
+            const updated = await tx.subscription.update({
+                where: { id: subscription.id },
+                data: { status: SubscriptionStatus.CANCELED, periodEnd: new Date() },
+            });
+            await recordAuditEntry({
+                actorId: request.user.sub,
+                tenantId: subscription.tenantId,
+                shiftRegisterId: null,
+                action: 'SUBSCRIPTION_REJECTED',
+                entityType: 'SUBSCRIPTION',
+                entityId: subscription.id,
+                amount: Number(subscription.amount),
+                metadata: { paymentReference: subscription.paymentReference },
+            }, tx);
+            return updated;
+        });
+        return reply.send({
+            success: true,
+            data: { subscription: { id: result.id, status: result.status } },
+        });
+    });
+};
+export default subscriptionRoutes;

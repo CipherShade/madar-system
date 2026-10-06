@@ -53,7 +53,7 @@ This document specifies mandatory rules, architectural constraints, and quality 
   - `lib/`: Cross-cutting concerns — `security.ts` (auth guards, cookies, rate limiters, CSRF), `socket.ts` (Socket.io), `http.ts` (UUID/money validation, pagination), `prisma.ts` (Prisma client).
   - No `middleware/` directory; auth/RBAC/error handling are plugins and `preHandler`s.
 - **Shared Contracts:** `src/shared/`
-  - `types/`: Shared TypeScript models (roles, payment methods, etc.).
+  - `types/`: (legacy types removed; use shared/constants/domain types) (roles, payment methods, etc.).
   - `constants/`: Shared constants.
   - `utils/arabicNormalization.ts`: Single source of truth for text normalization.
   - Server-side validation uses **Fastify JSON Schema** (defined inline in each route module), not Zod. Client uses manual inline validation.

@@ -7,7 +7,7 @@ import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
 import { isValidUUID } from '../../lib/http.js';
 import { recordAuditEntry } from '../reports/audit.js';
 
-const egyptianPhone = /^(010|011|012|015)[0-9]{8}$/;
+import { EGYPTIAN_MOBILE_REGEX } from "../../../shared/constants/index.js";
 
 type BranchBody = {
   name: string;
@@ -72,7 +72,7 @@ const branchRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(400).send(invalid('الحساب غير مرتبط بمركز تعليمي.', 'Account has no tenant assigned.', 'TENANT_REQUIRED'));
     }
 
-    if (request.body.phoneNumber && !egyptianPhone.test(request.body.phoneNumber)) {
+    if (request.body.phoneNumber && !EGYPTIAN_MOBILE_REGEX.test(request.body.phoneNumber)) {
       return reply.code(400).send(invalid('رقم الهاتف يجب أن يكون رقم محمول مصري صحيح.', 'Use a valid Egyptian mobile number.'));
     }
 
@@ -126,7 +126,7 @@ const branchRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(400).send(invalid('معرّف الفرع غير صالح.', 'The branch id is invalid.'));
     }
 
-    if (request.body.phoneNumber && !egyptianPhone.test(request.body.phoneNumber)) {
+    if (request.body.phoneNumber && !EGYPTIAN_MOBILE_REGEX.test(request.body.phoneNumber)) {
       return reply.code(400).send(invalid('رقم الهاتف يجب أن يكون رقم محمول مصري صحيح.', 'Use a valid Egyptian mobile number.'));
     }
 

@@ -46,14 +46,13 @@ type AttendanceBody = {
   amountPaid?: number;
 };
 
-const UUID_FORMAT = '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$';
 const attendanceSchema = {
   type: 'object',
   required: ['sessionId', 'studentId', 'paymentMethod'],
   additionalProperties: false,
   properties: {
-    sessionId: { type: 'string', pattern: UUID_FORMAT },
-    studentId: { type: 'string', pattern: UUID_FORMAT },
+    sessionId: { type: 'string', format: "uuid" },
+    studentId: { type: 'string', format: "uuid" },
     paymentMethod: { type: 'string', enum: Object.values(PaymentMethod) },
     paymentReference: { type: ['string', 'null'], minLength: 3, maxLength: 100 },
     amountPaid: { type: 'number', minimum: 0, maximum: 1000000 },
@@ -376,7 +375,7 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
         type: 'object',
         required: ['id'],
         additionalProperties: false,
-        properties: { id: { type: 'string', pattern: UUID_FORMAT } },
+        properties: { id: { type: 'string', format: "uuid" } },
       },
     },
   }, async (request, reply) => {

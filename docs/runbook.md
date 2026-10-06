@@ -13,10 +13,10 @@ This runbook covers the operational procedures that complete **PROMPT 12 — Pro
 | Single-origin service image | `Dockerfile` | Builds SPA + API + Socket.io into one production container, incl. `pg_dump`/`pg_restore`/`psql` for ops. |
 | Ignore rules | `.dockerignore` | Keeps secrets, tests, docs, logs and build output out of the image. |
 | Staging stack | `docker-compose.staging.yml` | Wires the production image + PostgreSQL together for full verification before a live deploy. |
-| Backup script | `scripts/backup.ps1` | `pg_dump --format=custom` -> dated `.dump`. |
-| Restore script | `scripts/restore.ps1` | `pg_restore --clean --if-exists` into a target DB. |
-| Migration script | `scripts/migrate.ps1` | `prisma migrate deploy` + status (safe, non-destructive). |
-| Seed script wrapper | `scripts/seed.ps1` | Guards production seeding incl. required passwords. |
+| Backup script | `scripts/backup-db.ps1 (backup)` | `pg_dump --format=custom` -> dated `.dump`. |
+| Restore script | `scripts/backup-db.ps1 restore` | `pg_restore --clean --if-exists` into a target DB. |
+| Migration script | `npm run db:migrate:deploy` | `prisma migrate deploy` + status (safe, non-destructive). |
+| Seed script wrapper | `npm run db:seed` | Guards production seeding incl. required passwords. |
 | CI | `.github/workflows/ci.yml` | Build + `prisma validate` + migrations + backend/frontend tests + Docker image build. Runs on push/PR to `main`. It does not deploy. |
 | Deploy (manual) | Railway dashboard / `railway up` | Re-run the last successful deployment. There is no in-repo deploy script: Railway builds from the repo on push, so a redeploy is a Railway action. |
 
@@ -75,7 +75,7 @@ Nothing in the application changes the schema: startup probes it, and in product
 
 ```powershell
 $env:DATABASE_URL = "<private-url>"
-npm run db:migrate:deploy     # or: powershell -File scripts/migrate.ps1
+npm run db:migrate:deploy     # or: powershell -File npm run db:migrate:deploy
 npm run db:migrate:status     # confirm every migration is Applied
 npx prisma validate
 npx prisma generate
@@ -88,7 +88,7 @@ npx prisma generate
 ```powershell
 $env:SEED_ADMIN_PASSWORD = "<long-random>"
 $env:SEED_RECEPTIONIST_PASSWORD = "<long-random>"
-npm run db:seed               # or: powershell -File scripts/seed.ps1
+npm run db:seed               # or: powershell -File npm run db:seed
 ```
 
 ---
@@ -100,8 +100,8 @@ Logical `pg_dump` custom-format backups are safe to take while the database is l
 **Manual:**
 ```powershell
 $env:DATABASE_URL = "<private-url>"
-powershell -File scripts/backup.ps1          # writes edu_center_erp_YYYYMMDD_HHmmss.dump
-powershell -File scripts/backup.ps1 -Gzip   # optional gzip
+powershell -File scripts/backup-db.ps1 (backup)          # writes edu_center_erp_YYYYMMDD_HHmmss.dump
+powershell -File scripts/backup-db.ps1 (backup) -Gzip   # optional gzip
 ```
 
 **Best practice:**
@@ -119,7 +119,7 @@ Always restore into a **new/empty database first**, verify, then plan any live c
 ```powershell
 # 1) Create a fresh scratch DB and restore into it
 $env:DATABASE_URL = "postgresql://user:pass@host:5432/edu_center_erp_restore?schema=public"
-powershell -File scripts/restore.ps1 -BackupFile ./edu_center_erp_20260101.dump -Verify
+powershell -File scripts/backup-db.ps1 restore -BackupFile ./edu_center_erp_20260101.dump -Verify
 
 # 2) Verify migration state
 npm run db:migrate:status

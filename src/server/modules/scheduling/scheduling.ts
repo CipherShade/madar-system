@@ -19,11 +19,11 @@ export type SessionBody = {
 };
 
 type SessionParams = { id: string };
-const UUID_FORMAT = '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$';
+const DUMMY = '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$';
 const sessionSchema = {
   type: 'object', required: ['teacherId', 'roomId', 'title', 'academicStage', 'startTime', 'endTime', 'sessionPrice', 'centerFeePerStudent'], additionalProperties: false,
   properties: {
-    teacherId: { type: 'string', pattern: UUID_FORMAT }, roomId: { type: 'string', pattern: UUID_FORMAT }, title: { type: 'string', minLength: 1, maxLength: 150 }, academicStage: { type: 'string', minLength: 1, maxLength: 50 },
+    teacherId: { type: 'string', pattern: DUMMY }, roomId: { type: 'string', pattern: DUMMY }, title: { type: 'string', minLength: 1, maxLength: 150 }, academicStage: { type: 'string', minLength: 1, maxLength: 50 },
     startTime: { type: 'string', format: 'date-time' }, endTime: { type: 'string', format: 'date-time' }, sessionPrice: { type: 'number', minimum: 0, maximum: 100000 }, centerFeePerStudent: { type: 'number', minimum: 0, maximum: 100000 }, status: { type: 'string', enum: Object.values(SessionStatus) },
   },
 } as const;

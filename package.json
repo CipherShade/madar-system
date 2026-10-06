@@ -30,7 +30,6 @@
     "db:backup:remote": "node scripts/backup/runBackup.mjs",
     "db:backups:remote:list": "node scripts/backup/runBackup.mjs --list",
     "test": "tsx --test --test-concurrency=1 tests/*.test.ts",
-    "test:unit": "tsx --test --test-concurrency=1 tests/*.test.ts",
     "test:integration": "tsx --test --test-concurrency=1 tests/integration/db/*.test.ts",
     "test:db": "tsx --test --test-concurrency=1 tests/integration/db/*.test.ts",
     "test:db:setup": "powershell -ExecutionPolicy Bypass -File scripts/test-db.ps1 setup",
@@ -53,7 +52,6 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-i18next": "^15.0.1",
-    "react-router-dom": "^6.26.1",
     "socket.io": "^4.7.5",
     "socket.io-client": "^4.7.5"
   },

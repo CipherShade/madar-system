@@ -8,7 +8,7 @@ import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
 import { recordAuditEntry } from '../reports/audit.js';
 import { isValidUUID } from '../../lib/http.js';
 
-const egyptianPhone = /^(010|011|012|015)[0-9]{8}$/;
+import { EGYPTIAN_MOBILE_REGEX } from "../../../shared/constants/index.js";
 const USERNAME_RE = /^[a-zA-Z0-9_.-]{3,50}$/;
 
 type CreateUserBody = {
@@ -117,7 +117,7 @@ const userRoutes: FastifyPluginAsync = async (app) => {
     if (exists) {
       return reply.code(409).send(invalid('اسم المستخدم مستخدم بالفعل.', 'This username is already taken.', 'USERNAME_TAKEN'));
     }
-    if (request.body.phoneNumber && !egyptianPhone.test(request.body.phoneNumber)) {
+    if (request.body.phoneNumber && !EGYPTIAN_MOBILE_REGEX.test(request.body.phoneNumber)) {
       return reply.code(400).send(invalid('رقم الهاتف يجب أن يكون رقم محمول مصري صحيح.', 'Use a valid Egyptian mobile number.'));
     }
     const passwordHash = await argon2.hash(request.body.password, { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 4 });
@@ -157,7 +157,7 @@ const userRoutes: FastifyPluginAsync = async (app) => {
     if (request.body.role !== undefined && !isAssignableRole(request.body.role)) {
       return reply.code(403).send(invalid('لا يمكنك منح هذا الدور.', 'You cannot assign that role.', 'ROLE_NOT_ASSIGNABLE'));
     }
-    if (request.body.phoneNumber && !egyptianPhone.test(request.body.phoneNumber)) {
+    if (request.body.phoneNumber && !EGYPTIAN_MOBILE_REGEX.test(request.body.phoneNumber)) {
       return reply.code(400).send(invalid('رقم الهاتف يجب أن يكون رقم محمول مصري صحيح.', 'Use a valid Egyptian mobile number.'));
     }
 

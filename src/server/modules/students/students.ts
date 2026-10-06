@@ -7,7 +7,7 @@ import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
 import { normalizeArabicText } from '../../../shared/utils/arabicNormalization.js';
 import { isValidUUID, parsePagination, uuidParamsSchema } from '../../lib/http.js';
 
-const egyptianPhone = /^(010|011|012|015)[0-9]{8}$/;
+import { EGYPTIAN_MOBILE_REGEX } from "../../../shared/constants/index.js";
 export type StudentBody = { fullName: string; studentPhone?: string | null; guardianPhone: string; academicStage: string; schoolType?: SchoolType; notes?: string | null };
 type StudentQuery = { search?: string; page?: string; limit?: string };
 
@@ -15,7 +15,7 @@ const bodySchema = { type: 'object', required: ['fullName', 'guardianPhone', 'ac
 
 function invalid(message: string, messageEn: string, code = 'VALIDATION_ERROR') { return { success: false, error: { code, message, messageEn } }; }
 
-export function validateStudentPhones(body: StudentBody) { if (!egyptianPhone.test(body.guardianPhone) || (body.studentPhone && !egyptianPhone.test(body.studentPhone))) return invalid('أرقام الهاتف يجب أن تكون أرقام محمول مصرية صحيحة.', 'Use valid Egyptian mobile numbers.'); return null; }
+export function validateStudentPhones(body: StudentBody) { if (!EGYPTIAN_MOBILE_REGEX.test(body.guardianPhone) || (body.studentPhone && !EGYPTIAN_MOBILE_REGEX.test(body.studentPhone))) return invalid('أرقام الهاتف يجب أن تكون أرقام محمول مصرية صحيحة.', 'Use valid Egyptian mobile numbers.'); return null; }
 
 /** Pure search-where builder: Arabic-normalized name, phone, code, guardian phone. */
 export function buildStudentSearchWhere(search?: string): Prisma.StudentWhereInput {
@@ -99,7 +99,7 @@ const studentRoutes: FastifyPluginAsync = async (app) => {
   app.patch<{ Params: { id: string }; Body: Partial<StudentBody> }>('/students/:id', { preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST), requireTenantWritable], schema: { params: uuidParamsSchema, body: { ...bodySchema, required: [] } } }, async (request, reply) => {
     if (!isValidUUID(request.params.id)) return reply.code(400).send(invalid('معرّف الطالب غير صالح.', 'The student id is invalid.'));
     const tenantId = request.user.tenantId; if (!tenantId) return reply.code(400).send(invalid('الحساب غير مرتبط بمركز تعليمي.', 'Account has no tenant assigned.', 'TENANT_REQUIRED'));
-    const body = request.body; if (body.guardianPhone && !egyptianPhone.test(body.guardianPhone)) return reply.code(400).send(invalid('رقم ولي الأمر غير صحيح.', 'Guardian phone is invalid.')); if (body.studentPhone && !egyptianPhone.test(body.studentPhone)) return reply.code(400).send(invalid('رقم الطالب غير صحيح.', 'Student phone is invalid.'));
+    const body = request.body; if (body.guardianPhone && !EGYPTIAN_MOBILE_REGEX.test(body.guardianPhone)) return reply.code(400).send(invalid('رقم ولي الأمر غير صحيح.', 'Guardian phone is invalid.')); if (body.studentPhone && !EGYPTIAN_MOBILE_REGEX.test(body.studentPhone)) return reply.code(400).send(invalid('رقم الطالب غير صحيح.', 'Student phone is invalid.'));
     try { const student = await prisma.student.update({ where: { id: request.params.id, tenantId }, data: { ...(body.fullName === undefined ? {} : { fullName: body.fullName.trim(), searchName: normalizeArabicText(body.fullName) }), ...(body.studentPhone === undefined ? {} : { studentPhone: body.studentPhone || null }), ...(body.guardianPhone === undefined ? {} : { guardianPhone: body.guardianPhone }), ...(body.academicStage === undefined ? {} : { academicStage: body.academicStage.trim() }), ...(body.schoolType === undefined ? {} : { schoolType: body.schoolType }), ...(body.notes === undefined ? {} : { notes: body.notes?.trim() || null }) } }); return reply.send({ success: true, data: { student } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') return reply.code(404).send(invalid('الطالب غير موجود.', 'Student not found.', 'STUDENT_NOT_FOUND')); throw error; }
   });
   app.get<{ Params: { id: string } }>('/students/:id/attendances', { preHandler: [authenticate, requireRoles(Role.ADMIN, Role.RECEPTIONIST)] }, async (request, reply) => {
