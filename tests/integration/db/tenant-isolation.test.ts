@@ -1,6 +1,8 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { todayEgyptKey } from '../../../src/server/lib/tenantLifecycle.js';
+
 /**
  * Cross-tenant isolation against a real PostgreSQL database.
  *
@@ -96,7 +98,7 @@ describe(
 
     const now = new Date();
     const stage = 'الثالث الثانوي';
-    const today = now.toISOString().slice(0, 10);
+    const today = todayEgyptKey();
 
     const token = (sub: string, username: string, role: string, tenantId: string) =>
       app.jwt.sign({ sub, username, role, tenantId }, { expiresIn: '1h' });
@@ -229,7 +231,12 @@ describe(
     }
 
     async function clean(): Promise<void> {
-      await prisma.auditLog.deleteMany({});
+await prisma.auditLog.deleteMany({});
+      await prisma.stockMovement.deleteMany({});
+      await prisma.bookSaleLine.deleteMany({});
+      await prisma.bookSale.deleteMany({});
+      await prisma.branchStock.deleteMany({});
+      await prisma.usageRecord.deleteMany({});
       await prisma.expense.deleteMany({});
       await prisma.sessionSettlement.deleteMany({});
       await prisma.sessionReconciliation.deleteMany({});
@@ -239,8 +246,10 @@ describe(
       await prisma.student.deleteMany({});
       await prisma.teacher.deleteMany({});
       await prisma.room.deleteMany({});
+      await prisma.product.deleteMany({});
+      await prisma.branch.deleteMany({});
+      await prisma.systemSetting.deleteMany({});
       await prisma.user.deleteMany({});
-      // Cascades to subscriptions, so the next seed starts from a clean slate.
       await prisma.tenant.deleteMany({});
     }
 

@@ -35,6 +35,26 @@ export function validateReconciledHeadcount(headcount: number, capacity: number)
   return { ok: true };
 }
 
+/**
+ * The payout multiplier may never exceed what either source actually counted.
+ * lobbyCount is server-computed from check-ins; assistantCount is the human
+ * count. A headcount above both is unbacked money leaving the drawer.
+ */
+export function validateReconciledHeadcountAgainstAttendance(
+  reconciledHeadcount: number,
+  lobbyCount: number,
+  assistantCount: number,
+): { ok: true } | { ok: false; error: string } {
+  const ceiling = Math.max(lobbyCount, assistantCount);
+  if (reconciledHeadcount > ceiling) {
+    return {
+      ok: false,
+      error: `The reconciled headcount (${reconciledHeadcount}) cannot exceed the lobby count (${lobbyCount}) or the assistant count (${assistantCount}).`,
+    };
+  }
+  return { ok: true };
+}
+
 type ReconciliationBody = {
   assistantCount: number;
   reconciledHeadcount: number;
@@ -79,6 +99,9 @@ const reconciliationRoutes: FastifyPluginAsync = async (app) => {
     if (session.status === SessionStatus.COMPLETED) {
       return reply.code(409).send(validation('لا يمكن تعديل مطابقة حصة منتهية.', 'A completed session cannot be reconciled again.', 'SESSION_LOCKED'));
     }
+    if (session.status === SessionStatus.CANCELLED) {
+      return reply.code(409).send(validation('لا يمكن مطابقة حصة ملغاة — لم تُعقد أصلاً.', 'A cancelled session was never held and cannot be reconciled.', 'SESSION_LOCKED'));
+    }
 
     const room = await prisma.room.findFirst({ where: { id: session.roomId, tenantId }, select: { capacity: true } });
     const headcountCheck = validateReconciledHeadcount(request.body.reconciledHeadcount, room?.capacity ?? 0);
@@ -87,6 +110,14 @@ const reconciliationRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const lobbyCount = await prisma.attendance.count({ where: { sessionId: session.id, tenantId, status: { not: 'VOID' } } });
+    const attendanceBoundCheck = validateReconciledHeadcountAgainstAttendance(
+      request.body.reconciledHeadcount,
+      lobbyCount,
+      request.body.assistantCount,
+    );
+    if (!attendanceBoundCheck.ok) {
+      return reply.code(400).send(validation('العدد النهائي المعتمد لا يمكن أن يتجاوز عدد التسجيلات الفعلية أو عدد المساعد.', attendanceBoundCheck.error, 'HEADCOUNT_EXCEEDS_ATTENDANCE'));
+    }
     const reconcileInput = validateReconciliationInput({
       assistantCount: request.body.assistantCount,
       lobbyCount,
@@ -97,27 +128,40 @@ const reconciliationRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(400).send(validation('يجب توضيح سبب اختلاف العدد النهائي مع عدد الاستقبال.', 'Resolution notes are required when the discrepancy is non-zero.', 'RECONCILIATION_REQUIRED'));
     }
 
-    const reconciliation = await prisma.$transaction(async (transaction) => {
-      const currentSession = await transaction.session.findFirst({ where: { id: session.id, tenantId }, select: { status: true } });
-      if (!currentSession || currentSession.status === SessionStatus.COMPLETED) throw new Error('SESSION_LOCKED');
-      const currentLobbyCount = await transaction.attendance.count({ where: { sessionId: session.id, tenantId, status: { not: 'VOID' } } });
-      const currentDiscrepancy = computeDiscrepancy(request.body.assistantCount, currentLobbyCount);
-      const record = await transaction.sessionReconciliation.upsert({
-        where: { sessionId: session.id },
-        update: { lobbyCount: currentLobbyCount, assistantCount: request.body.assistantCount, discrepancy: currentDiscrepancy, reconciledHeadcount: request.body.reconciledHeadcount, resolutionNotes: request.body.resolutionNotes?.trim() || null, reconciledById: request.user.sub, reconciledAt: new Date() },
-        create: { sessionId: session.id, tenantId, lobbyCount: currentLobbyCount, assistantCount: request.body.assistantCount, discrepancy: currentDiscrepancy, reconciledHeadcount: request.body.reconciledHeadcount, resolutionNotes: request.body.resolutionNotes?.trim() || null, reconciledById: request.user.sub },
-      });
-      await recordAuditEntry({
-        actorId: request.user.sub,
-        tenantId,
-        shiftRegisterId: null,
-        action: 'SESSION_RECONCILED',
-        entityType: 'SESSION_RECONCILIATION',
-        entityId: record.id,
-        metadata: { sessionId: session.id, lobbyCount: currentLobbyCount, assistantCount: request.body.assistantCount, discrepancy: currentDiscrepancy, reconciledHeadcount: request.body.reconciledHeadcount },
-      }, transaction);
-      return record;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    let reconciliation;
+    try {
+      reconciliation = await prisma.$transaction(async (transaction) => {
+        const currentSession = await transaction.session.findFirst({ where: { id: session.id, tenantId }, select: { status: true } });
+        if (!currentSession || currentSession.status === SessionStatus.COMPLETED || currentSession.status === SessionStatus.CANCELLED) throw new Error('SESSION_LOCKED');
+        const currentLobbyCount = await transaction.attendance.count({ where: { sessionId: session.id, tenantId, status: { not: 'VOID' } } });
+        const currentBoundCheck = validateReconciledHeadcountAgainstAttendance(request.body.reconciledHeadcount, currentLobbyCount, request.body.assistantCount);
+        if (!currentBoundCheck.ok) throw new Error('HEADCOUNT_EXCEEDS_ATTENDANCE');
+        const currentDiscrepancy = computeDiscrepancy(request.body.assistantCount, currentLobbyCount);
+        const record = await transaction.sessionReconciliation.upsert({
+          where: { sessionId: session.id },
+          update: { lobbyCount: currentLobbyCount, assistantCount: request.body.assistantCount, discrepancy: currentDiscrepancy, reconciledHeadcount: request.body.reconciledHeadcount, resolutionNotes: request.body.resolutionNotes?.trim() || null, reconciledById: request.user.sub, reconciledAt: new Date() },
+          create: { sessionId: session.id, tenantId, lobbyCount: currentLobbyCount, assistantCount: request.body.assistantCount, discrepancy: currentDiscrepancy, reconciledHeadcount: request.body.reconciledHeadcount, resolutionNotes: request.body.resolutionNotes?.trim() || null, reconciledById: request.user.sub },
+        });
+        await recordAuditEntry({
+          actorId: request.user.sub,
+          tenantId,
+          shiftRegisterId: null,
+          action: 'SESSION_RECONCILED',
+          entityType: 'SESSION_RECONCILIATION',
+          entityId: record.id,
+          metadata: { sessionId: session.id, lobbyCount: currentLobbyCount, assistantCount: request.body.assistantCount, discrepancy: currentDiscrepancy, reconciledHeadcount: request.body.reconciledHeadcount },
+        }, transaction);
+        return record;
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'SESSION_LOCKED') {
+        return reply.code(409).send(validation('تغيّرت حالة الحصة أثناء المطابقة — لم تُحفظ البيانات.', 'The session state changed during reconciliation; nothing was saved.', 'SESSION_LOCKED'));
+      }
+      if (error instanceof Error && error.message === 'HEADCOUNT_EXCEEDS_ATTENDANCE') {
+        return reply.code(400).send(validation('العدد النهائي المعتمد يتجاوز عدد التسجيلات الفعلية أو عدد المساعد.', 'The reconciled headcount exceeds both the lobby count and the assistant count.', 'HEADCOUNT_EXCEEDS_ATTENDANCE'));
+      }
+      throw error;
+    }
 
     return reply.send({
       success: true,

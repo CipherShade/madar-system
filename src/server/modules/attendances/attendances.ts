@@ -405,8 +405,8 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(409).send(validation('لا يمكن إلغاء حضور في حصة منتهية ومقفلة.', 'Check-ins on a locked completed session cannot be voided.', 'SESSION_LOCKED'));
     }
     const canVoid =
-      request.user.role === Role.ADMIN ||
-      (attendance.shiftRegister.status === ShiftStatus.OPEN &&
+      attendance.shiftRegister.status === ShiftStatus.OPEN &&
+      (request.user.role === Role.ADMIN ||
         (await prisma.shiftRegister.findFirst({
           where: { id: attendance.shiftRegister.id, tenantId, receptionistId: request.user.sub, status: ShiftStatus.OPEN },
           select: { id: true },
@@ -416,23 +416,39 @@ const attendanceRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(403).send(validation('لا يمكنك إلغاء حضور مسجّل ضمن وردية مقفلة أو لا تملكها.', 'You can only void check-ins from an open shift you own.', 'VOID_FORBIDDEN'));
     }
 
-    const voided = await prisma.$transaction(async (transaction) => {
-      const current = await transaction.attendance.findFirst({ where: { id: request.params.id, tenantId }, include: { session: { select: { status: true } } } });
-      if (!current || current.status === AttendanceStatus.VOID) throw new Error('ATTENDANCE_ALREADY_VOID');
-      if (current.session.status === SessionStatus.COMPLETED) throw new Error('SESSION_LOCKED');
-      const updated = await transaction.attendance.update({ where: { id: request.params.id, tenantId }, data: { status: AttendanceStatus.VOID } });
-      await recordAuditEntry({
-        actorId: request.user.sub,
-        tenantId,
-        shiftRegisterId: attendance.shiftRegister.id,
-        action: 'ATTENDANCE_VOIDED',
-        entityType: 'ATTENDANCE',
-        entityId: updated.id,
-        amount: Number(updated.amountPaid),
-        metadata: { sessionId: attendance.session.id, studentId: updated.studentId, method: updated.paymentMethod, voidedAmount: Number(updated.amountPaid) },
-      }, transaction);
-      return updated;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    let voided;
+    try {
+      voided = await prisma.$transaction(async (transaction) => {
+        const current = await transaction.attendance.findFirst({ where: { id: request.params.id, tenantId }, include: { session: { select: { status: true } } } });
+        if (!current || current.status === AttendanceStatus.VOID) throw new Error('ATTENDANCE_ALREADY_VOID');
+        if (current.session.status === SessionStatus.COMPLETED) throw new Error('SESSION_LOCKED');
+        const currentShift = await transaction.shiftRegister.findFirst({ where: { id: attendance.shiftRegister.id, tenantId }, select: { status: true } });
+        if (!currentShift || currentShift.status !== ShiftStatus.OPEN) throw new Error('SHIFT_CLOSED_DURING_VOID');
+        const updated = await transaction.attendance.update({ where: { id: request.params.id, tenantId }, data: { status: AttendanceStatus.VOID } });
+        await recordAuditEntry({
+          actorId: request.user.sub,
+          tenantId,
+          shiftRegisterId: attendance.shiftRegister.id,
+          action: 'ATTENDANCE_VOIDED',
+          entityType: 'ATTENDANCE',
+          entityId: updated.id,
+          amount: Number(updated.amountPaid),
+          metadata: { sessionId: attendance.session.id, studentId: updated.studentId, method: updated.paymentMethod, voidedAmount: Number(updated.amountPaid) },
+        }, transaction);
+        return updated;
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'SHIFT_CLOSED_DURING_VOID') {
+        return reply.code(409).send(validation('تم إغلاق الوردية أثناء إلغاء الحضور.', 'The shift was closed while voiding this check-in.', 'SHIFT_CLOSED'));
+      }
+      if (error instanceof Error && error.message === 'ATTENDANCE_ALREADY_VOID') {
+        return reply.code(409).send(validation('سجل الحضور ملغي بالفعل.', 'This check-in has already been voided.', 'ATTENDANCE_ALREADY_VOID'));
+      }
+      if (error instanceof Error && error.message === 'SESSION_LOCKED') {
+        return reply.code(409).send(validation('لا يمكن إلغاء حضور في حصة منتهية ومقفلة.', 'Check-ins on a locked completed session cannot be voided.', 'SESSION_LOCKED'));
+      }
+      throw error;
+    }
 
     const newLobbyCount = await prisma.attendance.count({ where: { sessionId: attendance.session.id, tenantId, status: { not: AttendanceStatus.VOID } } });
     // Scoped to the same center as the check-in, for the same reason: this event

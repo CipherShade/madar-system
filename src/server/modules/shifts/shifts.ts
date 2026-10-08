@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { Prisma } from '@prisma/client';
-import { PaymentMethod, Role, ShiftStatus } from '../../../shared/constants/index.js';
+import { AttendanceStatus, PaymentMethod, Role, ShiftStatus } from '../../../shared/constants/index.js';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
 import { requireTenantWritable } from '../../lib/tenantLifecycle.js';
@@ -90,11 +90,11 @@ export function computeShiftFinancialSummary(input: ShiftFinancialSummaryInput):
 }
 
 async function loadShiftFinancials(shiftId: string, tenantId: string, knownOpeningCash?: number) {
-  const [attendanceGroups, teacherCashPayouts, cashExpenses, openingCash] = await Promise.all([
+  const [attendanceGroups, teacherCashPayouts, cashExpenses, cashBookSales, openingCash] = await Promise.all([
     prisma.attendance.groupBy({
       by: ['paymentMethod'],
-      where: { shiftRegisterId: shiftId, tenantId },
-      _sum: { amountPaid: true },
+      where: { shiftRegisterId: shiftId, tenantId, status: { not: AttendanceStatus.VOID } },
+      _sum: { amountPaid: true, changeOwed: true },
     }),
     prisma.sessionSettlement.aggregate({
       _sum: { teacherPayout: true },
@@ -102,6 +102,10 @@ async function loadShiftFinancials(shiftId: string, tenantId: string, knownOpeni
     }),
     prisma.expense.aggregate({
       _sum: { amount: true },
+      where: { shiftRegisterId: shiftId, tenantId, paymentMethod: PaymentMethod.CASH },
+    }),
+    prisma.bookSale.aggregate({
+      _sum: { total: true },
       where: { shiftRegisterId: shiftId, tenantId, paymentMethod: PaymentMethod.CASH },
     }),
     knownOpeningCash !== undefined
@@ -114,10 +118,11 @@ async function loadShiftFinancials(shiftId: string, tenantId: string, knownOpeni
 
   const cashByMethod = (method: PaymentMethod) =>
     toNumber(attendanceGroups.find((g) => g.paymentMethod === method)?._sum.amountPaid ?? 0);
+  const cashChangeOwed = toNumber(attendanceGroups.find((g) => g.paymentMethod === PaymentMethod.CASH)?._sum.changeOwed ?? 0);
 
   return computeShiftFinancialSummary({
     openingCash: knownOpeningCash !== undefined ? knownOpeningCash : toNumber(openingCash?.openingCash ?? 0),
-    cashCollected: cashByMethod(PaymentMethod.CASH),
+    cashCollected: cashByMethod(PaymentMethod.CASH) - cashChangeOwed + toNumber(cashBookSales._sum.total ?? 0),
     vodafoneCashCollected: cashByMethod(PaymentMethod.VODAFONE_CASH),
     instapayCollected: cashByMethod(PaymentMethod.INSTAPAY),
     teacherCashPayouts: toNumber(teacherCashPayouts._sum.teacherPayout ?? 0),
@@ -136,11 +141,11 @@ async function loadBatchShiftFinancials(
   if (shifts.length === 0) return new Map();
   const shiftIds = shifts.map((s) => s.id);
 
-  const [attendancesGrouped, settlementsGrouped, expensesGrouped] = await Promise.all([
+  const [attendancesGrouped, settlementsGrouped, expensesGrouped, cashBookSalesGrouped] = await Promise.all([
     prisma.attendance.groupBy({
       by: ['shiftRegisterId', 'paymentMethod'],
-      where: { shiftRegisterId: { in: shiftIds }, tenantId },
-      _sum: { amountPaid: true },
+      where: { shiftRegisterId: { in: shiftIds }, tenantId, status: { not: AttendanceStatus.VOID } },
+      _sum: { amountPaid: true, changeOwed: true },
     }),
     prisma.sessionSettlement.groupBy({
       by: ['disbursedFromShiftId'],
@@ -152,6 +157,11 @@ async function loadBatchShiftFinancials(
       where: { shiftRegisterId: { in: shiftIds }, tenantId, paymentMethod: PaymentMethod.CASH },
       _sum: { amount: true },
     }),
+    prisma.bookSale.groupBy({
+      by: ['shiftRegisterId'],
+      where: { shiftRegisterId: { in: shiftIds }, tenantId, paymentMethod: PaymentMethod.CASH },
+      _sum: { total: true },
+    }),
   ]);
 
   const attendanceMap = new Map<string, Record<string, number>>();
@@ -162,6 +172,9 @@ async function loadBatchShiftFinancials(
       attendanceMap.set(row.shiftRegisterId, entry);
     }
     entry[row.paymentMethod] = toNumber(row._sum.amountPaid);
+    if (row.paymentMethod === PaymentMethod.CASH) {
+      entry[row.paymentMethod] -= toNumber(row._sum.changeOwed);
+    }
   }
 
   const settlementMap = new Map<string, number>();
@@ -178,6 +191,13 @@ async function loadBatchShiftFinancials(
     }
   }
 
+  const bookSaleMap = new Map<string, number>();
+  for (const row of cashBookSalesGrouped) {
+    if (row.shiftRegisterId) {
+      bookSaleMap.set(row.shiftRegisterId, toNumber(row._sum.total));
+    }
+  }
+
   const result = new Map<string, ShiftFinancialSummary>();
   for (const shift of shifts) {
     const methods = attendanceMap.get(shift.id) ?? {};
@@ -185,7 +205,7 @@ async function loadBatchShiftFinancials(
       shift.id,
       computeShiftFinancialSummary({
         openingCash: toNumber(shift.openingCash),
-        cashCollected: methods[PaymentMethod.CASH] ?? 0,
+        cashCollected: (methods[PaymentMethod.CASH] ?? 0) + (bookSaleMap.get(shift.id) ?? 0),
         vodafoneCashCollected: methods[PaymentMethod.VODAFONE_CASH] ?? 0,
         instapayCollected: methods[PaymentMethod.INSTAPAY] ?? 0,
         teacherCashPayouts: settlementMap.get(shift.id) ?? 0,

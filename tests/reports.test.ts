@@ -35,11 +35,11 @@ test('calculateDailyReportTotals handles empty/zero collections', () => {
   });
 });
 
-test('dateBounds builds a full UTC day range', () => {
+test('dateBounds builds a full Egypt business-day range (GMT+3)', () => {
   const bounds = dateBounds('2026-01-05');
   assert.ok(bounds);
-  assert.equal(bounds!.start.toISOString(), '2026-01-05T00:00:00.000Z');
-  assert.equal(bounds!.end.toISOString(), '2026-01-06T00:00:00.000Z');
+  assert.equal(bounds!.start.toISOString(), '2026-01-04T21:00:00.000Z');
+  assert.equal(bounds!.end.toISOString(), '2026-01-05T21:00:00.000Z');
 });
 
 test('dateBounds rejects malformed and impossible dates', () => {
@@ -52,5 +52,6 @@ test('dateBounds rejects malformed and impossible dates', () => {
 test('dateBounds handles the last day of the month', () => {
   const bounds = dateBounds('2026-01-31');
   assert.ok(bounds);
-  assert.equal(bounds!.end.toISOString(), '2026-02-01T00:00:00.000Z');
+  assert.equal(bounds!.start.toISOString(), '2026-01-30T21:00:00.000Z');
+  assert.equal(bounds!.end.toISOString(), '2026-01-31T21:00:00.000Z');
 });

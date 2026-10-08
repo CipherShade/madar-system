@@ -4,13 +4,16 @@ import { AttendanceStatus, PaymentMethod, Role, SettlementStatus } from '../../.
 import { prisma } from '../../lib/prisma.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
 import { isValidUUID, parseAuditPagination, validationError } from '../../lib/http.js';
+import { startOfEgyptDay, todayEgyptKey } from '../../lib/tenantLifecycle.js';
+
+const DAY_MS = 86_400_000;
 
 export function dateBounds(date: string): { start: Date; end: Date } | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
-  const start = new Date(`${date}T00:00:00.000Z`);
-  const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + 1);
-  return Number.isNaN(start.getTime()) ? null : { start, end };
+  const probe = new Date(`${date}T00:00:00.000Z`);
+  if (Number.isNaN(probe.getTime())) return null;
+  const start = startOfEgyptDay(probe);
+  return { start, end: new Date(start.getTime() + DAY_MS) };
 }
 
 function number(value: Prisma.Decimal | number | null | undefined): number {
@@ -42,7 +45,7 @@ const reportRoutes: FastifyPluginAsync = async (app) => {
     if (!tenantId) {
       return reply.status(403).send(validationError('لا يوجد مركز مرتبط بحسابك.', 'Your account is not attached to a center.', 'TENANT_CONTEXT_MISSING'));
     }
-    const date = request.query.date ?? new Date().toISOString().slice(0, 10);
+    const date = request.query.date ?? todayEgyptKey();
     const bounds = dateBounds(date);
     if (!bounds) {
       return reply.status(400).send(validationError('صيغة التاريخ غير صالحة.', 'Date must use YYYY-MM-DD format.', 'INVALID_REPORT_DATE'));

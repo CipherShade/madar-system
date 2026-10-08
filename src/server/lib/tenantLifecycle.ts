@@ -79,6 +79,11 @@ export function startOfEgyptDay(date: Date): Date {
   return egyptDayStart(egyptDateKey(date));
 }
 
+/** The Y-m-d of today as seen on the GMT+3 wall clock. */
+export function todayEgyptKey(): string {
+  return egyptDateKey(new Date());
+}
+
 /**
  * 12:00 AM GMT+3, `days` business days after `date`.
  *

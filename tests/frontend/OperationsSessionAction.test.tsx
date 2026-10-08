@@ -71,4 +71,36 @@ describe('SessionActionPage settlement (mode="settlement")', () => {
     });
     expect(await screen.findByText(i18n.t('operations.settlement.saved'))).toBeInTheDocument();
   });
+
+  it('shows the server-computed payout instead of multiplying locally', async () => {
+    // The audit finding: the client used to render (sessionPrice - centerFee)
+    // * lobbyCount itself. The lobby has 4 and the fee math would give 520, but
+    // the server reconciled headcount 2 -> payout 260. Only 260 may appear.
+    const user = userEvent.setup();
+    stubFetch([
+      { match: /\/api\/scheduling\/sessions$/, handle: () => jsonRes({ data: { sessions: [{ id: 'ses-2', title: 'كيمياء ٣ث', currentLobbyCount: 4, sessionPrice: 150, centerFeePerStudent: 20, startTime: '2026-09-06T19:00:00+02:00', teacher: { fullName: 'أ. سامي' }, room: { name: 'قاعة ٤', capacity: 35 } }] } }) },
+      { match: /\/api\/sessions\/ses-2\/settlement-preview$/, handle: () => jsonRes({ data: { teacherPayout: 260, headcount: 2, reconciled: false } }) },
+    ]);
+    render(<><ToastHost /><OperationsPage mode="settlement" /></>);
+
+    await user.selectOptions(await screen.findByLabelText(i18n.t('operations.settlement.session')), 'ses-2');
+    expect(await screen.findByText(formatMoney(260, 'ar'))).toBeInTheDocument();
+    expect(screen.queryByText(formatMoney(520, 'ar'))).not.toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.queryByText('4')).not.toBeInTheDocument();
+  });
+
+  it("keeps the payout a dash when the preview is unavailable, never a local guess", async () => {
+    const user = userEvent.setup();
+    stubFetch([
+      { match: /\/api\/scheduling\/sessions$/, handle: () => jsonRes({ data: { sessions: [{ id: 'ses-2', title: 'كيمياء ٣ث', currentLobbyCount: 4, sessionPrice: 150, centerFeePerStudent: 20, startTime: '2026-09-06T19:00:00+02:00', teacher: { fullName: 'أ. سامي' }, room: { name: 'قاعة ٤', capacity: 35 } }] } }) },
+    ]);
+    render(<><ToastHost /><OperationsPage mode="settlement" /></>);
+
+    await user.selectOptions(await screen.findByLabelText(i18n.t('operations.settlement.session')), 'ses-2');
+    await waitFor(() => {
+      expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
+    });
+    expect(screen.queryByText(formatMoney(520, 'ar'))).not.toBeInTheDocument();
+  });
 });

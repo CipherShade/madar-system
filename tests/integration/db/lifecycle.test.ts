@@ -1,6 +1,8 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { todayEgyptKey } from '../../../src/server/lib/tenantLifecycle.js';
+
 // This suite exercises the real PostgreSQL database through the Fastify app.
 // It is skipped unless TEST_DATABASE_URL points at a disposable test database
 // that has the Prisma schema applied (`npm run db:migrate:deploy`).
@@ -71,6 +73,8 @@ describe(
     let adminId: string;
     let tenantId: string;
     let subscriptionId: string;
+    let branchId: string;
+    let bookProductId: string;
 
     const students: Record<string, string> = {};
     const sessions: Record<string, string> = {};
@@ -78,7 +82,7 @@ describe(
     const settledSessions: string[] = [];
 
     const now = new Date();
-    const today = now.toISOString().slice(0, 10);
+    const today = todayEgyptKey();
 
     async function seed(): Promise<void> {
       const argon2 = await import('argon2');
@@ -186,6 +190,20 @@ describe(
       sessions.C = await makeSession('حصة التصفية النقدية', 125);
       sessions.D = await makeSession('حصة تحويل فودافون', 185);
       sessions.E = await makeSession('حصة إنستاباي', 245);
+      sessions.F = await makeSession('حصة إلغاء الحضور', 305);
+      sessions.G = await makeSession('حصة ملغاة — لم تُعقد', 365);
+
+      // Inventory scaffolding for the CASH book-sale-in-drawer regression:
+      // the sale route is gated on the BOOKS_INVENTORY add-on, and needs a
+      // branch, an active product, and stock on the shelf before it will sell.
+      const branch = await prisma.branch.create({ data: { tenantId, name: 'فرع الاختبار', isActive: true } });
+      branchId = branch.id;
+      const book = await prisma.product.create({
+        data: { tenantId, nameAr: 'كتاب الاختبار', searchName: 'كتاب الاختبار', sku: null, salePrice: 120, costPrice: 80, isActive: true },
+      });
+      bookProductId = book.id;
+      await prisma.branchStock.create({ data: { tenantId, branchId: branch.id, productId: book.id, quantity: 5 } });
+      await prisma.tenantAddon.create({ data: { tenantId, code: 'BOOKS_INVENTORY', enabled: true } });
 
       // A live paid period: the only thing that makes this center writable.
       // The lifecycle guard reads nothing but Subscription rows.
@@ -229,6 +247,13 @@ describe(
 
     async function clean(): Promise<void> {
       await prisma.auditLog.deleteMany({});
+      await prisma.stockMovement.deleteMany({});
+      await prisma.bookSaleLine.deleteMany({});
+      await prisma.bookSale.deleteMany({});
+      await prisma.branchStock.deleteMany({});
+      await prisma.usageRecord.deleteMany({});
+      await prisma.product.deleteMany({});
+      await prisma.branch.deleteMany({});
       await prisma.expense.deleteMany({});
       await prisma.sessionSettlement.deleteMany({});
       await prisma.sessionReconciliation.deleteMany({});
@@ -238,6 +263,7 @@ describe(
       await prisma.student.deleteMany({});
       await prisma.teacher.deleteMany({});
       await prisma.room.deleteMany({});
+      await prisma.systemSetting.deleteMany({});
       await prisma.user.deleteMany({});
       // Cascades to subscriptions, so the next seed starts from a clean center.
       await prisma.tenant.deleteMany({});
@@ -534,6 +560,91 @@ describe(
       assert.equal(data.totalAttendees, 0);
       assert.equal(data.centerNetRevenue, 0);
       assert.equal(data.teacherPayouts, 0);
+    });
+
+    test('RECONCILIATION and SETTLEMENT: a cancelled session is rejected with 409', async () => {
+      // A session marked CANCELLED never ran, so it must be locked to both
+      // recording a headcount and paying out a settlement. The gate fires
+      // before any count arithmetic, so zero-argument payloads still 409.
+      await prisma.session.update({ where: { id: sessions.G }, data: { status: 'CANCELLED' } });
+
+      const recon = await app.inject({
+        method: 'POST',
+        url: `/api/sessions/${sessions.G}/reconcile`,
+        headers: authHeaders(receptionistToken),
+        payload: { assistantCount: 0, reconciledHeadcount: 0 },
+      });
+      assert.equal(recon.statusCode, 409, recon.body);
+      assert.equal(json(recon.body).error.code, 'SESSION_LOCKED');
+
+      const settle = await app.inject({
+        method: 'POST',
+        url: `/api/sessions/${sessions.G}/settle`,
+        headers: authHeaders(receptionistToken),
+        payload: { payoutMethod: 'CASH', recipientName: 'م/ اختبار التكامل' },
+      });
+      assert.equal(settle.statusCode, 409, settle.body);
+      assert.equal(json(settle.body).error.code, 'SESSION_LOCKED');
+    });
+
+    test('SHIFT CLOSE: a CASH book sale lands in the drawer of its shift', async () => {
+      // H2 regression, end to end: the sale route stamps the caller's open
+      // shift onto the BookSale, and the expected drawer on close must include
+      // its CASH total even though no student paid an attendance that day.
+      const shiftId = await openShift(receptionistToken, 'Desk 1', 500);
+      const sale = await app.inject({
+        method: 'POST',
+        url: '/api/inventory/sales',
+        headers: authHeaders(receptionistToken),
+        payload: { branchId, studentId: students.S1, paymentMethod: 'CASH', items: [{ productId: bookProductId, quantity: 1 }] },
+      });
+      assert.equal(sale.statusCode, 201, sale.body);
+
+      const stamped = await prisma.bookSale.findFirst({ where: { tenantId, shiftRegisterId: shiftId } });
+      assert.ok(stamped, 'the sale was not stamped onto the open shift');
+
+      const close = await app.inject({
+        method: 'POST',
+        url: '/api/shifts/close',
+        headers: authHeaders(receptionistToken),
+        payload: { actualCashCounted: 620 },
+      });
+      assert.equal(close.statusCode, 200, close.body);
+      const shift = json(close.body).data.shift;
+      assert.equal(shift.expectedCash, 620, 'the CASH sale did not reach the expected drawer');
+      assert.equal(shift.cashVariance, 0);
+      openShiftIds.push(shiftId);
+    });
+
+    test('SHIFT CLOSE: a voided check-in no longer counts toward expected cash', async () => {
+      // H1 regression: two CASH check-ins of 150 each, then one voided. The
+      // drawer must come out as opening + 150; if the void leaked it would be
+      // opening + 300 and the variance would read -150.
+      const shiftId = await openShift(receptionistToken, 'Desk 1', 500);
+      const one = await checkin(receptionistToken, sessions.F, students.S4, { paymentMethod: 'CASH' });
+      assert.equal(one.statusCode, 201, one.body);
+      const two = await checkin(receptionistToken, sessions.F, students.S5, { paymentMethod: 'CASH' });
+      assert.equal(two.statusCode, 201, two.body);
+
+      const voidedId = json(one.body).data.attendance.id;
+      const v = await app.inject({
+        method: 'POST',
+        url: `/api/attendances/attendances/${voidedId}/void`,
+        headers: authHeaders(receptionistToken),
+      });
+      assert.equal(v.statusCode, 200, v.body);
+
+      const close = await app.inject({
+        method: 'POST',
+        url: '/api/shifts/close',
+        headers: authHeaders(receptionistToken),
+        payload: { actualCashCounted: 650 },
+      });
+      assert.equal(close.statusCode, 200, close.body);
+      const shift = json(close.body).data.shift;
+      assert.equal(shift.expectedCash, 650);
+      assert.equal(shift.cashVariance, 0);
+      openShiftIds.push(shiftId);
     });
 
     test('AUDIT: entries are ordered, actor-attributed, and scoped by shift ownership', async () => {

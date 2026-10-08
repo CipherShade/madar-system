@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { Prisma, type PrismaClient } from '@prisma/client';
-import { Role, PaymentMethod } from '../../../shared/constants/index.js';
+import { Role, PaymentMethod, ShiftStatus } from '../../../shared/constants/index.js';
 import { normalizeArabicText } from '../../../shared/utils/arabicNormalization.js';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate, requireRoles } from '../auth/auth.js';
@@ -703,12 +703,18 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
     }
 
     try {
+      const activeShift = await prisma.shiftRegister.findFirst({
+        where: { receptionistId: request.user!.sub, tenantId, status: ShiftStatus.OPEN },
+        orderBy: { openedAt: 'desc' },
+        select: { id: true },
+      });
       const sale = await prisma.$transaction(async (tx) => {
         const created = await tx.bookSale.create({
           data: {
             tenantId,
             branchId,
             studentId,
+            shiftRegisterId: activeShift?.id ?? null,
             total: new Prisma.Decimal(priced.sale.total),
             costTotal: new Prisma.Decimal(priced.sale.costTotal),
             paymentMethod: paymentMethod as PaymentMethod,
@@ -749,7 +755,7 @@ const inventoryRoutes: FastifyPluginAsync = async (app) => {
         await recordAuditEntry({
           actorId: request.user!.sub,
           tenantId: request.user!.tenantId,
-          shiftRegisterId: null,
+          shiftRegisterId: activeShift?.id ?? null,
           action: 'BOOK_SALE_RECORDED',
           entityType: 'BOOK_SALE',
           entityId: created.id,

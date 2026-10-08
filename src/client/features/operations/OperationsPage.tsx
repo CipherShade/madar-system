@@ -338,11 +338,20 @@ function SettlementPage() {
   const [sessionId, setSessionId] = useState('');
   const [recipient, setRecipient] = useState('');
   const [method, setMethod] = useState('CASH');
+  const [preview, setPreview] = useState<{ teacherPayout: number; headcount: number; reconciled: boolean } | null>(null);
   useEffect(() => {
     void api<{ sessions: Session[] }>('/scheduling/sessions').then((data) => setSessions(data.sessions)).catch(() => { /* ignore */ });
   }, []);
+  useEffect(() => {
+    if (!sessionId) {
+      setPreview(null);
+      return;
+    }
+    void api<{ teacherPayout: number; headcount: number; reconciled: boolean }>(`/sessions/${sessionId}/settlement-preview`)
+      .then((result) => setPreview(result))
+      .catch(() => setPreview(null));
+  }, [sessionId]);
   const selected = sessions.find((item) => item.id === sessionId);
-  const expectedPayout = selected ? (selected.sessionPrice - selected.centerFeePerStudent) * selected.currentLobbyCount : 0;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -368,8 +377,8 @@ function SettlementPage() {
             <div className="metric-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))' }}>
               <Metric label={t('operations.settlement.price')} value={money(selected.sessionPrice)} />
               <Metric label={t('operations.settlement.centerFee')} value={money(selected.centerFeePerStudent)} />
-              <Metric label={t('timeline.attended')} value={selected.currentLobbyCount} />
-              <Metric label={t('operations.settlement.payment')} value={money(expectedPayout)} />
+              <Metric label={t('timeline.attended')} value={preview ? preview.headcount : selected.currentLobbyCount} />
+              <Metric label={t('operations.settlement.payment')} value={preview ? money(preview.teacherPayout) : '—'} />
             </div>
           )}
           <label className="field">

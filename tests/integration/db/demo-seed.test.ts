@@ -47,6 +47,11 @@ describe(
 
     async function clean(): Promise<void> {
       await prisma.auditLog.deleteMany({});
+      await prisma.stockMovement.deleteMany({});
+      await prisma.bookSaleLine.deleteMany({});
+      await prisma.bookSale.deleteMany({});
+      await prisma.branchStock.deleteMany({});
+      await prisma.usageRecord.deleteMany({});
       await prisma.expense.deleteMany({});
       await prisma.sessionSettlement.deleteMany({});
       await prisma.sessionReconciliation.deleteMany({});
@@ -56,7 +61,10 @@ describe(
       await prisma.student.deleteMany({});
       await prisma.teacher.deleteMany({});
       await prisma.room.deleteMany({});
+      await prisma.product.deleteMany({});
+      await prisma.branch.deleteMany({});
       await prisma.subscription.deleteMany({});
+      await prisma.systemSetting.deleteMany({});
       await prisma.user.deleteMany({});
       await prisma.tenant.deleteMany({});
     }

@@ -130,6 +130,10 @@ describe('DB-backed tenant ownership: a room cannot join another center\'s branc
 
   async function clean(): Promise<void> {
     await prisma.auditLog.deleteMany({});
+    await prisma.stockMovement.deleteMany({});
+    await prisma.bookSaleLine.deleteMany({});
+    await prisma.bookSale.deleteMany({});
+    await prisma.branchStock.deleteMany({});
     await prisma.usageRecord.deleteMany({});
     await prisma.expense.deleteMany({});
     await prisma.sessionSettlement.deleteMany({});
@@ -140,7 +144,9 @@ describe('DB-backed tenant ownership: a room cannot join another center\'s branc
     await prisma.student.deleteMany({});
     await prisma.teacher.deleteMany({});
     await prisma.room.deleteMany({});
+    await prisma.product.deleteMany({});
     await prisma.branch.deleteMany({});
+    await prisma.systemSetting.deleteMany({});
     await prisma.user.deleteMany({});
     // Cascades to subscriptions.
     await prisma.tenant.deleteMany({});

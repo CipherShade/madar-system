@@ -49,3 +49,8 @@ nohup.out
 # Database dumps. These contain real student and payment records, unencrypted.
 backups/
 *.dump
+
+# Stale compiled siblings of TS/TSX sources. The only source of truth under
+# src/ is TypeScript; these were build leftovers and are tracked to be deleted.
+src/**/*.js
+src/**/*.jsx

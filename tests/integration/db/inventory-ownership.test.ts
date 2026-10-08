@@ -175,6 +175,7 @@ describe(
       await prisma.room.deleteMany({});
       await prisma.product.deleteMany({});
       await prisma.branch.deleteMany({});
+      await prisma.systemSetting.deleteMany({});
       await prisma.user.deleteMany({});
       // Cascades to subscriptions and add-ons.
       await prisma.tenant.deleteMany({});

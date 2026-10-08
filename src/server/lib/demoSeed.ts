@@ -108,8 +108,8 @@ function auditEntry({ ctx, actorId, shiftRegisterId, action, entityType, entityI
 async function computeShiftCashFinancials(prisma: PrismaClient, shiftId: string): Promise<number> {
   const [cashCollected, teacherCashPayouts, cashExpenses, shiftRow] = await Promise.all([
     prisma.attendance.aggregate({
-      _sum: { amountPaid: true },
-      where: { shiftRegisterId: shiftId, paymentMethod: PaymentMethod.CASH },
+      _sum: { amountPaid: true, changeOwed: true },
+      where: { shiftRegisterId: shiftId, paymentMethod: PaymentMethod.CASH, status: { not: AttendanceStatus.VOID } },
     }),
     prisma.sessionSettlement.aggregate({
       _sum: { teacherPayout: true },
@@ -125,7 +125,7 @@ async function computeShiftCashFinancials(prisma: PrismaClient, shiftId: string)
   const opening = toNum(shiftRow?.openingCash ?? 0);
   return round2(
     opening +
-      toNum(cashCollected._sum.amountPaid) -
+      (toNum(cashCollected._sum.amountPaid) - toNum(cashCollected._sum.changeOwed)) -
       toNum(teacherCashPayouts._sum.teacherPayout) -
       toNum(cashExpenses._sum.amount),
   );
