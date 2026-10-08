@@ -80,6 +80,42 @@ test('createRateLimiter blocks once the fixed window is exceeded', async () => {
   assert.equal(await fire('a'), 429);
 });
 
+test('createRateLimiter drops expired windows instead of retaining every key forever', async () => {
+  let now = 1_000_000;
+  const limiter = createRateLimiter({
+    windowMs: 1_000,
+    max: 1,
+    now: () => now,
+    keyBy: (request) => (request.headers['x-rate-key'] as string) ?? 'default',
+  });
+
+  const fire = async (key: string): Promise<number> => {
+    let status = 200;
+    const reply = {
+      code(code: number) {
+        status = code;
+        return this;
+      },
+      send() {
+        return this;
+      },
+      status: () => status,
+    };
+    await limiter(
+      { headers: { 'x-rate-key': key } } as unknown as FastifyRequest,
+      reply as unknown as FastifyReply,
+    );
+    return status;
+  };
+
+  assert.equal(await fire('a'), 200);
+  assert.equal(await fire('a'), 429);
+
+  now += 1_001; // one window passes, so the next call sweeps the expired entry
+  assert.equal(await fire('b'), 200);
+  assert.equal(await fire('a'), 200, 'a key past its window should start fresh');
+});
+
 test('login rate limit returns 429 RATE_LIMITED before reaching the handler', async () => {
   const app = buildApp({ rateLimit: { login: { max: 1 } } });
   app.log.level = 'silent';

@@ -35,9 +35,12 @@ export function LifecycleBanner({ onGoToBilling }: { onGoToBilling: () => void }
 
   useEffect(() => {
     let cancelled = false;
-    api<{ data?: { lifecycle?: TenantLifecycleClient } }>('/subscriptions/current')
+    // `api` already returns the response envelope's `data`, so the lifecycle
+    // lives at the top level. Reading `res.data.lifecycle` looked one level too
+    // deep and the banner never rendered.
+    api<{ lifecycle?: TenantLifecycleClient }>('/subscriptions/current')
       .then((res) => {
-        if (!cancelled && res?.data?.lifecycle) setLifecycle(res.data.lifecycle);
+        if (!cancelled && res?.lifecycle) setLifecycle(res.lifecycle);
       })
       .catch(() => {
         /* the write guard is the authority; stay quiet here */

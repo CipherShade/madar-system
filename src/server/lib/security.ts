@@ -77,11 +77,25 @@ export function createRateLimiter(options: {
   windowMs: number;
   max: number;
   keyBy?: (request: FastifyRequest) => string;
+  now?: () => number;
 }) {
   const store = new Map<string, { count: number; resetAt: number }>();
+  const clock = options.now ?? Date.now;
+  // Without a sweep the map keeps one entry per distinct key forever, because an
+  // expired window is only ever noticed when that same key returns. Prune all
+  // expired keys at most once per window so memory tracks recent traffic.
+  let nextSweepAt = clock() + options.windowMs;
+  const sweep = (now: number) => {
+    if (now < nextSweepAt) return;
+    for (const [key, entry] of store) {
+      if (entry.resetAt <= now) store.delete(key);
+    }
+    nextSweepAt = now + options.windowMs;
+  };
 
   return async function rateLimiter(request: FastifyRequest, reply: FastifyReply): Promise<void> {
-    const now = Date.now();
+    const now = clock();
+    sweep(now);
     const key = options.keyBy ? options.keyBy(request) : request.user?.sub ?? request.ip;
     const entry = store.get(key);
     if (!entry || entry.resetAt <= now) {
