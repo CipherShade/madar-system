@@ -35,6 +35,17 @@ test('the demo seed never runs in production', () => {
   assert.ok(guardStart > 0 && superAdmin > guardStart, 'ensureSuperAdmin should still run unconditionally');
 });
 
+test('the standalone demo seed refuses to run in production', () => {
+  const seed = code('prisma/seed.ts');
+  // `prisma db seed` / `npm run db:seed` never touch server.ts, so the boot-time
+  // guard does not protect them; the script has to refuse on its own.
+  assert.match(seed, /NODE_ENV\s*===\s*'production'/, 'the seed must gate on production specifically');
+  assert.match(seed, /process\.exit\(1\)/, 'a refused seed must exit non-zero');
+  const gate = seed.indexOf("NODE_ENV === 'production'");
+  const seedCall = seed.indexOf('seedDemoData(prisma)');
+  assert.ok(gate > 0 && seedCall > gate, 'the gate must come before the seed runs');
+});
+
 test('the demo seed never overwrites an existing account', () => {
   const seed = read('src/server/lib/demoSeed.ts');
 

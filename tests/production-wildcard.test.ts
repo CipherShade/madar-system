@@ -15,7 +15,7 @@ process.env.CORS_ORIGIN = 'https://example.test';
 
 const { buildApp } = await import('../src/server/app.js');
 
-const distIndex = path.join(process.cwd(), 'dist', 'index.html');
+const distIndex = path.join(process.cwd(), 'dist', 'client', 'index.html');
 const distPresent = fs.existsSync(distIndex);
 
 test('production SPA wildcard returns JSON 404 for unknown GET /api/* routes', { skip: !distPresent }, async () => {
@@ -39,6 +39,31 @@ test('production SPA wildcard returns JSON 404 for unknown GET /api/* routes', {
     const contentType = spa.headers['content-type'] ?? '';
     assert.ok(contentType.includes('text/html'), `expected HTML for a client route, got ${contentType}`);
     assert.ok(spa.body.includes('<!DOCTYPE html>'));
+  } finally {
+    await app.close();
+  }
+});
+
+test('compiled server source is not reachable as a static asset', { skip: !distPresent }, async () => {
+  const app = buildApp();
+  app.log.level = 'silent';
+  await app.ready();
+  try {
+    // The static root used to be `dist/`, so dist/server/** was served verbatim:
+    // these returned application/javascript with the backend source in the body.
+    for (const url of [
+      '/server/server/config/index.js',
+      '/server/server/server.js',
+      '/server/shared/constants/index.js',
+    ]) {
+      const response = await app.inject({ method: 'GET', url });
+      const type = response.headers['content-type'] ?? '';
+      assert.ok(!type.includes('javascript'), `${url} served as JavaScript (${type})`);
+      assert.ok(
+        !response.body.includes('randomBytes') && !response.body.includes('socket.io'),
+        `${url} leaked compiled server source`,
+      );
+    }
   } finally {
     await app.close();
   }

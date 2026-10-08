@@ -18,6 +18,17 @@
 import { PrismaClient } from '@prisma/client';
 import { ensureSuperAdmin, seedDemoData } from '../src/server/lib/demoSeed.js';
 
+// The demo center's passwords are public defaults and `username` is globally
+// unique, so a seed that runs against a live database can reset a real client's
+// password or move their account. `prisma db seed` / `npm run db:seed` bypasses
+// the boot-time guard in src/server/server.ts, so the refusal also lives here.
+if (process.env.NODE_ENV === 'production') {
+  console.error(
+    'Refusing to run the demo seed: NODE_ENV=production. Demo accounts use public default passwords and must never touch a live database.',
+  );
+  process.exit(1);
+}
+
 const prisma = new PrismaClient();
 
 async function main(): Promise<void> {

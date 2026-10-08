@@ -69,6 +69,12 @@ export function buildApp(options?: BuildAppOptions): FastifyInstance {
       return existing || randomUUID();
     },
     bodyLimit: config.bodyLimitBytes,
+    // Railway terminates TLS and its edge sets X-Forwarded-For, with the real
+    // client as the leftmost entry (Railway controls that header). Trusting the
+    // proxy lets the rate limiter key on the real client; without it request.ip
+    // is the proxy's address, so all callers share one bucket and a single
+    // caller can throttle everyone. See docs/architecture.md.
+    trustProxy: true,
     // Fastify's default AJV strips unknown body fields (removeAdditional: true),
     // which silently contradicts every `additionalProperties: false` schema in
     // the route modules and the documented contract (docs/api.md: unknown input
@@ -91,6 +97,31 @@ export function buildApp(options?: BuildAppOptions): FastifyInstance {
     studentSearch: { ...config.rateLimiting.studentSearch, ...overrides.rateLimit?.studentSearch },
     financial: { ...config.rateLimiting.financial, ...overrides.rateLimit?.financial },
   }));
+
+  // 0. Security response headers, applied to every reply (API JSON, static
+  //    assets and error pages alike). The app is served over HTTPS on Railway,
+  //    so HSTS is safe to send always; browsers ignore it over plain HTTP, which
+  //    is what local development uses.
+  app.addHook('onRequest', async (_request, reply) => {
+    reply.headers({
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'no-referrer',
+      'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+      'Content-Security-Policy': [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src 'self' data: https://fonts.gstatic.com",
+        "img-src 'self' data: blob:",
+        "connect-src 'self' ws: wss:",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+      ].join('; '),
+    });
+  });
 
   // 1. Register CORS for the Vite frontend (comma-separated origins allowed)
   app.register(cors, {
@@ -138,7 +169,10 @@ app.register(inventoryRoutes, { prefix: '/api/inventory' });
   app.register(platformBillingRoutes, { prefix: '/api/admin' });
 
   if (config.nodeEnv === 'production') {
-    app.register(fastifyStatic, { root: path.join(process.cwd(), 'dist'), wildcard: false });
+    // Serve only dist/client (the Vite bundle). The compiled backend is emitted
+    // to dist/server by tsc; serving its parent exposed every compiled .js there
+    // as a public file, including config and the server entrypoint.
+    app.register(fastifyStatic, { root: path.join(process.cwd(), 'dist', 'client'), wildcard: false });
     app.get('/*', async (request, reply) => {
       if (request.url === '/api' || request.url.startsWith('/api/')) {
         request.log.info({ url: request.url, method: request.method }, 'api route not found');
